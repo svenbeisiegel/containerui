@@ -21,6 +21,18 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # nfpm signs the rpms with the key, written armored as it reads it; the
+      # repo job signs the repositories. First, so a bad key commits nothing.
+      - name: signing key
+        env:
+          PACKAGE_SIGNING_KEY: ${{ secrets.PACKAGE_SIGNING_KEY }}
+          PACKAGE_SIGNING_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
+        run: |
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 700 "$GNUPGHOME"
+          bash packaging/repo/import-key.sh "$RUNNER_TEMP/signing.asc"
+          echo "SIGNING_KEY_FILE=$RUNNER_TEMP/signing.asc" >> "$GITHUB_ENV"
+
       # The released version is committed, so the code matches the release.
       - name: bump VERSION
         run: |
@@ -37,15 +49,6 @@ jobs:
 
       - name: vet and test
         run: make lint race
-
-      # nfpm signs the rpms with it; the repo job signs the repositories
-      - name: signing key
-        env:
-          PACKAGE_SIGNING_KEY: ${{ secrets.PACKAGE_SIGNING_KEY }}
-        run: |
-          test -n "$PACKAGE_SIGNING_KEY" || { echo "the PACKAGE_SIGNING_KEY secret is not set"; exit 1; }
-          printf '%s\n' "$PACKAGE_SIGNING_KEY" > "$RUNNER_TEMP/signing.asc"
-          echo "SIGNING_KEY_FILE=$RUNNER_TEMP/signing.asc" >> "$GITHUB_ENV"
 
       # the rpm and deb packages into dist, and what the msi job builds the
       # Windows installers from into build/pkg
@@ -178,10 +181,7 @@ jobs:
       - name: import the signing key
         env:
           PACKAGE_SIGNING_KEY: ${{ secrets.PACKAGE_SIGNING_KEY }}
-        run: |
-          printf '%s\n' "$PACKAGE_SIGNING_KEY" | gpg --batch --import
-          id=$(gpg --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')
-          echo "GPG_KEY_ID=$id" >> "$GITHUB_ENV"
+        run: bash packaging/repo/import-key.sh
 
       - name: build the repositories
         env:
