@@ -110,9 +110,9 @@ sudo dnf install ./containerui-<version>-1.x86_64.rpm
 | Compose projects | `/var/lib/containerui/compose` |
 | Log | the journal: `journalctl -u containerui` |
 
-The service listens on `127.0.0.1:8443`; set `server.listen` (e.g.
-`0.0.0.0:8443`) and `systemctl restart containerui` to reach it from other
-machines. Users sign in with their system account if they may use the
+The service listens on `0.0.0.0:8443`, so other machines can reach it; set
+`server.listen` to `127.0.0.1:8443` and `systemctl restart containerui` to
+allow local access only. Users sign in with their system account if they may use the
 docker or podman socket, see [Linux sign-in](#linux-sign-in). `dnf remove
 containerui` stops and removes the service and keeps the configuration
 (changed files as `.rpmsave`).
@@ -132,7 +132,7 @@ it.
 
 ```powershell
 msiexec /i containerui-<version>-x64.msi              # with the setup dialogs
-msiexec /i containerui-<version>-x64.msi /qn FIREWALL=1  # quietly, and open the firewall
+msiexec /i containerui-<version>-x64.msi /qn FIREWALL=0  # quietly, firewall left closed
 ```
 
 | What | Where |
@@ -143,8 +143,9 @@ msiexec /i containerui-<version>-x64.msi /qn FIREWALL=1  # quietly, and open the
 | Compose projects | `C:\ProgramData\ContainerUI\compose` |
 | Log | `C:\ProgramData\ContainerUI\logs\containerui.log` (rotated by size) |
 
-`FIREWALL=1` allows `containerui.exe` through the Windows firewall; without it
-nothing is opened, which matches the default listen address `127.0.0.1:8443`.
+The msi allows `containerui.exe` through the Windows firewall, so other
+machines can reach the service on `0.0.0.0:8443`. With `FIREWALL=0` nothing is
+opened and only the local machine can reach it.
 Users sign in with their Windows account, see [Windows sign-in](#windows-sign-in).
 
 The service sees the **Docker** engine (Docker Desktop or Docker Engine,
@@ -228,7 +229,7 @@ The default file is [internal/config/default.yaml](internal/config/default.yaml)
 
 | Key | Default | Meaning |
 |---|---|---|
-| `server.listen` | `127.0.0.1:8443` | Listen address |
+| `server.listen` | `0.0.0.0:8443` | Listen address |
 | `server.tls.enabled` | `true` | Serve HTTPS |
 | `server.tls.self_signed` | `true` (unless `cert_file`/`key_file` are set) | Generate and reuse a self-signed certificate |
 | `server.tls.cert_file`/`key_file` | — | Your own certificate (PEM) |

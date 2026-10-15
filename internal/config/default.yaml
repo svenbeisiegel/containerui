@@ -2,9 +2,9 @@
 # uses the default shown here.
 
 server:
-  # Address to listen on. Keep 127.0.0.1 unless the UI must be reachable
-  # from other machines (then keep TLS enabled).
-  listen: "127.0.0.1:8443"
+  # Address to listen on. 0.0.0.0 serves every interface (sign-in is always
+  # required; keep TLS enabled). Use 127.0.0.1 to allow local access only.
+  listen: "0.0.0.0:8443"
   tls:
     enabled: true
     # Generate a self-signed certificate on first start

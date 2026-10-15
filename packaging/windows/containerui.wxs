@@ -23,7 +23,7 @@
   replaced, nor removed by an uninstall.
 
   msiexec /i containerui-<version>-x64.msi /qn            installs or updates quietly
-  msiexec /i containerui-<version>-x64.msi /qn FIREWALL=1 also opens the firewall
+  msiexec /i containerui-<version>-x64.msi /qn FIREWALL=0 leaves the firewall closed
 -->
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
      xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
@@ -41,9 +41,10 @@
     <Property Id="ARPURLINFOABOUT" Value="https://github.com/svenbeisiegel/containerui" />
     <Property Id="ARPNOMODIFY" Value="1" />
 
-    <!-- 1 lets containerui.exe through the Windows firewall. Off by default:
-         as installed, ContainerUI listens on 127.0.0.1 alone. -->
-    <Property Id="FIREWALL" Value="0" Secure="yes" />
+    <!-- 1 (the default) lets containerui.exe through the Windows firewall,
+         so other machines reach the service on 0.0.0.0. 0 leaves the
+         firewall closed and the UI reachable from this machine only. -->
+    <Property Id="FIREWALL" Value="1" Secure="yes" />
 
     <!-- WixUI_Minimal without its license page: welcome, ready to install,
          progress and finish, and on a repair or removal from Apps the

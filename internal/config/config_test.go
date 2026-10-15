@@ -14,7 +14,7 @@ func TestParseEmptyUsesDefaults(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.Server.Listen != "127.0.0.1:8443" || !cfg.Server.TLS.On() || !cfg.Server.TLS.IsSelfSigned() {
+		if cfg.Server.Listen != "0.0.0.0:8443" || !cfg.Server.TLS.On() || !cfg.Server.TLS.IsSelfSigned() {
 			t.Errorf("server = %+v", cfg.Server)
 		}
 		if cfg.Runtime.Driver != "auto" || cfg.Runtime.PullTimeout != 30*time.Minute || cfg.Runtime.CommandTimeout != 30*time.Second {
@@ -23,8 +23,8 @@ func TestParseEmptyUsesDefaults(t *testing.T) {
 		if cfg.Server.PAMService != "login" || len(cfg.Users) != 0 {
 			t.Errorf("cfg = %+v", cfg)
 		}
-		if !cfg.Server.ListenIsLoopback() {
-			t.Error("default listen should be loopback")
+		if cfg.Server.ListenIsLoopback() {
+			t.Error("default listen should serve every interface")
 		}
 	}
 }
@@ -151,7 +151,7 @@ func TestAddUser(t *testing.T) {
 		t.Error("duplicate user accepted")
 	}
 	data, _ := os.ReadFile(path)
-	for _, want := range []string{"# Container runtime: auto", "# Generate with: containerui hash-password", "listen: \"127.0.0.1:8443\""} {
+	for _, want := range []string{"# Container runtime: auto", "# Generate with: containerui hash-password", "listen: \"0.0.0.0:8443\""} {
 		if !strings.Contains(string(data), want) {
 			t.Errorf("lost %q:\n%s", want, data)
 		}

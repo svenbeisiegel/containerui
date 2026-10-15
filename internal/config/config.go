@@ -102,7 +102,7 @@ func Default() *Config {
 	on := true
 	return &Config{
 		Server: Server{
-			Listen:                 "127.0.0.1:8443",
+			Listen:                 "0.0.0.0:8443",
 			TLS:                    TLS{Enabled: &on, SelfSigned: &on},
 			SessionIdleTimeout:     30 * time.Minute,
 			SessionAbsoluteTimeout: 12 * time.Hour,

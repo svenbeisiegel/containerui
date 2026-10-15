@@ -391,7 +391,7 @@ func loadConfig(path string, log *slog.Logger) (*config.Config, string, error) {
 // compose folder a package chooses, to a new file or standard output.
 func initConfig(args []string) error {
 	fs := flag.NewFlagSet("init-config", flag.ExitOnError)
-	listen := fs.String("listen", "", "listen address (default 127.0.0.1:8443)")
+	listen := fs.String("listen", "", "listen address (default 0.0.0.0:8443)")
 	composeDir := fs.String("compose-dir", "", "folder for compose projects deployed through the UI (default: compose, next to the config)")
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
