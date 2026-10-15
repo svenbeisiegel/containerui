@@ -1,0 +1,1 @@
+{"Id":"sha256:bbb","Config":{"Cmd":["nginx","-g","daemon off;"],"Entrypoint":["/docker-entrypoint.sh"],"Env":["PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","NGINX_VERSION=1.27.0"],"Labels":{"maintainer":"NGINX Docker Maintainers"},"User":"","WorkingDir":""}}

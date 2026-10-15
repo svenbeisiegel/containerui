@@ -1,0 +1,190 @@
+{{define "content"}}
+{{$f := .Data.Form}}
+<div class="page-head">
+  <div>
+    <a class="back" href="/containers">← Containers</a>
+    <h1>Create Container</h1>
+  </div>
+</div>
+<form method="post" action="/containers" class="create-form">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  {{if .Data.Err}}<div class="flash error" role="alert">{{.Data.Err}}</div>{{end}}
+
+  <fieldset class="section">
+    <legend>Image</legend>
+    <div class="fields">
+      <label class="field">
+        <span class="field-label">Image <span class="req" aria-hidden="true">*</span></span>
+        <input name="image" list="image-list" required value="{{$f.Image}}" placeholder="nginx:1.27" autocomplete="off" spellcheck="false">
+        <datalist id="image-list">{{range .Data.Images}}<option value="{{.Ref}}">{{end}}</datalist>
+        <small class="hint">A local image or a registry reference, e.g. <code>docker.io/library/nginx:latest</code>.</small>
+      </label>
+      <label class="field">
+        <span class="field-label">Name <span class="opt">optional</span></span>
+        <input name="name" value="{{$f.Name}}" placeholder="web" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" autocomplete="off" spellcheck="false">
+        <small class="hint">Letters, digits, <code>_</code>, <code>.</code> and <code>-</code>. Generated if empty.</small>
+      </label>
+      <label class="field span-2">
+        <span class="field-label">Command <span class="opt">optional</span></span>
+        <input name="cmd" value="{{$f.Cmd}}" placeholder="sh -c &quot;echo hello&quot;" class="mono-input" autocomplete="off" spellcheck="false">
+        <small class="hint">Overrides the image's default command. Quote arguments that contain spaces.</small>
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="section">
+    <legend>Networking</legend>
+    <div class="fields">
+      {{if .Caps.Networks}}
+      <label class="field">
+        <span class="field-label">Network</span>
+        <select name="network">
+          <option value="">Default</option>
+          {{range .Data.Networks}}<option value="{{.Name}}" {{if eq .Name $f.Network}}selected{{end}}>{{.Name}} ({{.Driver}})</option>{{end}}
+        </select>
+        <small class="hint">The network the container joins.</small>
+      </label>
+      {{end}}
+      <label class="field{{if not .Caps.Networks}} span-2{{end}}">
+        <span class="field-label">Published ports</span>
+        <textarea name="ports" rows="3" placeholder="8080:80&#10;127.0.0.1:5432:5432" spellcheck="false">{{$f.Ports}}</textarea>
+        <small class="hint">One per line: <code>[hostIP:]hostPort:containerPort[/udp]</code></small>
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="section">
+    <legend>Environment &amp; Storage</legend>
+    <div class="fields">
+      <label class="field">
+        <span class="field-label">Environment variables</span>
+        <textarea name="env" rows="4" placeholder="TZ=Europe/Berlin&#10;LOG_LEVEL=info" spellcheck="false">{{$f.Env}}</textarea>
+        <small class="hint">One per line: <code>KEY=value</code></small>
+      </label>
+      <label class="field">
+        <span class="field-label">Volumes</span>
+        <textarea name="volumes" rows="4" placeholder="data:/var/lib/data&#10;C:\config:/etc/app:ro" spellcheck="false">{{$f.Volumes}}</textarea>
+        <small class="hint">One per line: <code>volume-or-host-path:/container/path[:ro]</code></small>
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="section">
+    <legend>Options</legend>
+    <div class="fields">
+      <label class="field">
+        <span class="field-label">Pull image</span>
+        <select name="pull">
+          <option value="missing" {{if eq $f.Pull "missing"}}selected{{end}}>If missing</option>
+          <option value="always" {{if eq $f.Pull "always"}}selected{{end}}>Always</option>
+          <option value="never" {{if eq $f.Pull "never"}}selected{{end}}>Never</option>
+        </select>
+        <small class="hint">When to fetch the image from its registry.</small>
+      </label>
+      <div class="field">
+        <span class="field-label">After creating</span>
+        <label class="switch">
+          <input type="checkbox" name="start" {{if $f.Start}}checked{{end}}>
+          <span class="track" aria-hidden="true"></span>
+          <span>Start the container</span>
+        </label>
+      </div>
+    </div>
+  </fieldset>
+
+  {{/* Inputs inside a closed <details> are still submitted. */}}
+  <details class="section advanced"{{if $f.AdvancedChanged}} open{{end}}>
+    <summary>
+      <span class="summary-title">Advanced Options</span>
+      <span class="summary-sub">Terminal, cleanup, health check, resources, identity, DNS and ulimits</span>
+    </summary>
+    <div class="advanced-body">
+      <h3 class="subhead">Process</h3>
+      <div class="switches">
+        <label class="switch">
+          <input type="checkbox" name="tty" {{if $f.TTY}}checked{{end}}>
+          <span class="track" aria-hidden="true"></span>
+          <span>Allocate a TTY <code>--tty</code></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" name="interactive" {{if $f.Interactive}}checked{{end}}>
+          <span class="track" aria-hidden="true"></span>
+          <span>Keep STDIN open <code>--interactive</code></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" name="rm" {{if $f.AutoRemove}}checked{{end}}>
+          <span class="track" aria-hidden="true"></span>
+          <span>Remove when it exits <code>--rm</code></span>
+        </label>
+        <label class="switch">
+          <input type="checkbox" name="no_healthcheck" {{if $f.NoHealthcheck}}checked{{end}}>
+          <span class="track" aria-hidden="true"></span>
+          <span>Disable health check <code>--no-healthcheck</code></span>
+        </label>
+      </div>
+
+      <h3 class="subhead">Resources</h3>
+      <div class="fields">
+        <label class="field">
+          <span class="field-label">CPUs <span class="opt flag">--cpus</span></span>
+          <input name="cpus" type="number" step="any" min="0.01" inputmode="decimal" value="{{$f.CPUs}}" placeholder="1.5">
+          <small class="hint">Number of CPUs, fractions allowed, e.g. <code>0.5</code>.</small>
+        </label>
+        <label class="field">
+          <span class="field-label">Memory limit <span class="opt flag">--memory</span></span>
+          <input name="memory" value="{{$f.Memory}}" placeholder="512M" pattern="[0-9]+(\.[0-9]+)?[bkmgBKMG]?" autocomplete="off" spellcheck="false">
+          <small class="hint">Number with unit <code>b</code>, <code>k</code>, <code>m</code> or <code>g</code>, e.g. <code>512M</code> or <code>1G</code>.</small>
+        </label>
+      </div>
+
+      <h3 class="subhead">Identity</h3>
+      <div class="fields">
+        <label class="field">
+          <span class="field-label">Hostname <span class="opt flag">--hostname</span></span>
+          <input name="hostname" value="{{$f.Hostname}}" placeholder="web-01" pattern="[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*" autocomplete="off" spellcheck="false">
+          <small class="hint">Letters, digits and hyphens; dots separate labels.</small>
+        </label>
+        <label class="field">
+          <span class="field-label">User <span class="opt flag">--user</span></span>
+          <input name="user" value="{{$f.User}}" placeholder="1000:1000" pattern="[A-Za-z0-9_][A-Za-z0-9_.\-]*(:[A-Za-z0-9_][A-Za-z0-9_.\-]*)?" autocomplete="off" spellcheck="false">
+          <small class="hint">User name, <code>uid</code> or <code>uid:gid</code> for the container process.</small>
+        </label>
+      </div>
+
+      <h3 class="subhead">DNS</h3>
+      <div class="fields three">
+        <label class="field">
+          <span class="field-label">Nameservers <span class="opt flag">--dns</span></span>
+          <input name="dns" value="{{$f.DNS}}" placeholder="1.1.1.1, 8.8.8.8" class="mono-input" autocomplete="off" spellcheck="false">
+          <small class="hint">IP addresses.</small>
+        </label>
+        <label class="field">
+          <span class="field-label">Search domains <span class="opt flag">--dns-search</span></span>
+          <input name="dns_search" value="{{$f.DNSSearch}}" placeholder="corp.example.com" class="mono-input" autocomplete="off" spellcheck="false">
+          <small class="hint">Domains appended to short names.</small>
+        </label>
+        <label class="field">
+          <span class="field-label">Resolver options <span class="opt flag">--dns-option</span></span>
+          <input name="dns_option" value="{{$f.DNSOptions}}" placeholder="ndots:2 timeout:3" class="mono-input" autocomplete="off" spellcheck="false">
+          <small class="hint">e.g. <code>ndots:2</code>, <code>rotate</code>.</small>
+        </label>
+      </div>
+      <p class="hint group-hint">Multiple values: separate them with commas or spaces.</p>
+
+      <h3 class="subhead">Limits</h3>
+      <div class="fields">
+        <label class="field span-2">
+          <span class="field-label">Ulimits <span class="opt flag">--ulimit</span></span>
+          <textarea name="ulimit" rows="3" placeholder="nofile=1024:2048&#10;nproc=512" spellcheck="false">{{$f.Ulimits}}</textarea>
+          <small class="hint">One per line: <code>name=soft[:hard]</code>, <code>-1</code> = unlimited. Names: nofile, nproc, core, memlock, stack, …</small>
+        </label>
+      </div>
+    </div>
+  </details>
+
+  <div class="form-actions">
+    <a class="button" href="/containers">Cancel</a>
+    <button type="submit" class="primary">Create container</button>
+  </div>
+</form>
+{{end}}

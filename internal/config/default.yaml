@@ -1,0 +1,55 @@
+# ContainerUI configuration. Every setting is optional: anything left out
+# uses the default shown here.
+
+server:
+  # Address to listen on. Keep 127.0.0.1 unless the UI must be reachable
+  # from other machines (then keep TLS enabled).
+  listen: "127.0.0.1:8443"
+  tls:
+    enabled: true
+    # Generate a self-signed certificate on first start
+    # (containerui-cert.pem / containerui-key.pem next to this file).
+    self_signed: true
+    # Or point to your own certificate (relative paths are resolved
+    # against this file's directory) and set self_signed: false.
+    cert_file: ""
+    key_file: ""
+  session_idle_timeout: 30m
+  session_absolute_timeout: 12h
+  # Linux only: PAM service used to check system passwords.
+  pam_service: login
+  # Windows: let Windows accounts sign in (local or domain, as user,
+  # DOMAIN\user or user@domain) when they may use the container runtime,
+  # i.e. its named pipe (members of docker-users or Administrators for
+  # Docker). The users below sign in either way. Linux always signs in
+  # with system accounts.
+  system_accounts: true
+
+runtime:
+  # Container runtime: auto, wslc, docker, podman or fake (in-memory demo
+  # data). auto picks the first one that is installed and answers
+  # (Windows: wslc, docker, podman; Linux: docker, podman).
+  driver: auto
+  path: ""                # CLI binary; empty = wslc.exe / docker / podman on PATH
+  session: ""             # wslc only; empty = the CLI's default session
+  command_timeout: 30s    # list/start/stop/... calls
+  pull_timeout: 30m       # image pulls and container create
+  # Compose (docker/podman only; wslc has no compose). Empty = use the
+  # runtime's plugin ("docker compose" / "podman compose"), then
+  # docker-compose / podman-compose on PATH.
+  compose_path: ""
+  compose_timeout: 30m    # compose up/down/pull
+  compose_dir: compose    # deployed compose files, one folder per project
+
+# Windows: additional sign-in accounts. When the list is empty and
+# system_accounts is false, ContainerUI asks for a username and password on
+# its first start and adds the account here.
+# Linux: ignored; users sign in with their system account (PAM) and must be
+# allowed to use the container runtime (e.g. member of the docker group).
+users: []
+  # - username: admin
+  #   # Generate with: containerui hash-password
+  #   password_hash: "$2a$12$..."
+  # A plaintext password is accepted too, but logs a warning at startup:
+  # - username: dev
+  #   password: change-me

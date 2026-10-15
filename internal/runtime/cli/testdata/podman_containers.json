@@ -1,0 +1,4 @@
+[
+  {"AutoRemove":false,"Command":["nginx","-g","daemon off;"],"Created":1792134723,"CreatedAt":"26 hours ago","Exited":false,"ExitCode":0,"Id":"4f1c2b3a9d8e7f6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a","Image":"docker.io/library/nginx:1.27","ImageID":"abc","IsInfra":false,"Labels":null,"Mounts":["/data"],"Names":["web"],"Namespaces":{},"Networks":["podman"],"Pid":1234,"Pod":"","PodName":"","Ports":[{"host_ip":"127.0.0.1","container_port":80,"host_port":8080,"range":1,"protocol":"tcp"},{"host_ip":"","container_port":5000,"host_port":5000,"range":2,"protocol":"udp"}],"Size":null,"StartedAt":1792134724,"State":"running","Status":"Up 26 hours"},
+  {"Command":null,"Created":1792080000,"CreatedAt":"41 hours ago","Id":"9a8b","Image":"docker.io/library/alpine:latest","Mounts":[],"Names":["tmp"],"Networks":[],"Ports":null,"State":"exited","Status":"Exited (0) 40 hours ago"}
+]

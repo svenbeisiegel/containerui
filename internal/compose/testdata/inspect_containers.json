@@ -1,0 +1,23 @@
+[
+ {"Id":"a1b2c3d4e5f6a1b2c3d4e5f6","Name":"/shop-web-1",
+  "Config":{"Hostname":"a1b2c3d4e5f6","Image":"nginx:1.27","Cmd":["nginx","-g","daemon off;"],"Entrypoint":["/docker-entrypoint.sh"],
+   "Env":["MODE=prod","PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin","NGINX_VERSION=1.27.0"],
+   "Labels":{"maintainer":"NGINX Docker Maintainers","com.docker.compose.project":"shop","com.docker.compose.service":"web","com.docker.compose.container-number":"1","com.docker.compose.oneoff":"False","com.docker.compose.depends_on":"db:service_healthy:false","com.docker.compose.project.config_files":"/srv/shop/compose.yaml","traefik.enable":"true"},
+   "User":"","WorkingDir":"","Tty":false,"OpenStdin":false},
+  "HostConfig":{"PortBindings":{"80/tcp":[{"HostIp":"127.0.0.1","HostPort":"8080"}],"443/tcp":[{"HostIp":"","HostPort":"8443"}],"53/udp":[{"HostIp":"0.0.0.0","HostPort":"5353"},{"HostIp":"::","HostPort":"5353"}]},
+   "RestartPolicy":{"Name":"unless-stopped","MaximumRetryCount":0},"NetworkMode":"shop_default"},
+  "Mounts":[{"Type":"bind","Source":"/srv/shop/html","Destination":"/usr/share/nginx/html","RW":false},{"Type":"volume","Name":"shop_cache","Source":"/var/lib/docker/volumes/shop_cache/_data","Destination":"/cache","RW":true}],
+  "NetworkSettings":{"Networks":{"shop_default":{"Aliases":["shop-web-1","web"]},"shop_front":{}}}},
+ {"Id":"b1b2c3d4e5f6a1b2c3d4e5f6","Name":"/shop-db-1",
+  "Config":{"Hostname":"dbhost","Image":"postgres:16","Cmd":["postgres"],"Entrypoint":null,
+   "Env":["POSTGRES_PASSWORD=secret","PGDATA=/var/lib/postgresql/data"],
+   "Labels":{"com.docker.compose.project":"shop","com.docker.compose.service":"db","com.docker.compose.container-number":"1"},
+   "User":"999","Healthcheck":{"Test":["CMD-SHELL","pg_isready"],"Interval":5000000000,"Timeout":3000000000,"Retries":5}},
+  "HostConfig":{"PortBindings":{},"RestartPolicy":{"Name":"no"},"NetworkMode":"shop_default"},
+  "Mounts":[{"Type":"volume","Name":"shop_dbdata","Destination":"/var/lib/postgresql/data","RW":true},{"Type":"volume","Name":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","Destination":"/tmp/anon","RW":true},{"Type":"volume","Name":"backups","Destination":"/backups","RW":true}],
+  "NetworkSettings":{"Networks":{"shop_default":{}}}},
+ {"Id":"c1","Name":"/shop-worker-1","Config":{"Image":"alpine","Cmd":"sleep 3600","Labels":{"com.docker.compose.project":"shop","com.docker.compose.service":"worker","com.docker.compose.container-number":"1"}},"HostConfig":{"NetworkMode":"shop_default"},"NetworkSettings":{"Networks":{"shop_default":{}}}},
+ {"Id":"c2","Name":"/shop-worker-2","Config":{"Image":"alpine","Cmd":"sleep 3600","Labels":{"com.docker.compose.project":"shop","com.docker.compose.service":"worker","com.docker.compose.container-number":"2"}},"HostConfig":{"NetworkMode":"shop_default"},"NetworkSettings":{"Networks":{"shop_default":{}}}},
+ {"Id":"c3","Name":"/shop-web-run-abc","Config":{"Image":"nginx:1.27","Labels":{"com.docker.compose.project":"shop","com.docker.compose.service":"web","com.docker.compose.oneoff":"True"}}},
+ {"Id":"c4","Name":"/other","Config":{"Image":"alpine","Labels":{"com.docker.compose.project":"blog","com.docker.compose.service":"x"}}}
+]

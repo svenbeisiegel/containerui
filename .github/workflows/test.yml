@@ -1,0 +1,152 @@
+name: Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # vets linux and windows: the *_windows.go files only compile there
+      - name: vet and gofmt
+        run: make lint
+
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: test
+        run: go test ./... -count=1 -timeout 15m
+
+  rpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # a second, higher version as well, for the upgrade below
+      - name: make packages
+        run: |
+          make rpm
+          make rpm VERSION="$(cat VERSION).1"
+
+      # install, upgrade and remove the rpm the way dnf does on a server. The
+      # container has no systemd, so ContainerUI is started by hand with the
+      # unit's command line and the fake runtime.
+      - name: install the rpm
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" rockylinux:9 sh -euxc '
+            version=$(ls /dist/containerui-*.x86_64.rpm | sort -V | head -1)
+            update=$(ls /dist/containerui-*.x86_64.rpm | sort -V | tail -1)
+            dnf install -y "$version"
+            test "$(stat -c %U:%a /etc/containerui/config.yaml)" = root:600
+            test -d /var/lib/containerui/compose
+            grep -q "compose_dir: /var/lib/containerui/compose" /etc/containerui/config.yaml
+            test -f /usr/lib/systemd/system/containerui.service
+            /usr/bin/containerui version | grep -q "^containerui "
+            /usr/bin/containerui serve -config /etc/containerui/config.yaml -driver fake > /tmp/containerui.log 2>&1 &
+            pid=$!
+            for i in $(seq 1 30); do curl -fsSk -o /dev/null https://127.0.0.1:8443/login && break; sleep 0.5; done
+            curl -fsSk -o /dev/null https://127.0.0.1:8443/login
+            grep -q "installer=rpm" /tmp/containerui.log
+            kill $pid; wait $pid || true
+            echo "# changed" >> /etc/containerui/config.yaml
+            dnf install -y "$update"
+            grep -q "^# changed" /etc/containerui/config.yaml
+            dnf remove -y containerui
+            test ! -e /usr/bin/containerui
+            test -e /etc/containerui/config.yaml.rpmsave
+          '
+
+  msi:
+    runs-on: windows-latest
+    env:
+      DOTNET_ROLL_FORWARD: Major
+      WIX_VERSION: 5.0.2
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # what make msi-inputs builds, for amd64 only
+      - name: build the msi inputs
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force build/pkg | Out-Null
+          go run ./cmd/containerui init-config build/pkg/config.windows.yaml
+          $env:CGO_ENABLED = "0"
+          go build -trimpath -ldflags "-s -w -X main.version=$(Get-Content VERSION) -X main.packaging=msi" `
+            -o build/pkg/containerui_windows_amd64.exe ./cmd/containerui
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: install the WiX Toolset
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version $env:WIX_VERSION
+          wix extension add --global WixToolset.Util.wixext/$env:WIX_VERSION
+          wix extension add --global WixToolset.Firewall.wixext/$env:WIX_VERSION
+          wix extension add --global WixToolset.UI.wixext/$env:WIX_VERSION
+
+      - name: build the msi
+        shell: pwsh
+        run: |
+          wix build packaging/windows/containerui.wxs -arch x64 `
+            -ext WixToolset.Util.wixext -ext WixToolset.Firewall.wixext -ext WixToolset.UI.wixext `
+            -d Version="$(Get-Content VERSION)" `
+            -d Bin="$PWD\build\pkg\containerui_windows_amd64.exe" `
+            -d Config="$PWD\build\pkg\config.windows.yaml" `
+            -o containerui.msi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      # install it as an admin would, quietly, and see the service come up and
+      # serve, then go away again with the uninstall
+      - name: install the msi
+        shell: pwsh
+        run: |
+          $install = Start-Process msiexec -Wait -PassThru -ArgumentList "/i containerui.msi /qn /l*v install.log"
+          if ($install.ExitCode -ne 0) { Get-Content install.log -Tail 80; exit $install.ExitCode }
+          $service = Get-Service ContainerUI
+          $service | Format-List Name, Status, StartType
+          if ($service.StartType -ne "Automatic") { throw "the service does not start with Windows" }
+          $up = $false
+          # the runtime warm-up runs before the listener starts
+          foreach ($i in 1..240) {
+            try { Invoke-WebRequest -UseBasicParsing -SkipCertificateCheck https://127.0.0.1:8443/login | Out-Null; $up = $true; break }
+            catch { Start-Sleep -Milliseconds 500 }
+          }
+          $log = "$env:ProgramData\ContainerUI\logs\containerui.log"
+          Get-Content $log
+          if (-not $up) { throw "ContainerUI does not answer on 127.0.0.1:8443" }
+          if (-not (Select-String -Quiet -Path $log -Pattern "installer=msi")) { throw "the log does not say msi" }
+          if (-not (Select-String -Quiet -Path $log -Pattern "service=true")) { throw "the log does not say service" }
+          $uninstall = Start-Process msiexec -Wait -PassThru -ArgumentList "/x containerui.msi /qn /l*v uninstall.log"
+          if ($uninstall.ExitCode -ne 0) { Get-Content uninstall.log -Tail 80; exit $uninstall.ExitCode }
+          if (Get-Service ContainerUI -ErrorAction SilentlyContinue) { throw "the service is still there" }
+          if (-not (Test-Path "$env:ProgramData\ContainerUI\config.yaml")) { throw "the uninstall removed the configuration" }

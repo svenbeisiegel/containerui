@@ -1,0 +1,24 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "containerui",
+      "runtimeExecutable": "bin/containerui.exe",
+      "runtimeArgs": ["-config", "config.yaml"],
+      "port": 8443,
+      "url": "https://localhost:8443"
+    },
+    {
+      "name": "containerui-http",
+      "runtimeExecutable": "bin/containerui.exe",
+      "runtimeArgs": ["-config", "config.http.yaml"],
+      "port": 8080
+    },
+    {
+      "name": "containerui-fake",
+      "runtimeExecutable": "bin/containerui.exe",
+      "runtimeArgs": ["-config", "config.http.yaml", "-driver", "fake"],
+      "port": 8080
+    }
+  ]
+}

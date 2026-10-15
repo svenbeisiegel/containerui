@@ -1,0 +1,14 @@
+{{define "content"}}
+{{$d := .Data.Detail}}
+<div class="page-head">
+  <div>
+    <a class="back" href="/compose">← Compose</a>
+    <h1 class="wrap">{{$d.Project.Name}}</h1>
+  </div>
+</div>
+{{if $d.Err}}<div class="flash error">{{$d.Err}}</div>
+{{else}}
+{{template "compose_jobs" .Data.Jobs}}
+{{template "compose_project" $d}}
+{{end}}
+{{end}}

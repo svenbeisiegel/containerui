@@ -1,0 +1,69 @@
+{{define "content"}}
+{{$f := .Data.Form}}
+<div class="page-head">
+  <h1>Volumes</h1>
+</div>
+<div class="grid2">
+  <section class="panel">
+    <h2>Create a Volume</h2>
+    <form method="post" action="/volumes" class="stack">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      {{if .Data.FormErr}}<div class="flash error" role="alert">{{.Data.FormErr}}</div>{{end}}
+      <div class="fields">
+        <label class="field">
+          <span class="field-label">Name <span class="opt">optional</span></span>
+          <input name="name" value="{{$f.Name}}" placeholder="data" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" autocomplete="off" spellcheck="false">
+          <small class="hint">Generated if empty (anonymous volume).</small>
+        </label>
+        <label class="field">
+          <span class="field-label">Driver</span>
+          <select name="driver">
+            <option value="">Default</option>
+            {{range .Data.Drivers}}<option value="{{.}}" {{if eq . $f.Driver}}selected{{end}}>{{.}}</option>{{end}}
+          </select>
+          {{with .Data.Drivers}}<small class="hint">The runtime's default is <code>{{index . 0}}</code>.</small>{{end}}
+        </label>
+      </div>
+      {{/* Inputs inside a closed <details> are still submitted. */}}
+      <details class="section advanced"{{if $f.AdvancedChanged}} open{{end}}>
+        <summary>
+          <span class="summary-title">Options &amp; Labels</span>
+          <span class="summary-sub">Driver-specific options and metadata</span>
+        </summary>
+        <div class="advanced-body">
+          <div class="fields">
+            <label class="field">
+              <span class="field-label">Driver options <span class="opt flag">--opt</span></span>
+              <textarea name="options" rows="3" placeholder="key=value" spellcheck="false">{{$f.Options}}</textarea>
+              <small class="hint">One per line: <code>key=value</code></small>
+            </label>
+            <label class="field">
+              <span class="field-label">Labels <span class="opt flag">--label</span></span>
+              <textarea name="labels" rows="3" placeholder="app=web" spellcheck="false">{{$f.Labels}}</textarea>
+              <small class="hint">One per line: <code>key=value</code></small>
+            </label>
+          </div>
+        </div>
+      </details>
+      <div><button type="submit" class="primary">Create volume</button></div>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>Prune Volumes</h2>
+    <p class="muted">Removes volumes that no container uses.{{if .Data.PruneAnonymous}} By default only anonymous volumes are removed.{{else}} This runtime always removes named volumes too.{{end}}</p>
+    <form method="post" action="/volumes/prune" hx-post="/volumes/prune" hx-target="#volumes" hx-swap="outerHTML" hx-disabled-elt="find button"
+          hx-confirm="Remove all unused volumes? Their data is lost." class="stack">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      {{if .Data.PruneAnonymous}}
+      <label class="switch">
+        <input type="checkbox" name="all">
+        <span class="track" aria-hidden="true"></span>
+        <span>Also remove unused named volumes <code>--all</code></span>
+      </label>
+      {{end}}
+      <div><button type="submit" class="danger">Prune volumes</button></div>
+    </form>
+  </section>
+</div>
+{{template "volumes_table" .Data.Volumes}}
+{{end}}

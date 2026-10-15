@@ -1,0 +1,28 @@
+{{define "content"}}
+{{$v := .Data}}
+<div class="page-head">
+  <div>
+    <a class="back" href="/volumes">← Volumes</a>
+    <h1 class="wrap">{{$v.Name}}</h1>
+  </div>
+</div>
+{{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
+{{with $v.Volume}}
+<section class="panel">
+  <dl class="props">
+    <dt>Name</dt><dd class="mono">{{.Name}}</dd>
+    <dt>Driver</dt><dd>{{.Driver}}</dd>
+    {{if .Scope}}<dt>Scope</dt><dd>{{.Scope}}</dd>{{end}}
+    {{if .Mountpoint}}<dt>Mountpoint</dt><dd class="mono">{{.Mountpoint}}</dd>{{end}}
+    <dt>Used by</dt><dd>{{template "volume_users" .UsedBy}}</dd>
+  </dl>
+  {{template "volume_actions" (dict "V" . "View" "detail" "CSRF" $v.CSRF)}}
+</section>
+{{end}}
+{{if $v.Inspect}}
+<section class="panel">
+  <h2>Inspect</h2>
+  <pre class="log">{{$v.Inspect}}</pre>
+</section>
+{{end}}
+{{end}}

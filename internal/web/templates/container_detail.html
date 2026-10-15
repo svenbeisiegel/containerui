@@ -1,0 +1,36 @@
+{{define "content"}}
+{{$v := .Data}}
+<div class="page-head">
+  <h1>{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}</h1>
+  <div class="actions">
+    {{if and $v.Container $v.Caps.Logs}}
+    <a class="button" href="/containers/{{$v.Container.ID}}/logs/download" download>Download logs</a>
+    {{if $v.Container.State.IsRunning}}<a class="button" href="/containers/{{$v.Container.ID}}/logs/watch" target="_blank" rel="noopener">Watch logs</a>{{end}}
+    {{end}}
+    {{with $v.Terminal}}{{template "terminal_connect" .}}{{end}}
+    <a class="button" href="/containers">Back to containers</a>
+  </div>
+</div>
+{{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
+{{with $v.Container}}
+<section class="panel">
+  <dl class="props">
+    <dt>ID</dt><dd class="mono">{{.ID}}</dd>
+    <dt>Image</dt><dd class="mono">{{.Image}}</dd>
+    <dt>State</dt><dd>{{template "state" .State}} <span class="muted">{{.Status}}</span></dd>
+    {{if .Command}}<dt>Command</dt><dd class="mono">{{.Command}}</dd>{{end}}
+    {{if .Ports}}<dt>Ports</dt><dd class="mono">{{.Ports}}</dd>{{end}}
+    {{if .Networks}}<dt>Networks</dt><dd>{{if $v.Caps.Networks}}{{range $i, $n := .Networks}}{{if $i}}, {{end}}<a href="/networks/{{$n}}">{{$n}}</a>{{end}}{{else}}{{join .Networks ", "}}{{end}}</dd>{{end}}
+    {{if .Mounts}}<dt>Mounts</dt><dd>{{join .Mounts ", "}}</dd>{{end}}
+    <dt>Created</dt><dd>{{datetime .Created}} ({{ago .Created}})</dd>
+  </dl>
+  {{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF)}}
+</section>
+{{end}}
+{{if $v.Inspect}}
+<section class="panel">
+  <h2>Inspect</h2>
+  <pre class="log">{{$v.Inspect}}</pre>
+</section>
+{{end}}
+{{end}}

@@ -1,0 +1,20 @@
+{{define "content"}}
+{{$d := .Data}}
+<div class="page-head">
+  <div>
+    <h1>System</h1>
+    <p class="muted small">This ContainerUI and how it is installed.</p>
+  </div>
+</div>
+<section class="panel">
+  <h2>ContainerUI</h2>
+  <dl class="props">
+    <dt>Version</dt><dd class="mono">{{or $d.Version "unknown"}}</dd>
+    <dt>Platform</dt><dd class="mono">{{$d.OS}}/{{$d.Arch}} · {{$d.GoVersion}}</dd>
+    <dt>Installed as</dt><dd>{{$d.InstallType}}</dd>
+    {{if $d.Executable}}<dt>Executable</dt><dd class="mono wrap">{{$d.Executable}}</dd>{{end}}
+    <dt>Process</dt><dd class="mono">{{$d.PID}}</dd>
+  </dl>
+  <p class="muted small">{{if eq $d.InstallType "rpm package"}}Update with the rpm of the newer release: <code>dnf upgrade ./containerui-&lt;version&gt;.rpm</code>.{{else if eq $d.InstallType "msi package"}}Update by running the msi of the newer release; the service is restarted and the configuration kept.{{else}}Install the rpm or msi package of a release to update.{{end}}</p>
+</section>
+{{end}}

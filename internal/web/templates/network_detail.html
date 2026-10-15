@@ -1,0 +1,92 @@
+{{define "content"}}
+{{$v := .Data}}
+<div class="page-head">
+  <div>
+    <a class="back" href="/networks">← Networks</a>
+    <h1 class="wrap">{{$v.Name}}</h1>
+  </div>
+</div>
+{{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
+{{with $v.Network}}
+<section class="panel">
+  <dl class="props">
+    <dt>Name</dt><dd class="mono">{{.Name}}</dd>
+    <dt>ID</dt><dd class="mono">{{.ID}}</dd>
+    <dt>Driver</dt><dd>{{.Driver}}</dd>
+    {{if .Scope}}<dt>Scope</dt><dd>{{.Scope}}</dd>{{end}}
+    <dt>Internal</dt><dd>{{if .Internal}}yes{{else}}no{{end}}</dd>
+    <dt>IPv6</dt><dd>{{if .IPv6}}yes{{else}}no{{end}}</dd>
+    {{range $v.Info.Subnets}}
+    <dt>Subnet</dt><dd class="mono">{{.Subnet}}{{with .Gateway}} <span class="muted">gateway</span> {{.}}{{end}}{{with .IPRange}} <span class="muted">range</span> {{.}}{{end}}</dd>
+    {{end}}
+    {{if not .Created.IsZero}}<dt>Created</dt><dd>{{datetime .Created}} ({{ago .Created}})</dd>{{end}}
+    {{with $v.Info.Labels}}<dt>Labels</dt><dd>{{template "kv_list" .}}</dd>{{end}}
+    {{with $v.Info.Options}}<dt>Options</dt><dd>{{template "kv_list" .}}</dd>{{end}}
+    {{if .Predefined}}<dt>Type</dt><dd><span class="badge info">built-in</span> <span class="muted small">created by the runtime; cannot be deleted</span></dd>{{end}}
+  </dl>
+  {{if not .Predefined}}{{template "network_actions" (dict "N" . "View" "detail" "CSRF" $v.CSRF)}}{{end}}
+</section>
+{{end}}
+
+{{if or $v.Network $v.Info.Containers}}
+<section class="panel">
+  <h2>Connected Containers</h2>
+  {{if not $v.Info.Containers}}<p class="empty">No containers are connected.</p>
+  {{else}}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Container</th><th>IPv4</th><th>Aliases</th><th class="right">Actions</th></tr></thead>
+    <tbody>
+    {{range $v.Info.Containers}}
+      <tr>
+        <td><a href="/containers/{{if .Name}}{{.Name}}{{else}}{{.ID}}{{end}}">{{if .Name}}{{.Name}}{{else}}{{shortID .ID}}{{end}}</a><div class="id">{{shortID .ID}}</div></td>
+        <td class="mono small">{{with .IPv4}}{{.}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="small">{{with .Aliases}}{{join . ", "}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="right">
+          <div class="actions">
+            <form method="post" action="/networks/{{$v.Name}}/disconnect" hx-post="/networks/{{$v.Name}}/disconnect" hx-swap="none" hx-disabled-elt="find button"
+                  hx-confirm="Disconnect {{if .Name}}{{.Name}}{{else}}{{shortID .ID}}{{end}} from network {{$v.Name}}?">
+              <input type="hidden" name="csrf" value="{{$v.CSRF}}">
+              <input type="hidden" name="container" value="{{if .Name}}{{.Name}}{{else}}{{.ID}}{{end}}">
+              <button type="submit" class="danger">Disconnect</button>
+            </form>
+          </div>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{end}}
+
+  <h3 class="subhead">Connect a Container</h3>
+  {{if $v.Available}}
+  <form method="post" action="/networks/{{$v.Name}}/connect" hx-post="/networks/{{$v.Name}}/connect" hx-swap="none" hx-disabled-elt="find button" class="connect-form">
+    <input type="hidden" name="csrf" value="{{$v.CSRF}}">
+    <label class="field">
+      <span class="field-label">Container <span class="req" aria-hidden="true">*</span></span>
+      <select name="container" required>
+        <option value="">Choose…</option>
+        {{range $v.Available}}<option value="{{.Name}}">{{.Name}} ({{.State}})</option>{{end}}
+      </select>
+    </label>
+    <label class="field">
+      <span class="field-label">Aliases <span class="opt flag">--alias</span></span>
+      <input name="aliases" placeholder="db, db.internal" autocomplete="off" spellcheck="false">
+    </label>
+    <label class="field">
+      <span class="field-label">IPv4 address <span class="opt flag">--ip</span></span>
+      <input name="ip" placeholder="172.30.0.10" class="mono-input" autocomplete="off" spellcheck="false">
+    </label>
+    <div><button type="submit" class="primary">Connect</button></div>
+  </form>
+  <p class="hint">Aliases are extra host names of the container in this network; the IPv4 address must lie in the network's subnet.</p>
+  {{else}}<p class="empty">Every container is already connected to this network.</p>{{end}}
+</section>
+{{end}}
+
+{{if $v.Inspect}}
+<section class="panel">
+  <h2>Inspect</h2>
+  <pre class="log">{{$v.Inspect}}</pre>
+</section>
+{{end}}
+{{end}}

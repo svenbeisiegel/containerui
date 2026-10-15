@@ -1,0 +1,11 @@
+{{define "content"}}
+<div class="page-head">
+  <div>
+    <h1>Compose</h1>
+    <p class="muted small">Projects deployed with {{.Caps.ComposeVersion}}, including those started outside ContainerUI.</p>
+  </div>
+  <div class="actions"><a class="button primary" href="/compose/new">Create compose</a></div>
+</div>
+{{template "compose_jobs" .Data.Jobs}}
+{{template "compose_table" .Data.List}}
+{{end}}

@@ -1,0 +1,36 @@
+{{define "logs_watch"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Logs · {{.C.Name}} · ContainerUI</title>
+  {{if .Favicon}}<link rel="icon" href="{{.Favicon}}" type="{{.FaviconType}}">{{else}}<link rel="icon" href="data:,">{{end}}
+  <script src="/static/theme.js"></script>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/logs.js" defer></script>
+</head>
+<body class="logwatch">
+  <header class="logwatch-head">
+    <div class="logwatch-title">
+      <strong>{{.C.Name}}</strong>
+      <span class="mono muted small">{{shortID .C.ID}}</span>
+      {{template "state" .C.State}}
+    </div>
+    <dl class="logwatch-meta">
+      <div><dt>Image</dt><dd class="mono">{{.C.Image}}</dd></div>
+      {{if .C.Status}}<div><dt>Status</dt><dd>{{.C.Status}}</dd></div>{{end}}
+      {{if .C.Ports}}<div><dt>Ports</dt><dd class="mono">{{.C.Ports}}</dd></div>{{end}}
+      <div><dt>Watching since</dt><dd>{{datetime .Opened}}</dd></div>
+    </dl>
+    <div class="logwatch-controls">
+      <span class="badge" data-log-status>Connecting…</span>
+      <span class="muted"><span data-log-count>0</span> lines</span>
+      <label><input type="checkbox" data-log-autoscroll checked> Auto-scroll</label>
+      <button type="button" data-log-reconnect hidden>Reconnect</button>
+    </div>
+    <p class="logwatch-note" data-log-note hidden></p>
+  </header>
+  <pre class="logwatch-out" id="log" data-stream="{{.StreamURL}}"></pre>
+</body>
+</html>
+{{end}}

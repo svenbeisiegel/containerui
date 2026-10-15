@@ -1,0 +1,22 @@
+[Unit]
+Description=ContainerUI web interface for Docker and Podman
+Documentation=https://github.com/svenbeisiegel/containerui
+After=network-online.target docker.service podman.socket
+Wants=network-online.target
+
+[Service]
+Type=simple
+# root, so that PAM can check the password of every account and the
+# runtime's socket is reachable; who may sign in is decided by who may use
+# that socket (root, or e.g. a member of the docker group).
+User=root
+ExecStart=/usr/bin/containerui serve -config /etc/containerui/config.yaml
+Restart=on-failure
+RestartSec=2
+
+# Kept minimal on purpose: the container CLIs run as children of this
+# service and need the host as it is (podman as root, compose projects).
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

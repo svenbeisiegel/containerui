@@ -1,0 +1,45 @@
+{{define "terminal_page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Terminal · {{if .C}}{{.C.Name}}{{else}}{{.ID}}{{end}} · ContainerUI</title>
+  {{if .Favicon}}<link rel="icon" href="{{.Favicon}}" type="{{.FaviconType}}">{{else}}<link rel="icon" href="data:,">{{end}}
+  <script src="/static/theme.js"></script>
+  <link rel="stylesheet" href="/static/app.css">
+  {{if .WSURL}}
+  <link rel="stylesheet" href="/static/vendor/xterm/xterm.css">
+  <script src="/static/vendor/xterm/xterm.js" defer></script>
+  <script src="/static/vendor/xterm/addon-fit.js" defer></script>
+  <script src="/static/terminal.js" defer></script>
+  {{end}}
+</head>
+<body class="logwatch termwatch">
+  <header class="logwatch-head">
+    <div class="logwatch-title">
+      {{with .C}}
+      <strong>{{.Name}}</strong>
+      <span class="mono muted small">{{shortID .ID}}</span>
+      {{template "state" .State}}
+      {{else}}<strong>{{.ID}}</strong>{{end}}
+    </div>
+    <dl class="logwatch-meta">
+      {{with .C}}<div><dt>Image</dt><dd class="mono">{{.Image}}</dd></div>{{end}}
+      {{if .Shell}}<div><dt>Shell</dt><dd class="mono">{{.Shell}}</dd></div>{{end}}
+      <div><dt>Opened</dt><dd>{{datetime .Opened}}</dd></div>
+    </dl>
+    {{if .WSURL}}
+    <div class="logwatch-controls">
+      <span class="badge" data-terminal-status>Connecting…</span>
+      <button type="button" data-terminal-disconnect hidden>Disconnect</button>
+      <button type="button" class="primary" data-terminal-connect hidden>Reconnect</button>
+    </div>
+    <p class="logwatch-note" data-terminal-note hidden></p>
+    {{else}}
+    <p class="logwatch-note error-text">{{.Err}}</p>
+    {{end}}
+  </header>
+  {{if .WSURL}}<div class="terminal-box" data-terminal data-url="{{.WSURL}}" data-csrf="{{.CSRF}}"></div>{{end}}
+</body>
+</html>
+{{end}}

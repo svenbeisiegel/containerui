@@ -1,0 +1,133 @@
+name: Release
+
+# Manually started only: a release is a deliberate act.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, e.g. 1.0.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  rpm:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # The released version is committed, so the code matches the release.
+      - name: bump VERSION
+        run: |
+          echo -n "${{ inputs.version }}" > VERSION
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- VERSION; then
+            echo "VERSION is already ${{ inputs.version }}"
+          else
+            git add VERSION
+            git commit -m "Release ${{ inputs.version }}"
+            git push
+          fi
+
+      - name: vet and test
+        run: make lint race
+
+      # the rpm packages into dist, and what the msi job builds the Windows
+      # installers from into build/pkg
+      - name: make packages
+        run: make packages VERSION=${{ inputs.version }}
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: rpm
+          path: dist/*.rpm
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: msi-inputs
+          path: |
+            build/pkg/containerui_windows_*.exe
+            build/pkg/config.windows.yaml
+          if-no-files-found: error
+
+  # The WiX Toolset builds an msi on Windows alone. Version 5 is the last one
+  # under the MS-RL without the Open Source Maintenance Fee of 6 and later; it
+  # is built for .NET 6, hence the roll forward to the .NET the runner has.
+  msi:
+    needs: rpm
+    runs-on: windows-latest
+    env:
+      DOTNET_ROLL_FORWARD: Major
+      WIX_VERSION: 5.0.2
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: msi-inputs
+          path: build/pkg
+
+      - name: install the WiX Toolset
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version $env:WIX_VERSION
+          wix extension add --global WixToolset.Util.wixext/$env:WIX_VERSION
+          wix extension add --global WixToolset.Firewall.wixext/$env:WIX_VERSION
+          wix extension add --global WixToolset.UI.wixext/$env:WIX_VERSION
+
+      # Code signing goes here once there is a certificate (e.g. Azure Trusted
+      # Signing): sign build/pkg/containerui_windows_*.exe before the msi is
+      # built, and the .msi files after.
+
+      - name: build the msi files
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          foreach ($pair in @(@("x64", "amd64"), @("arm64", "arm64"))) {
+            $arch, $goarch = $pair
+            wix build packaging/windows/containerui.wxs -arch $arch `
+              -ext WixToolset.Util.wixext -ext WixToolset.Firewall.wixext -ext WixToolset.UI.wixext `
+              -d Version=${{ inputs.version }} `
+              -d Bin="$PWD\build\pkg\containerui_windows_$goarch.exe" `
+              -d Config="$PWD\build\pkg\config.windows.yaml" `
+              -o dist/containerui-${{ inputs.version }}-$arch.msi
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: msi
+          path: dist/*.msi
+          if-no-files-found: error
+
+  publish:
+    needs: [rpm, msi]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: rpm
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: msi
+          path: dist
+
+      - name: checksums
+        run: cd dist && sha256sum * > SHA256SUMS
+
+      - name: publish GitHub release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          generate_release_notes: true
+          files: dist/*

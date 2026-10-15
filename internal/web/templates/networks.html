@@ -1,0 +1,93 @@
+{{define "content"}}
+{{$f := .Data.Form}}
+<div class="page-head">
+  <h1>Networks</h1>
+</div>
+<div class="grid2">
+  <section class="panel">
+    <h2>Create a Network</h2>
+    <form method="post" action="/networks" class="stack">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      {{if .Data.FormErr}}<div class="flash error" role="alert">{{.Data.FormErr}}</div>{{end}}
+      <div class="fields">
+        <label class="field">
+          <span class="field-label">Name <span class="req" aria-hidden="true">*</span></span>
+          <input name="name" value="{{$f.Name}}" placeholder="backend" required pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" autocomplete="off" spellcheck="false">
+          <small class="hint">Letters, digits, <code>_</code>, <code>.</code> and <code>-</code>.</small>
+        </label>
+        <label class="field">
+          <span class="field-label">Driver</span>
+          <select name="driver">
+            <option value="">Default</option>
+            {{range .Data.Drivers}}<option value="{{.}}" {{if eq . $f.Driver}}selected{{end}}>{{.}}</option>{{end}}
+          </select>
+          {{with .Data.Drivers}}<small class="hint">The runtime's default is <code>{{index . 0}}</code>.</small>{{end}}
+        </label>
+      </div>
+      {{/* Inputs inside a closed <details> are still submitted. */}}
+      <details class="section advanced"{{if $f.AdvancedChanged}} open{{end}}>
+        <summary>
+          <span class="summary-title">Addressing, Options &amp; Labels</span>
+          <span class="summary-sub">Subnet, gateway, isolation and metadata</span>
+        </summary>
+        <div class="advanced-body">
+          <div class="fields">
+            <label class="field">
+              <span class="field-label">Subnet <span class="opt flag">--subnet</span></span>
+              <input name="subnet" value="{{$f.Subnet}}" placeholder="172.30.0.0/16" class="mono-input" autocomplete="off" spellcheck="false">
+              <small class="hint">CIDR notation. Assigned automatically if empty.</small>
+            </label>
+            <label class="field">
+              <span class="field-label">Gateway <span class="opt flag">--gateway</span></span>
+              <input name="gateway" value="{{$f.Gateway}}" placeholder="172.30.0.1" class="mono-input" autocomplete="off" spellcheck="false">
+              <small class="hint">An address inside the subnet.</small>
+            </label>
+            <label class="field span-2">
+              <span class="field-label">IP range <span class="opt flag">--ip-range</span></span>
+              <input name="ip_range" value="{{$f.IPRange}}" placeholder="172.30.5.0/24" class="mono-input" autocomplete="off" spellcheck="false">
+              <small class="hint">Part of the subnet that container addresses are taken from.</small>
+            </label>
+          </div>
+          <div class="switches">
+            <label class="switch">
+              <input type="checkbox" name="internal" {{if $f.Internal}}checked{{end}}>
+              <span class="track" aria-hidden="true"></span>
+              <span>Internal (no external access) <code>--internal</code></span>
+            </label>
+            {{if .Data.IPv6}}
+            <label class="switch">
+              <input type="checkbox" name="ipv6" {{if $f.IPv6}}checked{{end}}>
+              <span class="track" aria-hidden="true"></span>
+              <span>Enable IPv6 <code>--ipv6</code></span>
+            </label>
+            {{end}}
+          </div>
+          <div class="fields">
+            <label class="field">
+              <span class="field-label">Driver options <span class="opt flag">--opt</span></span>
+              <textarea name="options" rows="3" placeholder="com.docker.network.driver.mtu=1400" spellcheck="false">{{$f.Options}}</textarea>
+              <small class="hint">One per line: <code>key=value</code></small>
+            </label>
+            <label class="field">
+              <span class="field-label">Labels <span class="opt flag">--label</span></span>
+              <textarea name="labels" rows="3" placeholder="team=platform" spellcheck="false">{{$f.Labels}}</textarea>
+              <small class="hint">One per line: <code>key=value</code></small>
+            </label>
+          </div>
+        </div>
+      </details>
+      <div><button type="submit" class="primary">Create network</button></div>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>Prune Networks</h2>
+    <p class="muted">Removes custom networks that no container is connected to. The runtime's own networks (<code>bridge</code>, <code>host</code>, <code>none</code>) are kept.</p>
+    <form method="post" action="/networks/prune" hx-post="/networks/prune" hx-target="#networks" hx-swap="outerHTML" hx-disabled-elt="find button"
+          hx-confirm="Remove all unused networks?" class="stack">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <div><button type="submit" class="danger">Prune networks</button></div>
+    </form>
+  </section>
+</div>
+{{template "networks_table" .Data.Networks}}
+{{end}}

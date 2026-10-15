@@ -1,0 +1,16 @@
+{{define "content"}}
+<div class="login" data-keep-warm>
+  <h1>Container<span class="accent">UI</span></h1>
+  <p class="subtitle">Sign in to manage your containers</p>
+  {{template "flash" .Flash}}
+  <form method="post" action="/login" class="stack">
+    <label class="field"><span class="field-label">Username</span>
+      <input name="username" autocomplete="username" required autofocus value="{{.Data}}">
+    </label>
+    <label class="field"><span class="field-label">Password</span>
+      <input name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button type="submit" class="primary block">Sign in</button>
+  </form>
+</div>
+{{end}}

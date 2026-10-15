@@ -1,0 +1,516 @@
+{{define "flash"}}{{if .}}<div class="flash {{if .Error}}error{{else}}ok{{end}}" role="status">{{.Msg}}</div>{{end}}{{end}}
+
+{{define "state"}}<span class="badge {{stateClass .}}">{{.}}</span>{{end}}
+
+{{/* The icon shown is the theme a click switches to (see app.css/app.js). */}}
+{{define "theme_toggle"}}
+<button type="button" class="icon-button theme-toggle" data-theme-toggle aria-label="Toggle light and dark mode" title="Toggle light and dark mode">
+  <svg class="icon-moon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  <svg class="icon-sun" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4.5"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></g></svg>
+</button>
+{{end}}
+
+{{/* ---------- dashboard ---------- */}}
+{{define "dashboard_body"}}
+<div id="dashboard" hx-get="/partials/dashboard" hx-trigger="every 5s" hx-swap="outerHTML">
+  <section class="cards">
+    <a class="card" href="/containers">
+      <span class="num">{{len .Running}}</span><span class="label">running containers</span>
+      <span class="sub">{{len .Containers}} total</span>
+    </a>
+    <a class="card" href="/images">
+      <span class="num">{{len .Images}}</span><span class="label">images</span>
+    </a>
+    {{if .Caps.Volumes}}<a class="card" href="/volumes"><span class="num">{{len .Volumes}}</span><span class="label">volumes</span></a>{{end}}
+    {{if .Caps.Networks}}<a class="card" href="/networks"><span class="num">{{len .Networks}}</span><span class="label">networks</span></a>{{end}}
+    {{if .Caps.Compose}}<a class="card" href="/compose"><span class="num">{{len .Projects}}</span><span class="label">compose projects</span></a>{{end}}
+  </section>
+
+  <section class="panel">
+    <h2>Running Containers</h2>
+    {{if .ContErr}}<div class="flash error">{{.ContErr}}</div>
+    {{else if not .Running}}<p class="empty">No containers are running. <a href="/containers/new">Create one</a>.</p>
+    {{else}}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Ports</th><th>Networks</th></tr></thead>
+      <tbody>
+      {{range .Running}}
+        <tr>
+          <td><a href="/containers/{{.ID}}">{{.Name}}</a><div class="id">{{shortID .ID}}</div></td>
+          <td class="mono">{{.Image}}</td>
+          <td>{{template "state" .State}} <span class="muted">{{.Status}}</span></td>
+          <td class="mono">{{.Ports}}</td>
+          <td>{{join .Networks ", "}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    {{end}}
+  </section>
+
+  <section class="panel">
+    <h2>Images</h2>
+    {{if .ImagesErr}}<div class="flash error">{{.ImagesErr}}</div>
+    {{else if not .Images}}<p class="empty">No images. <a href="/images">Pull one</a>.</p>
+    {{else}}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Repository</th><th>Tag</th><th>ID</th><th>Size</th><th>Created</th></tr></thead>
+      <tbody>
+      {{range .Images}}
+        <tr><td class="mono">{{.Repository}}</td><td class="mono">{{.Tag}}</td><td class="id">{{shortID .ID}}</td><td>{{.Size}}</td><td title="{{datetime .Created}}">{{ago .Created}}</td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    {{end}}
+  </section>
+
+  <div class="grid2">
+  {{if .Caps.Volumes}}
+  <section class="panel">
+    <h2>Volumes</h2>
+    {{if .VolumesErr}}<div class="flash error">{{.VolumesErr}}</div>
+    {{else if not .Volumes}}<p class="empty">No volumes.</p>
+    {{else}}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Driver</th><th>Mountpoint</th></tr></thead>
+      <tbody>{{range .Volumes}}<tr><td><a href="/volumes/{{.Name}}">{{.Name}}</a></td><td>{{.Driver}}</td><td class="mono small">{{.Mountpoint}}</td></tr>{{end}}</tbody>
+    </table></div>
+    {{end}}
+  </section>
+  {{end}}
+  {{if .Caps.Networks}}
+  <section class="panel">
+    <h2>Networks</h2>
+    {{if .NetworksErr}}<div class="flash error">{{.NetworksErr}}</div>
+    {{else if not .Networks}}<p class="empty">No networks.</p>
+    {{else}}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>ID</th></tr></thead>
+      <tbody>{{range .Networks}}<tr><td><a href="/networks/{{.Name}}">{{.Name}}</a></td><td>{{.Driver}}</td><td>{{.Scope}}</td><td class="id">{{shortID .ID}}</td></tr>{{end}}</tbody>
+    </table></div>
+    {{end}}
+  </section>
+  {{end}}
+  </div>
+  <p class="footnote">{{if .InfoErr}}<span class="error-text">Runtime unavailable: {{.InfoErr}}</span>{{else}}{{.Info.Driver}} {{.Info.Version}}{{end}} · updated {{.Updated.Format "15:04:05"}}</p>
+</div>
+{{end}}
+
+{{/* ---------- containers ---------- */}}
+{{/* container_actions expects dict: C (container), Caps, View ("list"|"detail"), CSRF */}}
+{{define "container_actions"}}
+<div class="actions">
+  {{if .C.State.IsRunning}}
+    {{template "container_action" (dict "P" . "Act" "stop" "Label" "Stop" "Class" "" "Confirm" "" "Force" false)}}
+    {{if .Caps.Restart}}{{template "container_action" (dict "P" . "Act" "restart" "Label" "Restart" "Class" "" "Confirm" "" "Force" false)}}{{end}}
+    {{template "container_action" (dict "P" . "Act" "delete" "Label" "Force delete" "Class" "danger" "Confirm" (printf "Force delete running container %s? It will be killed and removed." .C.Name) "Force" true)}}
+  {{else}}
+    {{template "container_action" (dict "P" . "Act" "start" "Label" "Start" "Class" "primary" "Confirm" "" "Force" false)}}
+    {{template "container_action" (dict "P" . "Act" "delete" "Label" "Delete" "Class" "danger" "Confirm" (printf "Delete container %s?" .C.Name) "Force" false)}}
+  {{end}}
+</div>
+{{end}}
+
+{{define "container_action"}}
+<form method="post" action="/containers/{{.P.C.ID}}/{{.Act}}" hx-post="/containers/{{.P.C.ID}}/{{.Act}}"
+      {{if eq .P.View "list"}}hx-target="#containers" hx-swap="outerHTML"{{else}}hx-swap="none"{{end}}
+      {{if .Confirm}}hx-confirm="{{.Confirm}}"{{end}} hx-disabled-elt="find button">
+  <input type="hidden" name="csrf" value="{{.P.CSRF}}">
+  <input type="hidden" name="name" value="{{.P.C.Name}}">
+  <input type="hidden" name="view" value="{{.P.View}}">
+  {{if .Force}}<input type="hidden" name="force" value="true">{{end}}
+  {{with .P.Return}}<input type="hidden" name="return" value="{{.}}">{{end}}
+  <button type="submit" {{if .Class}}class="{{.Class}}"{{end}}>{{.Label}}</button>
+</form>
+{{end}}
+
+{{define "containers_table"}}
+<section id="containers" class="panel" hx-get="/partials/containers" hx-trigger="every 5s" hx-swap="outerHTML">
+  {{template "flash" .Flash}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>
+  {{else if not .Containers}}<p class="empty">No containers yet. <a href="/containers/new">Create one</a>.</p>
+  {{else}}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Ports</th><th>Created</th><th class="right">Actions</th></tr></thead>
+    <tbody>
+    {{$caps := .Caps}}{{$csrf := .CSRF}}
+    {{range .Containers}}
+      <tr>
+        <td><a href="/containers/{{.ID}}">{{.Name}}</a><div class="id">{{shortID .ID}}</div>
+          {{with index .Labels "com.docker.compose.project"}}{{if $caps.Compose}}<a class="tag" href="/compose/{{.}}" title="Compose project">{{.}}</a>{{else}}<span class="tag" title="Compose project">{{.}}</span>{{end}}{{end}}</td>
+        <td class="mono">{{.Image}}</td>
+        <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
+        <td class="mono small">{{.Ports}}</td>
+        <td title="{{datetime .Created}}">{{ago .Created}}</td>
+        <td class="right">{{template "container_actions" (dict "C" . "Caps" $caps "View" "list" "CSRF" $csrf)}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{end}}
+</section>
+{{end}}
+
+{{/* ---------- images ---------- */}}
+{{define "images_table"}}
+<section id="images" class="panel" hx-get="/partials/images" hx-trigger="images-changed from:body" hx-swap="outerHTML">
+  <div class="panel-head">
+    <h2>Local Images</h2>
+    <button type="button" class="link" hx-get="/partials/images" hx-target="#images" hx-swap="outerHTML">Refresh</button>
+  </div>
+  {{template "flash" .Flash}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>
+  {{else if not .Images}}<p class="empty">No images. Pull one above.</p>
+  {{else}}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Repository</th><th>Tag</th><th>ID</th><th>Size</th><th>Created</th><th class="right">Actions</th></tr></thead>
+    <tbody>
+    {{$caps := .Caps}}{{$csrf := .CSRF}}
+    {{range .Images}}
+      <tr>
+        <td class="mono">{{.Repository}}</td>
+        <td class="mono">{{.Tag}}</td>
+        <td class="id" title="{{.ID}}">{{shortID .ID}}</td>
+        <td>{{.Size}}</td>
+        <td title="{{datetime .Created}}">{{ago .Created}}</td>
+        <td class="right">
+          <div class="actions">
+            <a class="button" href="/containers/new?image={{.Ref}}">Run…</a>
+            {{if $caps.Tag}}
+            <details class="inline">
+              <summary class="button">Tag…</summary>
+              <form class="tag-form" method="post" action="/images/tag" hx-post="/images/tag" hx-target="#images" hx-swap="outerHTML">
+                <input type="hidden" name="csrf" value="{{$csrf}}">
+                <input type="hidden" name="source" value="{{.Ref}}">
+                <input name="target" placeholder="repository:tag" required aria-label="New tag for {{.Ref}}">
+                <button type="submit" class="primary">Tag</button>
+              </form>
+            </details>
+            {{end}}
+            <form method="post" action="/images/delete" hx-post="/images/delete" hx-target="#images" hx-swap="outerHTML" hx-disabled-elt="find button"
+                  hx-confirm="{{if .Containers}}Force delete {{.Ref}}? It is used by {{.Containers}} container(s).{{else}}Delete image {{.Ref}}?{{end}}">
+              <input type="hidden" name="csrf" value="{{$csrf}}">
+              <input type="hidden" name="ref" value="{{.Ref}}">
+              {{if .Containers}}<input type="hidden" name="force" value="true"><button type="submit" class="danger">Force delete</button>
+              {{else}}<button type="submit" class="danger">Delete</button>{{end}}
+            </form>
+          </div>
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{end}}
+</section>
+{{end}}
+
+{{define "pulls_panel"}}
+<div id="pulls" {{if .AnyRunning}}hx-get="/partials/pulls" hx-trigger="every 1s" hx-swap="outerHTML"{{end}}>
+  {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
+  {{range .Jobs}}
+  <details class="job {{.Status}}" {{if not .Done}}open{{end}}>
+    <summary>
+      <span class="badge {{if eq .Status "running"}}warn{{else if eq .Status "succeeded"}}ok{{else}}bad{{end}}">{{.Status}}</span>
+      <span class="mono">{{.Target}}</span>
+      <span class="muted small">started {{ago .Started}} by {{.Owner}}</span>
+    </summary>
+    {{if .Error}}<div class="flash error">{{.Error}}</div>{{end}}
+    {{if .Lines}}<pre class="log">{{range .Lines}}{{.}}
+{{end}}</pre>{{end}}
+  </details>
+  {{end}}
+</div>
+{{end}}
+
+{{/* ---------- volumes ---------- */}}
+{{define "volume_users"}}{{range $i, $c := .}}{{if $i}}, {{end}}<a href="/containers/{{$c}}">{{$c}}</a>{{else}}<span class="muted">–</span>{{end}}{{end}}
+
+{{/* volume_actions expects dict: V (volumeRow), View ("list"|"detail"), CSRF.
+     Force only skips the error for a missing volume; one in use is kept. */}}
+{{define "volume_actions"}}
+<div class="actions">
+  {{template "volume_delete" (dict "P" . "Label" "Delete" "Force" false "Confirm" (printf "Delete volume %s? Its data is lost." .V.Name))}}
+  {{template "volume_delete" (dict "P" . "Label" "Force delete" "Force" true "Confirm" (printf "Force delete volume %s? Its data is lost." .V.Name))}}
+</div>
+{{end}}
+
+{{define "volume_delete"}}
+<form method="post" action="/volumes/delete" hx-post="/volumes/delete"
+      {{if eq .P.View "list"}}hx-target="#volumes" hx-swap="outerHTML"{{else}}hx-swap="none"{{end}}
+      hx-confirm="{{.Confirm}}" hx-disabled-elt="find button">
+  <input type="hidden" name="csrf" value="{{.P.CSRF}}">
+  <input type="hidden" name="name" value="{{.P.V.Name}}">
+  <input type="hidden" name="view" value="{{.P.View}}">
+  {{if .Force}}<input type="hidden" name="force" value="true">{{end}}
+  <button type="submit" class="danger">{{.Label}}</button>
+</form>
+{{end}}
+
+{{define "volumes_table"}}
+<section id="volumes" class="panel">
+  <div class="panel-head">
+    <h2>Volumes</h2>
+    <button type="button" class="link" hx-get="/partials/volumes" hx-target="#volumes" hx-swap="outerHTML">Refresh</button>
+  </div>
+  {{template "flash" .Flash}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>
+  {{else if not .Volumes}}<p class="empty">No volumes. Create one above.</p>
+  {{else}}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Used by</th><th>Mountpoint</th><th class="right">Actions</th></tr></thead>
+    <tbody>
+    {{$csrf := .CSRF}}
+    {{range .Volumes}}
+      <tr>
+        <td class="mono"><a href="/volumes/{{.Name}}" title="{{.Name}}">{{if gt (len .Name) 40}}{{shortID .Name}}…{{else}}{{.Name}}{{end}}</a></td>
+        <td>{{.Driver}}</td>
+        <td>{{.Scope}}</td>
+        <td>{{template "volume_users" .UsedBy}}</td>
+        <td class="mono small">{{.Mountpoint}}</td>
+        <td class="right">{{template "volume_actions" (dict "V" . "View" "list" "CSRF" $csrf)}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{end}}
+</section>
+{{end}}
+
+{{/* ---------- compose ---------- */}}
+{{define "compose_status"}}<span class="badge {{if eq .Status "running"}}ok{{else if eq .Status "partial"}}warn{{else if eq .Status "stopped"}}muted{{else}}info{{end}}">{{.Status}}</span>{{if .Deployed}} <span class="muted small">{{.Running}}/{{.Total}} running</span>{{end}}{{end}}
+
+{{/* compose_actions expects dict: P (compose.Project), View ("list"|"detail"), CSRF */}}
+{{define "compose_actions"}}
+<div class="actions">
+  {{if .P.Deployed}}
+    {{if lt .P.Running .P.Total}}{{template "compose_action" (dict "A" . "Act" "start" "Label" "Start" "Class" "primary" "Confirm" "")}}{{end}}
+    {{if gt .P.Running 0}}
+      {{template "compose_action" (dict "A" . "Act" "stop" "Label" "Stop" "Class" "" "Confirm" "")}}
+      {{template "compose_action" (dict "A" . "Act" "restart" "Label" "Restart" "Class" "" "Confirm" "")}}
+    {{end}}
+    {{if .P.Stored}}{{template "compose_action" (dict "A" . "Act" "pull" "Label" "Pull" "Class" "" "Confirm" "")}}{{end}}
+    <a class="button" href="/compose/{{.P.Name}}/edit">Edit</a>
+    {{if eq .View "list"}}{{template "compose_action" (dict "A" . "Act" "down" "Label" "Down" "Class" "danger" "Confirm" (printf "Take project %s down? Its containers and networks are removed; volumes are kept." .P.Name))}}{{end}}
+  {{else}}
+    {{if .P.Stored}}{{template "compose_action" (dict "A" . "Act" "up" "Label" "Deploy" "Class" "primary" "Confirm" "")}}{{end}}
+    <a class="button" href="/compose/{{.P.Name}}/edit">Edit</a>
+    {{if .P.Stored}}{{template "compose_action" (dict "A" . "Act" "delete" "Label" "Delete" "Class" "danger" "Confirm" (printf "Delete the stored compose file of project %s?" .P.Name))}}{{end}}
+  {{end}}
+</div>
+{{end}}
+
+{{define "compose_action"}}
+<form method="post" action="/compose/{{.A.P.Name}}/{{.Act}}" hx-post="/compose/{{.A.P.Name}}/{{.Act}}"
+      {{if eq .A.View "list"}}hx-target="#compose" hx-swap="outerHTML"{{else}}hx-swap="none"{{end}}
+      {{if .Confirm}}hx-confirm="{{.Confirm}}"{{end}} hx-disabled-elt="find button">
+  <input type="hidden" name="csrf" value="{{.A.CSRF}}">
+  <input type="hidden" name="view" value="{{.A.View}}">
+  <button type="submit" {{if .Class}}class="{{.Class}}"{{end}}>{{.Label}}</button>
+</form>
+{{end}}
+
+{{define "compose_table"}}
+<section id="compose" class="panel" hx-get="/partials/compose" hx-trigger="every 5s, compose-changed from:body" hx-swap="outerHTML">
+  {{template "flash" .Flash}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>
+  {{else if not .Projects}}<p class="empty">No compose projects yet. <a href="/compose/new">Create one</a>.</p>
+  {{else}}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Project</th><th>Status</th><th>Services</th><th>Compose file</th><th class="right">Actions</th></tr></thead>
+    <tbody>
+    {{$csrf := .CSRF}}
+    {{range .Projects}}
+      <tr>
+        <td><a href="/compose/{{.Name}}">{{.Name}}</a></td>
+        <td>{{template "compose_status" .}}</td>
+        <td>{{with .ServiceNames}}{{join . ", "}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="small">{{if .Stored}}<span class="badge info">stored</span>{{else if .ConfigFiles}}<span class="mono" title="Deployed outside ContainerUI">{{join .ConfigFiles ", "}}</span>{{else}}<span class="muted">unknown</span>{{end}}</td>
+        <td class="right">{{template "compose_actions" (dict "P" . "View" "list" "CSRF" $csrf)}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{end}}
+</section>
+{{end}}
+
+{{/* compose_jobs: progress of compose operations. It polls while one runs
+     and starts polling when an action starts one. */}}
+{{define "compose_jobs"}}
+<div id="compose-jobs" hx-get="/partials/compose/jobs{{with .Project}}?project={{.}}{{end}}" hx-swap="outerHTML"
+     hx-trigger="{{if .AnyRunning}}every 1s, {{end}}compose-job-started from:body">
+  {{range .Jobs}}
+  <details class="job {{.Status}}" {{if not .Done}}open{{end}}>
+    <summary>
+      <span class="badge {{if eq .Status "running"}}warn{{else if eq .Status "succeeded"}}ok{{else}}bad{{end}}">{{.Status}}</span>
+      <span class="mono">{{.Target}}</span>
+      <span class="muted small">started {{ago .Started}} by {{.Owner}}</span>
+    </summary>
+    {{if .Error}}<div class="flash error">{{.Error}}</div>{{end}}
+    {{if .Lines}}<pre class="log">{{range .Lines}}{{.}}
+{{end}}</pre>{{end}}
+  </details>
+  {{end}}
+</div>
+{{end}}
+
+{{define "compose_problems"}}
+<div id="compose-problems" class="problems" aria-live="polite">
+  {{if .Empty}}<p class="muted small">Paste a compose file, open one or drop it onto the editor.</p>
+  {{else}}
+    {{if .Problems}}
+    <ul>
+      {{range .Problems}}
+      <li class="problem">
+        <span class="badge {{if .Warning}}warn{{else}}bad{{end}}">{{if .Warning}}warning{{else}}error{{end}}</span>
+        {{if .Line}}<button type="button" class="link" data-compose-line="{{.Line}}" title="Select this line">line {{.Line}}</button>{{end}}
+        <span>{{.Msg}}</span>
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+    {{if not (hasErrors .Problems)}}<p class="ok-text">✓ No syntax errors.{{with .Services}} Services: {{join . ", "}}.{{end}}</p>{{end}}
+    {{if .Native}}{{if .NativeErr}}<div class="flash error" role="alert">Compose tool: {{.NativeErr}}</div>{{else}}<p class="ok-text">✓ The compose tool accepts the file.</p>{{end}}{{end}}
+  {{end}}
+</div>
+{{end}}
+
+{{/* compose_project expects composeDetailView. */}}
+{{define "compose_project"}}
+<div id="compose-project" hx-get="/partials/compose/{{.Project.Name}}" hx-trigger="every 5s, compose-changed from:body" hx-swap="outerHTML">
+  {{if .Err}}<div class="flash error">{{.Err}}</div>{{else}}
+  {{$v := .}}{{$p := .Project}}
+  <section class="panel">
+    <dl class="props">
+      <dt>Status</dt><dd>{{template "compose_status" $p}}</dd>
+      <dt>Compose file</dt><dd>{{if eq .Source "stored"}}stored in ContainerUI{{else if .Source}}<span class="mono">{{.Source}}</span> <span class="muted small">(deployed outside ContainerUI)</span>{{else}}<span class="muted">unknown – Edit rebuilds it from the containers</span>{{end}}</dd>
+      {{with $p.WorkingDir}}<dt>Project folder</dt><dd class="mono">{{.}}</dd>{{end}}
+    </dl>
+    {{template "compose_actions" (dict "P" $p "View" "detail" "CSRF" .CSRF)}}
+    {{if $p.Deployed}}
+    <form method="post" action="/compose/{{$p.Name}}/down" hx-post="/compose/{{$p.Name}}/down" hx-swap="none" hx-disabled-elt="find button"
+          hx-confirm="Take project {{$p.Name}} down? Its containers and networks are removed." class="down-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="view" value="detail">
+      <label class="switch">
+        <input type="checkbox" name="volumes" value="true">
+        <span class="track" aria-hidden="true"></span>
+        <span>Also remove the project's volumes <code>--volumes</code></span>
+      </label>
+      <button type="submit" class="danger">Down</button>
+    </form>
+    {{end}}
+  </section>
+
+  <section class="panel">
+    <h2>Services</h2>
+    {{if not $p.Services}}<p class="empty">The project has no containers.{{if $p.Stored}} Deploy it to create them.{{end}}</p>
+    {{else}}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Service</th><th>Container</th><th>Image</th><th>State</th><th>Ports</th><th class="right">Actions</th></tr></thead>
+      <tbody>
+      {{range $p.Services}}{{$svc := .Name}}
+        {{range .Containers}}
+        <tr>
+          <td>{{$svc}}</td>
+          <td><a href="/containers/{{.ID}}">{{.Name}}</a><div class="id">{{shortID .ID}}</div></td>
+          <td class="mono">{{.Image}}</td>
+          <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
+          <td class="mono small">{{.Ports}}</td>
+          <td class="right">{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Return" (printf "/compose/%s" $p.Name))}}</td>
+        </tr>
+        {{end}}
+      {{end}}
+      </tbody>
+    </table></div>
+    {{end}}
+  </section>
+
+  {{if or $p.Volumes $p.Networks}}
+  <div class="grid2">
+    {{if $p.Volumes}}
+    <section class="panel">
+      <h2>Volumes</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Driver</th></tr></thead>
+        <tbody>{{range $p.Volumes}}<tr><td class="mono"><a href="/volumes/{{.Name}}">{{.Name}}</a></td><td>{{.Driver}}</td></tr>{{end}}</tbody>
+      </table></div>
+    </section>
+    {{end}}
+    {{if $p.Networks}}
+    <section class="panel">
+      <h2>Networks</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Name</th><th>Driver</th><th>ID</th></tr></thead>
+        <tbody>{{range $p.Networks}}<tr><td class="mono"><a href="/networks/{{.Name}}">{{.Name}}</a></td><td>{{.Driver}}</td><td class="id">{{shortID .ID}}</td></tr>{{end}}</tbody>
+      </table></div>
+    </section>
+    {{end}}
+  </div>
+  {{end}}
+  {{end}}
+</div>
+{{end}}
+
+{{/* ---------- networks ---------- */}}
+{{define "kv_list"}}<ul class="kv">{{range $k, $val := .}}<li><span class="mono">{{$k}}</span>{{if $val}} = <span class="mono">{{$val}}</span>{{end}}</li>{{end}}</ul>{{end}}
+
+{{/* network_actions expects dict: N (networkRow), View ("list"|"detail"), CSRF. */}}
+{{define "network_actions"}}
+<div class="actions">
+  <form method="post" action="/networks/delete" hx-post="/networks/delete"
+        {{if eq .View "list"}}hx-target="#networks" hx-swap="outerHTML"{{else}}hx-swap="none"{{end}}
+        hx-confirm="Delete network {{.N.Name}}?" hx-disabled-elt="find button">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <input type="hidden" name="name" value="{{.N.Name}}">
+    <input type="hidden" name="view" value="{{.View}}">
+    <button type="submit" class="danger">Delete</button>
+  </form>
+</div>
+{{end}}
+
+{{define "networks_table"}}
+<section id="networks" class="panel">
+  <div class="panel-head">
+    <h2>Networks</h2>
+    <button type="button" class="link" hx-get="/partials/networks" hx-target="#networks" hx-swap="outerHTML">Refresh</button>
+  </div>
+  {{template "flash" .Flash}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>
+  {{else if not .Networks}}<p class="empty">No networks. Create one above.</p>
+  {{else}}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Internal</th><th>Used by</th><th>ID</th><th class="right">Actions</th></tr></thead>
+    <tbody>
+    {{$csrf := .CSRF}}
+    {{range .Networks}}
+      <tr>
+        <td class="mono"><a href="/networks/{{.Name}}">{{.Name}}</a>{{if .Predefined}} <span class="badge info" title="Created by the runtime">built-in</span>{{end}}</td>
+        <td>{{.Driver}}</td>
+        <td>{{.Scope}}</td>
+        <td>{{if .Internal}}yes{{else}}<span class="muted">no</span>{{end}}</td>
+        <td>{{template "volume_users" .UsedBy}}</td>
+        <td class="id" title="{{.ID}}">{{shortID .ID}}</td>
+        <td class="right">{{if .Predefined}}<span class="muted small">–</span>{{else}}{{template "network_actions" (dict "N" . "View" "list" "CSRF" $csrf)}}{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{end}}
+</section>
+{{end}}
+
+{{/* ---------- terminal ---------- */}}
+{{/* terminal_connect expects a terminalView. "checking" loads the real
+     state; only "ready" links to the terminal page, the rest are disabled. */}}
+{{define "terminal_connect"}}
+<span class="terminal-connect" id="terminal-connect"
+  {{if eq .State "checking"}}hx-get="/containers/{{.ID}}/terminal/check" hx-trigger="load" hx-swap="outerHTML" title="Checking whether a shell is available…"
+  {{else if eq .State "ready"}}title="Open a {{.Shell}} shell in a new tab"
+  {{else if eq .State "stopped"}}title="Start the container to open a terminal."
+  {{else if eq .State "unsupported"}}title="This runtime does not support terminals."
+  {{else}}title="{{.Err}}"{{end}}>
+  {{if eq .State "ready"}}<a class="button primary" href="/containers/{{.ID}}/terminal" target="_blank" rel="noopener" data-terminal-connect>Connect</a>
+  {{else}}<button type="button" class="unavailable" disabled>Connect</button>{{end}}
+</span>
+{{end}}

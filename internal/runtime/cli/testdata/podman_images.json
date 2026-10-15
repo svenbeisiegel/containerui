@@ -1,0 +1,5 @@
+[
+  {"Id":"sha256-1","ParentId":"","RepoTags":["docker.io/library/nginx:1.27","docker.io/library/nginx:latest"],"RepoDigests":["docker.io/library/nginx@sha256:aa"],"Size":192500000,"SharedSize":0,"VirtualSize":192500000,"Labels":{},"Containers":1,"Names":["docker.io/library/nginx:1.27"],"Digest":"sha256:aa","Created":1792000000,"CreatedAt":"2026-10-12T10:13:20Z"},
+  {"Id":"sha256-3","ParentId":"","RepoTags":null,"RepoDigests":["docker.io/library/alpine@sha256:29"],"Size":8715873,"Labels":null,"Containers":0,"Digest":"sha256:29","History":["docker.io/library/alpine:latest"],"Names":["docker.io/library/alpine:latest"],"Created":1792000000},
+  {"Id":"sha256-2","RepoTags":null,"Size":512,"Containers":0,"Digest":"sha256:bb","Created":1791000000}
+]

@@ -1,0 +1,48 @@
+{{define "layout"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="htmx-config" content='{"includeIndicatorStyles":false,"allowEval":false,"allowScriptTags":false}'>
+  <title>{{.Title}} · ContainerUI</title>
+  {{if .Favicon}}<link rel="icon" href="{{.Favicon}}" type="{{.FaviconType}}">{{else}}<link rel="icon" href="data:,">{{end}}
+  {{/* theme.js runs before first paint so a stored theme never flashes. */}}
+  <script src="/static/theme.js"></script>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+  {{block "head" .}}{{end}}
+</head>
+<body class="{{if .User}}app{{else}}public{{end}}"{{if .CSRF}} hx-headers='{"X-CSRF-Token": "{{.CSRF}}"}'{{end}}>
+  {{if .User}}
+  <header class="topbar">
+    <span class="brand">ContainerUI</span>
+    <nav>
+      <a href="/" {{if eq .Active "dashboard"}}aria-current="page"{{end}}>Dashboard</a>
+      {{if .Caps.Compose}}<a href="/compose" {{if eq .Active "compose"}}aria-current="page"{{end}}>Compose</a>{{end}}
+      <a href="/containers" {{if eq .Active "containers"}}aria-current="page"{{end}}>Containers</a>
+      <a href="/images" {{if eq .Active "images"}}aria-current="page"{{end}}>Images</a>
+      {{if .Caps.Volumes}}<a href="/volumes" {{if eq .Active "volumes"}}aria-current="page"{{end}}>Volumes</a>{{end}}
+      {{if .Caps.Networks}}<a href="/networks" {{if eq .Active "networks"}}aria-current="page"{{end}}>Networks</a>{{end}}
+      <a href="/system" {{if eq .Active "system"}}aria-current="page"{{end}}>System</a>
+    </nav>
+    <div class="session">
+      <span class="badge runtime" title="Container runtime driver">{{.Runtime}}</span>
+      <span class="user">{{.User}}</span>
+      {{template "theme_toggle"}}
+      <form method="post" action="/logout">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <button class="link" type="submit">Sign out</button>
+      </form>
+    </div>
+  </header>
+  {{else}}
+  <div class="public-toolbar">{{template "theme_toggle"}}</div>
+  {{end}}
+  <main>
+    {{if .User}}{{template "flash" .Flash}}{{end}}
+    {{template "content" .}}
+  </main>
+</body>
+</html>
+{{end}}

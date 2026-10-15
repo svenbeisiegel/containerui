@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The Windows installer: containerui.exe in Program Files, run by the
+  ContainerUI service as LocalSystem, which starts with Windows, and the
+  configuration in ProgramData. Built on Windows by the WiX Toolset, once for
+  each architecture:
+
+    wix build packaging/windows/containerui.wxs -arch x64 -ext WixToolset.Util.wixext
+      -ext WixToolset.Firewall.wixext -ext WixToolset.UI.wixext -d Version=1.0.0
+      -d Bin=build/pkg/containerui_windows_amd64.exe -d Config=build/pkg/config.windows.yaml
+      -o dist/containerui-1.0.0-x64.msi
+
+  Bin is the binary built with -X main.packaging=msi and Config the default
+  configuration; make msi-inputs builds both.
+
+  Users sign in with their Windows account when they may use the Docker
+  named pipe (members of docker-users or Administrators). wslc and podman
+  machine are per user and not visible to the LocalSystem service.
+
+  An update is the msi of the newer release, run like the first one: the
+  major upgrade stops and removes the service of the installed version,
+  installs the new one and starts it again. The configuration file is never
+  replaced, nor removed by an uninstall.
+
+  msiexec /i containerui-<version>-x64.msi /qn            installs or updates quietly
+  msiexec /i containerui-<version>-x64.msi /qn FIREWALL=1 also opens the firewall
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util"
+     xmlns:fw="http://wixtoolset.org/schemas/v4/wxs/firewall">
+  <Package Name="ContainerUI"
+           Manufacturer="Mitel"
+           Version="$(Version)"
+           UpgradeCode="FFDFBE19-A8E1-41CD-97B7-371B2E76FB6F"
+           Scope="perMachine"
+           Compressed="yes">
+    <SummaryInformation Description="ContainerUI web interface for Docker and Podman" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of ContainerUI is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/svenbeisiegel/containerui" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+
+    <!-- 1 lets containerui.exe through the Windows firewall. Off by default:
+         as installed, ContainerUI listens on 127.0.0.1 alone. -->
+    <Property Id="FIREWALL" Value="0" Secure="yes" />
+
+    <!-- WixUI_Minimal without its license page: welcome, ready to install,
+         progress and finish, and on a repair or removal from Apps the
+         maintenance pages. The finish page of an install offers to open the
+         web interface, which the service serves by then. -->
+    <UIRef Id="WixUI_Common" />
+    <UI Id="ContainerUIUI">
+      <TextStyle Id="WixUI_Font_Normal" FaceName="Tahoma" Size="8" />
+      <TextStyle Id="WixUI_Font_Bigger" FaceName="Tahoma" Size="12" />
+      <TextStyle Id="WixUI_Font_Title" FaceName="Tahoma" Size="9" Bold="yes" />
+      <Property Id="DefaultUIFont" Value="WixUI_Font_Normal" />
+
+      <DialogRef Id="ErrorDlg" />
+      <DialogRef Id="FatalError" />
+      <DialogRef Id="FilesInUse" />
+      <DialogRef Id="MsiRMFilesInUse" />
+      <DialogRef Id="PrepareDlg" />
+      <DialogRef Id="ProgressDlg" />
+      <DialogRef Id="ResumeDlg" />
+      <DialogRef Id="UserExit" />
+      <DialogRef Id="WelcomeDlg" />
+
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Condition="NOT Installed OR PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="1" Condition="NOT Installed OR PATCH" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="MaintenanceTypeDlg" Order="2" Condition="Installed AND NOT PATCH" />
+
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="MaintenanceTypeDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RepairButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="RemoveButton" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg" />
+
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="OpenWebInterface" Order="1"
+               Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+    </UI>
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Open ContainerUI now" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1" />
+    <Property Id="WixShellExecTarget" Value="https://localhost:8443/" />
+    <!-- a browser that does not open is no reason to report the install as failed -->
+    <CustomAction Id="OpenWebInterface"
+                  BinaryRef="Wix4UtilCA_$(sys.BUILDARCHSHORT)"
+                  DllEntry="WixShellExec"
+                  Impersonate="yes"
+                  Return="ignore" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="ContainerUI" />
+    </StandardDirectory>
+    <StandardDirectory Id="CommonAppDataFolder">
+      <Directory Id="DATAFOLDER" Name="ContainerUI">
+        <Directory Id="COMPOSEFOLDER" Name="compose" />
+        <Directory Id="LOGFOLDER" Name="logs" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="Main" Title="ContainerUI" AllowAbsent="no">
+      <ComponentRef Id="Executable" />
+      <ComponentRef Id="DataFolder" />
+      <ComponentRef Id="ComposeFolder" />
+      <ComponentRef Id="LogFolder" />
+      <ComponentRef Id="Configuration" />
+      <ComponentRef Id="Firewall" />
+    </Feature>
+
+    <Component Id="Executable" Directory="INSTALLFOLDER">
+      <File Id="ContainerUIExe" Name="containerui.exe" Source="$(Bin)" KeyPath="yes" />
+      <ServiceInstall Id="Service"
+                      Name="ContainerUI"
+                      DisplayName="ContainerUI"
+                      Description="Web interface for Docker and Podman, configured in C:\ProgramData\ContainerUI\config.yaml."
+                      Type="ownProcess"
+                      Start="auto"
+                      ErrorControl="normal"
+                      Account="LocalSystem"
+                      Arguments="serve -config &quot;[DATAFOLDER]config.yaml&quot; -logfile &quot;[LOGFOLDER]containerui.log&quot;">
+        <!-- a crash is followed by a restart; a configuration ContainerUI
+             refuses ends the service with an error, which is in the log -->
+        <util:ServiceConfig FirstFailureActionType="restart"
+                            SecondFailureActionType="restart"
+                            ThirdFailureActionType="restart"
+                            RestartServiceDelayInSeconds="5"
+                            ResetPeriodInDays="1" />
+      </ServiceInstall>
+      <ServiceControl Id="ServiceControl"
+                      Name="ContainerUI"
+                      Start="install"
+                      Stop="both"
+                      Remove="uninstall"
+                      Wait="yes" />
+    </Component>
+
+    <!-- The configuration and the generated TLS key: SYSTEM and
+         Administrators only, inherited by everything below. Kept by an
+         uninstall. -->
+    <Component Id="DataFolder" Directory="DATAFOLDER" Guid="ED4E5EC0-B502-4410-AA3A-44A32ABAA072" Permanent="yes">
+      <CreateFolder>
+        <PermissionEx Sddl="D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)" />
+      </CreateFolder>
+    </Component>
+    <Component Id="ComposeFolder" Directory="COMPOSEFOLDER" Guid="EB270998-E0CD-41E0-9EAF-51E36178E357" Permanent="yes">
+      <CreateFolder />
+    </Component>
+    <Component Id="LogFolder" Directory="LOGFOLDER" Guid="58152F34-C2E0-4543-B523-5C547AC4DB8D" Permanent="yes">
+      <CreateFolder />
+    </Component>
+
+    <!-- installed once and then left alone: an update never overwrites it,
+         however it was changed, and an uninstall keeps it -->
+    <Component Id="Configuration" Directory="DATAFOLDER" NeverOverwrite="yes" Permanent="yes">
+      <File Id="ConfigFile" Name="config.yaml" Source="$(Config)" KeyPath="yes" />
+    </Component>
+
+    <Component Id="Firewall" Directory="INSTALLFOLDER" Guid="F9C13E49-3E95-42A1-A8BC-C6F5DB53E142" Condition="FIREWALL = 1">
+      <RegistryValue Root="HKLM" Key="Software\ContainerUI" Name="Firewall" Type="integer" Value="1" KeyPath="yes" />
+      <fw:FirewallException Id="FirewallException"
+                            Name="ContainerUI"
+                            Program="[#ContainerUIExe]"
+                            Scope="any"
+                            Profile="all" />
+    </Component>
+  </Package>
+</Wix>

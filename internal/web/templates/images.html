@@ -1,0 +1,17 @@
+{{define "content"}}
+<div class="page-head">
+  <h1>Images</h1>
+</div>
+{{if .Caps.Pull}}
+<section class="panel">
+  <h2>Pull an Image</h2>
+  <form class="inline-form" method="post" action="/images/pull" hx-post="/images/pull" hx-target="#pulls" hx-swap="outerHTML" data-reset-on-success>
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <input name="ref" required placeholder="e.g. alpine:latest or ghcr.io/org/app:1.0" aria-label="Image reference">
+    <button type="submit" class="primary">Pull</button>
+  </form>
+  {{template "pulls_panel" .Data.Pulls}}
+</section>
+{{end}}
+{{template "images_table" .Data.Images}}
+{{end}}

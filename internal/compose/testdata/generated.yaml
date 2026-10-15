@@ -1,0 +1,54 @@
+# Rebuilt by ContainerUI from the running containers of project shop.
+# Review before applying: build contexts, env_file, profiles and variables
+# are not recorded by the runtime and were not restored.
+name: shop
+services:
+  db:
+    image: postgres:16
+    command: ["postgres"]
+    user: "999"
+    hostname: dbhost
+    environment:
+      POSTGRES_PASSWORD: "secret"
+      PGDATA: "/var/lib/postgresql/data"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+      - /tmp/anon
+      - backups:/backups
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  web:
+    image: nginx:1.27
+    environment:
+      MODE: "prod"
+    ports:
+      - "8443:443"
+      - "5353:53/udp"
+      - "127.0.0.1:8080:80"
+    volumes:
+      - /srv/shop/html:/usr/share/nginx/html:ro
+      - cache:/cache
+    networks:
+      - default
+      - front
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    labels:
+      traefik.enable: "true"
+  worker:
+    image: alpine
+    command: "sleep 3600"
+    deploy:
+      replicas: 2
+networks:
+  front: {}
+volumes:
+  backups:
+    external: true
+  cache: {}
+  dbdata: {}

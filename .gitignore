@@ -1,0 +1,11 @@
+/bin/
+*.exe
+# Local config and generated TLS material contain secrets.
+/config.yaml
+/config.*.yaml
+*.pem
+# Build and package output (make, build.ps1).
+/dist/
+/build/
+# Personal Claude Code settings.
+.claude/settings.local.json

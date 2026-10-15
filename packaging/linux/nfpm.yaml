@@ -1,0 +1,68 @@
+# The rpm package, built by make rpm with nfpm, which expands VERSION, the
+# released version, and ARCH, the Go architecture, from its environment. The
+# files are relative to the repository root, where make runs nfpm, and make
+# puts them in build/pkg/linux for each architecture in turn: the binary built
+# with -X main.packaging=rpm, and the config written by init-config with the
+# compose folder in /var/lib/containerui.
+name: containerui
+arch: ${ARCH}
+platform: linux
+version: ${VERSION}
+release: 1
+section: admin
+maintainer: Sven Beisiegel
+vendor: Mitel
+license: MIT
+homepage: https://github.com/svenbeisiegel/containerui
+description: |
+  ContainerUI, a web interface for Docker and Podman: containers, images,
+  volumes, networks and compose projects, with live logs and a terminal.
+  Runs as the containerui systemd service; users sign in with their system
+  account if they may use the container runtime's socket.
+
+# PAM checks the passwords; it is loaded at runtime (libpam.so.0).
+depends:
+  - pam
+
+contents:
+  - src: build/pkg/linux/containerui
+    dst: /usr/bin/containerui
+    file_info:
+      mode: 0755
+
+  - src: packaging/linux/containerui.service
+    dst: /usr/lib/systemd/system/containerui.service
+    file_info:
+      mode: 0644
+
+  # The configuration and the generated TLS certificate and key. noreplace
+  # keeps the file as it is on an upgrade, and puts the new template beside
+  # it as config.yaml.rpmnew.
+  - dst: /etc/containerui
+    type: dir
+    file_info:
+      mode: 0750
+  - src: build/pkg/linux/config.yaml
+    dst: /etc/containerui/config.yaml
+    type: config|noreplace
+    file_info:
+      mode: 0600
+
+  # compose projects deployed through the UI
+  - dst: /var/lib/containerui
+    type: dir
+    file_info:
+      mode: 0750
+  - dst: /var/lib/containerui/compose
+    type: dir
+    file_info:
+      mode: 0750
+
+scripts:
+  postinstall: packaging/linux/postinstall.sh
+  preremove: packaging/linux/preremove.sh
+  postremove: packaging/linux/postremove.sh
+
+rpm:
+  summary: Web interface for Docker and Podman
+  group: System Environment/Daemons

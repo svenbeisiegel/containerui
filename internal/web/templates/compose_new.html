@@ -1,0 +1,52 @@
+{{define "head"}}<script src="/static/compose.js" defer></script>{{end}}
+{{define "content"}}
+{{$f := .Data}}
+<div class="page-head">
+  <div>
+    <a class="back" href="{{if $f.Edit}}/compose/{{$f.Project}}{{else}}/compose{{end}}">← {{if $f.Edit}}{{$f.Project}}{{else}}Compose{{end}}</a>
+    <h1>{{if $f.Edit}}Edit {{$f.Project}}{{else}}Create Compose{{end}}</h1>
+  </div>
+</div>
+<form method="post" action="{{if $f.Edit}}/compose/{{$f.Project}}{{else}}/compose{{end}}" class="create-form" data-compose-form>
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  {{if $f.Edit}}<input type="hidden" name="edit" value="true">{{end}}
+  {{if $f.Err}}<div class="flash error" role="alert">{{$f.Err}}</div>{{end}}
+  {{with $f.Source}}<div class="flash notice" role="status">{{.}}</div>{{end}}
+
+  <fieldset class="section">
+    <legend>Project</legend>
+    <div class="fields">
+      <label class="field">
+        <span class="field-label">Project name{{if not $f.Edit}} <span class="opt">optional if the file sets <code>name:</code></span>{{end}}</span>
+        <input name="project" value="{{$f.Project}}" placeholder="shop" pattern="[a-z0-9][a-z0-9_\-]*" autocomplete="off" spellcheck="false"
+               {{if $f.Edit}}readonly{{end}} data-compose-project>
+        <small class="hint">{{if $f.Edit}}The project name cannot be changed.{{else}}Lowercase letters, digits, <code>-</code> and <code>_</code>. Prefixes the container, network and volume names.{{end}}</small>
+      </label>
+    </div>
+  </fieldset>
+
+  <fieldset class="section">
+    <legend>Compose file</legend>
+    <div class="compose-toolbar">
+      <button type="button" data-compose-open>Open file…</button>
+      <input type="file" accept=".yml,.yaml,application/yaml,application/x-yaml,text/yaml" hidden data-compose-file>
+      <span class="hint">or drop a <code>compose.yaml</code> onto the editor. Tab indents; press Esc, then Tab to leave the editor.</span>
+    </div>
+    <div class="dropzone" data-compose-drop>
+      <textarea name="yaml" rows="24" class="code" spellcheck="false" autocomplete="off" aria-label="Compose file (YAML)" data-compose-yaml
+                placeholder="services:&#10;  web:&#10;    image: nginx:1.27&#10;    ports:&#10;      - &quot;8080:80&quot;"
+                hx-post="/compose/validate" hx-trigger="input changed delay:400ms" hx-target="#compose-problems" hx-swap="outerHTML"
+                hx-include="closest form" hx-sync="this:replace">{{$f.YAML}}</textarea>
+      <div class="drop-hint" aria-hidden="true">Drop the compose file here</div>
+    </div>
+    {{template "compose_problems" $f.Check}}
+  </fieldset>
+
+  <div class="form-actions">
+    <a class="button" href="{{if $f.Edit}}/compose/{{$f.Project}}{{else}}/compose{{end}}">Cancel</a>
+    <button type="button" hx-post="/compose/validate" hx-vals='{"native": "1"}' hx-include="closest form"
+            hx-target="#compose-problems" hx-swap="outerHTML" hx-disabled-elt="this">Check</button>
+    <button type="submit" class="primary">{{if $f.Edit}}{{if $f.Deployed}}Apply changes{{else}}Save &amp; deploy{{end}}{{else}}Deploy{{end}}</button>
+  </div>
+</form>
+{{end}}
