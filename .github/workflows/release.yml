@@ -13,7 +13,7 @@ permissions:
   contents: write
 
 jobs:
-  rpm:
+  linux:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -38,15 +38,35 @@ jobs:
       - name: vet and test
         run: make lint race
 
-      # the rpm packages into dist, and what the msi job builds the Windows
-      # installers from into build/pkg
+      # nfpm signs the rpms with it; the repo job signs the repositories
+      - name: signing key
+        env:
+          PACKAGE_SIGNING_KEY: ${{ secrets.PACKAGE_SIGNING_KEY }}
+        run: |
+          test -n "$PACKAGE_SIGNING_KEY" || { echo "the PACKAGE_SIGNING_KEY secret is not set"; exit 1; }
+          printf '%s
+' "$PACKAGE_SIGNING_KEY" > "$RUNNER_TEMP/signing.asc"
+          echo "SIGNING_KEY_FILE=$RUNNER_TEMP/signing.asc" >> "$GITHUB_ENV"
+
+      # the rpm and deb packages into dist, and what the msi job builds the
+      # Windows installers from into build/pkg
       - name: make packages
-        run: make packages VERSION=${{ inputs.version }}
+        env:
+          NFPM_RPM_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
+        run: |
+          make packages VERSION=${{ inputs.version }}
+          rm -f "$SIGNING_KEY_FILE"
 
       - uses: actions/upload-artifact@v7
         with:
           name: rpm
           path: dist/*.rpm
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: deb
+          path: dist/*.deb
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v7
@@ -61,7 +81,7 @@ jobs:
   # under the MS-RL without the Open Source Maintenance Fee of 6 and later; it
   # is built for .NET 6, hence the roll forward to the .NET the runner has.
   msi:
-    needs: rpm
+    needs: linux
     runs-on: windows-latest
     env:
       DOTNET_ROLL_FORWARD: Major
@@ -108,12 +128,17 @@ jobs:
           if-no-files-found: error
 
   publish:
-    needs: [rpm, msi]
+    needs: [linux, msi]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v8
         with:
           name: rpm
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: deb
           path: dist
 
       - uses: actions/download-artifact@v8
@@ -131,3 +156,45 @@ jobs:
           name: v${{ inputs.version }}
           generate_release_notes: true
           files: dist/*
+
+  # The zypper/dnf and apt repositories on GitHub Pages, rebuilt from the
+  # packages of the five newest releases, so older versions drop out. Pages
+  # must be set to deploy from GitHub Actions.
+  repo:
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: install createrepo_c
+        run: sudo apt-get update && sudo apt-get install -y createrepo-c
+
+      - name: import the signing key
+        env:
+          PACKAGE_SIGNING_KEY: ${{ secrets.PACKAGE_SIGNING_KEY }}
+        run: |
+          printf '%s
+' "$PACKAGE_SIGNING_KEY" | gpg --batch --import
+          id=$(gpg --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')
+          echo "GPG_KEY_ID=$id" >> "$GITHUB_ENV"
+
+      - name: build the repositories
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GPG_PASSPHRASE: ${{ secrets.PACKAGE_SIGNING_PASSPHRASE }}
+          KEEP: 5
+        run: bash packaging/repo/build.sh site
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v5

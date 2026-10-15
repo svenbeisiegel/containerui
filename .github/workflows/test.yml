@@ -84,6 +84,49 @@ jobs:
             test -e /etc/containerui/config.yaml.rpmsave
           '
 
+  deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # a second, higher version as well, for the upgrade below
+      - name: make packages
+        run: |
+          make deb
+          make deb VERSION="$(cat VERSION).1"
+
+      # install, upgrade and remove the deb the way apt does on a server, as the
+      # rpm job does
+      - name: install the deb
+        run: |
+          docker run --rm -v "$PWD/dist:/dist:ro" -e DEBIAN_FRONTEND=noninteractive ubuntu:24.04 bash -euxc '
+            apt-get update
+            apt-get install -y curl
+            version=$(ls /dist/containerui_*_amd64.deb | sort -V | head -1)
+            update=$(ls /dist/containerui_*_amd64.deb | sort -V | tail -1)
+            apt-get install -y "$version"
+            test "$(stat -c %U:%a /etc/containerui/config.yaml)" = root:600
+            test -d /var/lib/containerui/compose
+            grep -q "compose_dir: /var/lib/containerui/compose" /etc/containerui/config.yaml
+            test -f /usr/lib/systemd/system/containerui.service
+            /usr/bin/containerui version | grep -q "^containerui "
+            /usr/bin/containerui serve -config /etc/containerui/config.yaml -driver fake > /tmp/containerui.log 2>&1 &
+            pid=$!
+            for i in $(seq 1 30); do curl -fsSk -o /dev/null https://127.0.0.1:8443/login && break; sleep 0.5; done
+            curl -fsSk -o /dev/null https://127.0.0.1:8443/login
+            grep -q "installer=deb" /tmp/containerui.log
+            kill $pid; wait $pid || true
+            echo "# changed" >> /etc/containerui/config.yaml
+            apt-get install -y -o Dpkg::Options::=--force-confold "$update"
+            grep -q "^# changed" /etc/containerui/config.yaml
+            apt-get remove -y containerui
+            test ! -e /usr/bin/containerui
+            test -e /etc/containerui/config.yaml
+          '
+
   msi:
     runs-on: windows-latest
     env:

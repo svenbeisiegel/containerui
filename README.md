@@ -50,7 +50,7 @@ Features:
 - Login with system accounts: PAM on Linux, Windows accounts on Windows, for
   users who may use the container runtime's socket or pipe; plus optional
   accounts from the config file (Windows); served over HTTP or HTTPS
-- Installed from an **rpm** or **msi** package as a service (systemd as root,
+- Installed from an **rpm**, **deb** or **msi** package as a service (systemd as root,
   or a Windows service as LocalSystem), see [Install](#install)
 
 ## Requirements
@@ -66,6 +66,35 @@ Features:
 Releases are packages, built by the [release workflow](.github/workflows/release.yml)
 for amd64 and arm64. An update is the package of the newer release,
 installed the same way; the configuration is kept.
+
+### Package repositories (Linux)
+
+The Linux packages are also published as signed repositories on
+[GitHub Pages](https://svenbeisiegel.github.io/containerui/), which keep the
+five newest releases, so updates come with the system's own updates.
+
+Ubuntu and Debian (apt):
+
+```sh
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL https://svenbeisiegel.github.io/containerui/containerui.gpg | sudo tee /etc/apt/keyrings/containerui.gpg >/dev/null
+echo "deb [signed-by=/etc/apt/keyrings/containerui.gpg] https://svenbeisiegel.github.io/containerui/deb stable main" | sudo tee /etc/apt/sources.list.d/containerui.list
+sudo apt update && sudo apt install containerui
+```
+
+openSUSE and SLES (zypper):
+
+```sh
+sudo zypper addrepo https://svenbeisiegel.github.io/containerui/rpm/containerui.repo
+sudo zypper refresh && sudo zypper install containerui
+```
+
+Fedora, RHEL and Rocky Linux (dnf; `dnf config-manager --add-repo` on dnf 4):
+
+```sh
+sudo dnf config-manager addrepo --from-repofile=https://svenbeisiegel.github.io/containerui/rpm/containerui.repo
+sudo dnf install containerui
+```
 
 ### Linux (rpm)
 
@@ -87,6 +116,17 @@ machines. Users sign in with their system account if they may use the
 docker or podman socket, see [Linux sign-in](#linux-sign-in). `dnf remove
 containerui` stops and removes the service and keeps the configuration
 (changed files as `.rpmsave`).
+
+### Linux (deb)
+
+```sh
+sudo apt install ./containerui_<version>-1_amd64.deb
+```
+
+The deb installs the same files and service as the rpm. The configuration is
+a conffile: an upgrade keeps your changes (dpkg asks if the default changed
+too), `apt remove containerui` keeps it and `apt purge containerui` deletes
+it.
 
 ### Windows (msi)
 
@@ -132,7 +172,7 @@ $env:GOOS='linux'; $env:GOARCH='amd64'; $env:CGO_ENABLED='0'; go build -o bin/co
 [Makefile](Makefile), the msi then on Windows with the WiX Toolset 5:
 
 ```sh
-make packages VERSION=1.0.0   # dist/*.rpm (nfpm) and build/pkg/* (msi inputs)
+make packages VERSION=1.0.0   # dist/*.rpm, dist/*.deb (nfpm) and build/pkg/* (msi inputs)
 ```
 
 ```powershell
@@ -145,10 +185,15 @@ wix build packaging/windows/containerui.wxs -arch x64 -ext WixToolset.Util.wixex
 ```
 
 A release is made by running the **Release** workflow with a version: it
-commits `VERSION`, tests, builds the rpm and msi files for amd64 and arm64
-and publishes them with checksums as a GitHub release. The **Test**
-workflow installs, upgrades and removes the rpm in Rocky Linux 9 and the msi
-on Windows on every push.
+commits `VERSION`, tests, builds the rpm, deb and msi files for amd64 and
+arm64, publishes them with checksums as a GitHub release, and rebuilds the
+package repositories on GitHub Pages from the five newest releases. It needs
+the `PACKAGE_SIGNING_KEY` secret (an armored PGP private key, `-----BEGIN PGP
+PRIVATE KEY BLOCK-----`), `PACKAGE_SIGNING_PASSPHRASE` if the key has one,
+and Pages set to deploy from GitHub Actions. The rpms are signed with the
+key, and so are the repositories' metadata. The **Test** workflow installs,
+upgrades and removes the rpm in Rocky Linux 9, the deb in Ubuntu 24.04 and
+the msi on Windows on every push.
 
 ## Quick start
 

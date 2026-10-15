@@ -1,4 +1,4 @@
-# The rpm package, built by make rpm with nfpm, which expands VERSION, the
+# The rpm and deb packages, built by make rpm and make deb with nfpm, which expands VERSION, the
 # released version, and ARCH, the Go architecture, from its environment. The
 # files are relative to the repository root, where make runs nfpm, and make
 # puts them in build/pkg/linux for each architecture in turn: the binary built
@@ -63,6 +63,20 @@ scripts:
   preremove: packaging/linux/preremove.sh
   postremove: packaging/linux/postremove.sh
 
+# dpkg calls its scripts with words, not rpm's counts, and names PAM libpam0g.
+overrides:
+  deb:
+    depends:
+      - libpam0g
+    scripts:
+      postinstall: packaging/linux/deb/postinst.sh
+      preremove: packaging/linux/deb/prerm.sh
+      postremove: packaging/linux/postremove.sh
+
+# The rpm is signed when SIGNING_KEY_FILE names an armored private key, as in
+# the release workflow; NFPM_RPM_PASSPHRASE unlocks it. Unset, it is unsigned.
 rpm:
   summary: Web interface for Docker and Podman
   group: System Environment/Daemons
+  signature:
+    key_file: ${SIGNING_KEY_FILE}

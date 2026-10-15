@@ -22,7 +22,7 @@ PLATFORMS := linux/amd64 linux/arm64 windows/amd64 windows/arm64
 PKG  := build/pkg
 NFPM := go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
 
-.PHONY: all build test race vet fmt lint clean packages rpm msi-inputs checksums version
+.PHONY: all build test race vet fmt lint clean packages rpm deb msi-inputs checksums version
 
 all: vet test build
 
@@ -62,25 +62,26 @@ version:
 clean:
 	rm -rf $(DIST) build
 
-# packages builds the rpm packages into DIST, and the binaries and
+# packages builds the rpm and deb packages into DIST, and the binaries and
 # configuration the msi is made of, which only the WiX Toolset on Windows can
 # build, into PKG.
-packages: rpm msi-inputs
+packages: rpm deb msi-inputs
 	@$(MAKE) --no-print-directory checksums
 
 # nfpm takes its files from fixed paths, see packaging/linux/nfpm.yaml, so the
-# architectures are packaged one after the other.
-rpm:
+# architectures are packaged one after the other. rpm and deb share the recipe:
+# the target names the packager and the package stamped into the binary.
+rpm deb:
 	@mkdir -p $(PKG)/linux $(DIST)
 	@rm -f $(PKG)/linux/config.yaml
 	go run $(MAIN) init-config -compose-dir /var/lib/containerui/compose $(PKG)/linux/config.yaml
 	@for arch in amd64 arm64; do \
 		echo "building $(PKG)/linux/$(BINARY) for $$arch"; \
 		GOOS=linux GOARCH=$$arch $(BUILDENV) go build $(GOFLAGS) \
-			-ldflags "-s -w -X main.version=$(VERSION) -X main.packaging=rpm" \
+			-ldflags "-s -w -X main.version=$(VERSION) -X main.packaging=$@" \
 			-o $(PKG)/linux/$(BINARY) $(MAIN) || exit 1; \
 		VERSION=$(VERSION) ARCH=$$arch $(NFPM) package --config packaging/linux/nfpm.yaml \
-			--packager rpm --target $(DIST)/ || exit 1; \
+			--packager $@ --target $(DIST)/ || exit 1; \
 	done
 
 msi-inputs:
