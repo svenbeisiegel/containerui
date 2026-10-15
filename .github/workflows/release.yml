@@ -44,8 +44,7 @@ jobs:
           PACKAGE_SIGNING_KEY: ${{ secrets.PACKAGE_SIGNING_KEY }}
         run: |
           test -n "$PACKAGE_SIGNING_KEY" || { echo "the PACKAGE_SIGNING_KEY secret is not set"; exit 1; }
-          printf '%s
-' "$PACKAGE_SIGNING_KEY" > "$RUNNER_TEMP/signing.asc"
+          printf '%s\n' "$PACKAGE_SIGNING_KEY" > "$RUNNER_TEMP/signing.asc"
           echo "SIGNING_KEY_FILE=$RUNNER_TEMP/signing.asc" >> "$GITHUB_ENV"
 
       # the rpm and deb packages into dist, and what the msi job builds the
@@ -180,8 +179,7 @@ jobs:
         env:
           PACKAGE_SIGNING_KEY: ${{ secrets.PACKAGE_SIGNING_KEY }}
         run: |
-          printf '%s
-' "$PACKAGE_SIGNING_KEY" | gpg --batch --import
+          printf '%s\n' "$PACKAGE_SIGNING_KEY" | gpg --batch --import
           id=$(gpg --list-secret-keys --with-colons | awk -F: '$1 == "fpr" { print $10; exit }')
           echo "GPG_KEY_ID=$id" >> "$GITHUB_ENV"
 
