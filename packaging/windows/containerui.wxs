@@ -105,7 +105,8 @@
 
     <Feature Id="Main" Title="ContainerUI" AllowAbsent="no">
       <ComponentRef Id="Executable" />
-      <ComponentRef Id="Licenses" />
+      <ComponentRef Id="License" />
+      <ComponentRef Id="Notices" />
       <ComponentRef Id="DataFolder" />
       <ComponentRef Id="ComposeFolder" />
       <ComponentRef Id="LogFolder" />
@@ -140,10 +141,13 @@
                       Wait="yes" />
     </Component>
 
-    <!-- ContainerUI's license and the third-party notices -->
-    <Component Id="Licenses" Directory="INSTALLFOLDER">
+    <!-- ContainerUI's license and the third-party notices, one component
+         each: an unversioned file gets a generated guid only on its own -->
+    <Component Id="License" Directory="INSTALLFOLDER">
       <File Id="LicenseFile" Name="LICENSE.txt" Source="$(License)" KeyPath="yes" />
-      <File Id="NoticesFile" Name="THIRD_PARTY_NOTICES.md" Source="$(Notices)" />
+    </Component>
+    <Component Id="Notices" Directory="INSTALLFOLDER">
+      <File Id="NoticesFile" Name="THIRD_PARTY_NOTICES.md" Source="$(Notices)" KeyPath="yes" />
     </Component>
 
     <!-- The configuration and the generated TLS key: SYSTEM and
