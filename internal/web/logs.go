@@ -59,16 +59,25 @@ func (s *Server) handleLogsDownload(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, status)
 		return
 	}
-	user := sessionFrom(r).Username
+	s.serveLogDownload(w, r, logFileName(c, time.Now()), "text/plain; charset=utf-8", []any{"id", c.ID, "name", c.Name},
+		func(ctx context.Context, w io.Writer) error {
+			return s.rt.ContainerLogs(ctx, c.ID, runtime.LogsOpts{}, w)
+		})
+}
+
+// serveLogDownload sends what run writes as a file attachment. attrs
+// identify the log in the server log.
+func (s *Server) serveLogDownload(w http.ResponseWriter, r *http.Request, filename, ctype string, attrs []any, run func(context.Context, io.Writer) error) {
+	attrs = append(attrs, "user", sessionFrom(r).Username)
 	// A large log can take longer than the server's write timeout.
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	hw := &heldWriter{w: w, header: func(h http.Header) {
-		h.Set("Content-Type", "text/plain; charset=utf-8")
-		h.Set("Content-Disposition", `attachment; filename="`+logFileName(c, time.Now())+`"`)
+		h.Set("Content-Type", ctype)
+		h.Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	}}
-	err := s.rt.ContainerLogs(r.Context(), c.ID, runtime.LogsOpts{}, hw)
+	err := run(r.Context(), hw)
 	if err != nil && !hw.committed {
-		s.log.Warn("logs download failed", "id", c.ID, "name", c.Name, "user", user, "error", err)
+		s.log.Warn("logs download failed", append(attrs, "error", err)...)
 		status := http.StatusBadGateway
 		if errors.Is(err, runtime.ErrNotFound) {
 			status = http.StatusNotFound
@@ -80,10 +89,10 @@ func (s *Server) handleLogsDownload(w http.ResponseWriter, r *http.Request) {
 		err = ferr
 	}
 	if err != nil {
-		s.log.Warn("logs download incomplete", "id", c.ID, "name", c.Name, "user", user, "bytes", hw.n, "error", err)
+		s.log.Warn("logs download incomplete", append(attrs, "bytes", hw.n, "error", err)...)
 		return
 	}
-	s.log.Info("logs downloaded", "id", c.ID, "name", c.Name, "user", user, "bytes", hw.n)
+	s.log.Info("logs downloaded", append(attrs, "bytes", hw.n)...)
 }
 
 // heldWriter holds back the first downloadHold bytes; the response headers
@@ -124,9 +133,12 @@ func (h *heldWriter) flush() error {
 	return err
 }
 
-// logWatchView is the data of the logs_watch page.
+// logWatchView is the data of the logs_watch page: a container's log (C
+// set) or another log described by Title and Meta.
 type logWatchView struct {
 	C           *runtime.Container
+	Title       string
+	Meta        []metaItem
 	StreamURL   string
 	Opened      time.Time
 	Favicon     string
@@ -140,7 +152,13 @@ func (s *Server) handleLogsWatch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, msg, status)
 		return
 	}
-	v := logWatchView{C: c, StreamURL: "/containers/" + c.ID + "/logs/stream", Opened: time.Now(), Favicon: s.favicon, FaviconType: s.favType}
+	s.renderLogWatch(w, logWatchView{C: c, Title: c.Name, StreamURL: "/containers/" + c.ID + "/logs/stream"})
+}
+
+type metaItem struct{ Label, Value string }
+
+func (s *Server) renderLogWatch(w http.ResponseWriter, v logWatchView) {
+	v.Opened, v.Favicon, v.FaviconType = time.Now(), s.favicon, s.favType
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	if err := s.logsPage.ExecuteTemplate(w, "logs_watch", v); err != nil {
 		s.log.Error("render page", "page", "logs_watch", "error", err)
@@ -151,18 +169,34 @@ func (s *Server) handleLogsWatch(w http.ResponseWriter, r *http.Request) {
 // unnamed events carry log lines (one data field per line), a final "end"
 // event carries the reason the stream stopped.
 func (s *Server) handleLogsStream(w http.ResponseWriter, r *http.Request) {
-	sess := sessionFrom(r)
 	c, status, msg := s.logsTarget(r.Context(), r.PathValue("id"))
 	if msg != "" {
 		http.Error(w, msg, status)
 		return
 	}
+	s.serveLogStream(w, r, "stream "+c.ID, "The log stream ended; the container is no longer running.", []any{"id", c.ID, "name", c.Name},
+		func(ctx context.Context, w io.Writer) error {
+			return s.rt.ContainerLogs(ctx, c.ID, runtime.LogsOpts{Follow: true, Tail: watchTail(r)}, w)
+		})
+}
+
+// watchTail is the tail query parameter of a log stream, clamped, or
+// logWatchTail.
+func watchTail(r *http.Request) int {
 	tail := logWatchTail
 	if t := r.URL.Query().Get("tail"); t != "" {
 		if n, err := strconv.Atoi(t); err == nil {
 			tail = max(0, min(n, 10000))
 		}
 	}
+	return tail
+}
+
+// serveLogStream follows what run writes as Server-Sent Events until run
+// returns (endedMsg), the client leaves or the session ends. attrs identify
+// the log in the server log.
+func (s *Server) serveLogStream(w http.ResponseWriter, r *http.Request, label, endedMsg string, attrs []any, run func(context.Context, io.Writer) error) {
+	sess := sessionFrom(r)
 	if s.logStreams.Add(1) > maxLogStreams {
 		s.logStreams.Add(-1)
 		http.Error(w, "Too many open log streams. Close one and try again.", http.StatusServiceUnavailable)
@@ -180,17 +214,18 @@ func (s *Server) handleLogsStream(w http.ResponseWriter, r *http.Request) {
 	// The log goroutine may outlive the handler by a moment; it must not
 	// write to a finished response.
 	defer sw.close()
-	if err := sw.comment("stream " + c.ID); err != nil {
+	if err := sw.comment(label); err != nil {
 		return
 	}
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	start := time.Now()
-	s.log.Info("log watch opened", "id", c.ID, "name", c.Name, "user", sess.Username)
+	attrs = append(attrs, "user", sess.Username)
+	s.log.Info("log watch opened", attrs...)
 	done := make(chan error, 1)
 	go func() {
-		done <- s.rt.ContainerLogs(ctx, c.ID, runtime.LogsOpts{Follow: true, Tail: tail}, sw)
+		done <- run(ctx, sw)
 	}()
 
 	ticker := time.NewTicker(logStreamTick)
@@ -208,7 +243,7 @@ loop:
 			case err != nil:
 				reason, endMsg = "error", userError(err)
 			default:
-				reason, endMsg = "ended", "The log stream ended; the container is no longer running."
+				reason, endMsg = "ended", endedMsg
 			}
 			break loop
 		case <-ctx.Done():
@@ -225,8 +260,8 @@ loop:
 			}
 		}
 	}
-	// Cancelling ends the runtime's log process; wait for its last output
-	// before the end event.
+	// Cancelling ends the log process; wait for its last output before the
+	// end event.
 	cancel()
 	if !finished {
 		select {
@@ -237,8 +272,7 @@ loop:
 	if endMsg != "" {
 		_ = sw.end(endMsg)
 	}
-	s.log.Info("log watch closed", "id", c.ID, "name", c.Name, "user", sess.Username, "reason", reason,
-		"duration", time.Since(start).Round(time.Second))
+	s.log.Info("log watch closed", append(attrs, "reason", reason, "duration", time.Since(start).Round(time.Second))...)
 }
 
 // sseWriter turns raw log output into Server-Sent Events. Complete lines

@@ -47,6 +47,21 @@ Features:
   project by pasting, opening or dropping a compose file (checked live as you
   type), start, stop, restart, pull, take it down, and edit it. When the
   original file is not available, it is rebuilt from the containers.
+- **System**: the version and installation of ContainerUI and the **host** it
+  runs on: hostname, operating system (with kernel on Linux, build on
+  Windows), architecture, virtualization, uptime, CPU, memory, load average
+  (Linux), free space of the container storage (Linux) or system drive
+  (Windows), and what matters for containers: SELinux mode, cgroup version
+  and systemd version on Linux, WSL version and the Hyper-V Host Compute
+  Service on Windows.
+- **System logs** on the System page: the **journal** on Linux (filtered by
+  unit, priority and time range: current boot, last hour/24 hours/7 days or
+  all) and the **Event Log** on Windows (System, Application and the
+  container related channels such as Hyper-V Compute and Containers;
+  filtered by level and time range). *Watch logs* follows the log live in a
+  new tab like a container log; *Download logs* saves the matching entries as
+  text, on Windows also as an `.evtx` file for the Event Viewer. Every
+  signed-in user can read the system logs.
 - Login with system accounts: PAM on Linux, Windows accounts on Windows, for
   users who may use the container runtime's socket or pipe; plus optional
   accounts from the config file (Windows); served over HTTP or HTTPS
@@ -474,6 +489,22 @@ says why the stream stopped (container stopped, error, session ended). The
 page does not use the browser's automatic SSE reconnect, which would replay
 the initial lines; it offers a *Reconnect* button instead and keeps at most
 20,000 lines.
+
+### System logs
+
+`internal/hostlog` reads the host's log. On Linux it runs `journalctl
+--no-pager --output=short-iso` with `--unit`, `--priority` and `--boot` or
+`--since=-<range>`, plus `--follow --lines=100` for the live view. On Windows
+it runs `wevtutil qe <channel> /f:RenderedXml /uni:true` with an XPath filter
+on level and age and turns each event into one line in the same style
+(`<time> <level> <provider>[<event id>]: <message>`); the live view reads the
+last 100 events and then polls every 2 seconds for newer record IDs.
+`wevtutil epl` exports the `.evtx` file. The query values must be one of the
+offered units or channels, priorities and ranges, so nothing else from the
+request reaches the command line. The endpoints are `/system/logs/watch`,
+`/system/logs/stream` and `/system/logs/download` (`?sel=&prio=&since=`,
+`&format=native` for `.evtx`); the stream shares the limit of 16 open log
+streams with the container logs.
 
 ### Adding a driver
 

@@ -75,6 +75,8 @@ func newEnvWith(t *testing.T, opt func(*Options)) *env {
 		Runtime: rt, Users: users, Sessions: auth.NewSessions(time.Hour, time.Hour), Jobs: jm, ComposeDir: composeDir,
 		WarmInterval: -1, // deterministic: no background warm-ups
 		Logger:       slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		HostLog:      &fakeSysLog{},
+		HostInfo:     fakeHostInfo,
 	}
 	if opt != nil {
 		opt(&o)

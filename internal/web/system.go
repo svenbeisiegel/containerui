@@ -4,9 +4,12 @@ import (
 	"net/http"
 	"os"
 	goruntime "runtime"
+
+	"github.com/svenbeisiegel/containerui/internal/hostinfo"
 )
 
-// systemData is the System page: what runs and how it was installed.
+// systemData is the System page: what runs, how it was installed and the
+// host it runs on.
 type systemData struct {
 	Version     string
 	OS, Arch    string
@@ -14,6 +17,8 @@ type systemData struct {
 	InstallType string
 	Executable  string
 	PID         int
+	Host        hostinfo.Info
+	Logs        *sysLogsView // nil: no system log on this platform
 }
 
 func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
@@ -24,6 +29,8 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 		GoVersion:   goruntime.Version(),
 		InstallType: s.installType,
 		PID:         os.Getpid(),
+		Host:        s.hostinfo(r.Context()),
+		Logs:        s.sysLogsPanel(r.Context()),
 	}
 	if exe, err := os.Executable(); err == nil {
 		d.Executable = exe

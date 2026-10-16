@@ -18,6 +18,8 @@ import (
 
 	"github.com/svenbeisiegel/containerui/internal/auth"
 	"github.com/svenbeisiegel/containerui/internal/compose"
+	"github.com/svenbeisiegel/containerui/internal/hostinfo"
+	"github.com/svenbeisiegel/containerui/internal/hostlog"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 )
@@ -44,6 +46,10 @@ type Options struct {
 	// WarmInterval limits how often serving the login page starts a
 	// background runtime warm-up. Zero means 10s; negative disables it.
 	WarmInterval time.Duration
+	// HostLog and HostInfo describe the host on the System page; nil means
+	// this platform's system log and host information.
+	HostLog  hostlog.Source
+	HostInfo func(context.Context) hostinfo.Info
 }
 
 // favicon is the first of these files present in static/. None is shipped;
@@ -75,6 +81,8 @@ type Server struct {
 
 	version     string
 	installType string
+	hostlog     hostlog.Source // nil: no system log on this platform
+	hostinfo    func(context.Context) hostinfo.Info
 
 	terminals  atomic.Int32 // open terminal connections
 	logStreams atomic.Int32 // open live log streams
@@ -86,6 +94,13 @@ func New(o Options) (*Server, error) {
 		throttle: auth.NewThrottle(), secure: o.Secure, log: o.Logger, store: compose.Store{Dir: o.ComposeDir},
 		pages:   map[string]*template.Template{},
 		version: o.Version, installType: o.InstallType,
+		hostlog: o.HostLog, hostinfo: o.HostInfo,
+	}
+	if s.hostlog == nil {
+		s.hostlog = hostlog.New()
+	}
+	if s.hostinfo == nil {
+		s.hostinfo = hostinfo.Collect
 	}
 	if s.log == nil {
 		s.log = slog.Default()
@@ -200,6 +215,9 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("POST /compose/{project}", s.handleComposeUpdate)
 	authed.HandleFunc("POST /compose/{project}/{action}", s.handleComposeAction)
 	authed.HandleFunc("GET /system", s.handleSystem)
+	authed.HandleFunc("GET /system/logs/watch", s.handleSysLogsWatch)
+	authed.HandleFunc("GET /system/logs/stream", s.handleSysLogsStream)
+	authed.HandleFunc("GET /system/logs/download", s.handleSysLogsDownload)
 	mux.Handle("/", s.requireAuth(s.checkCSRF(authed)))
 
 	return s.recoverer(s.logRequests(securityHeaders(s.checkOrigin(mux))))

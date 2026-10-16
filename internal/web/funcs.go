@@ -42,6 +42,8 @@ var funcs = template.FuncMap{
 		}
 		return m, nil
 	},
+	"bytes":    humanBytes,
+	"duration": humanDuration,
 	"datetime": func(t time.Time) string {
 		if t.IsZero() {
 			return ""
@@ -85,4 +87,33 @@ func plural(n int, unit string) string {
 		return "1 " + unit
 	}
 	return fmt.Sprintf("%d %ss", n, unit)
+}
+
+// humanBytes formats n with binary units: "15.5 GiB".
+func humanBytes(n uint64) string {
+	const unit = 1024
+	if n < unit {
+		return fmt.Sprintf("%d B", n)
+	}
+	div, exp := uint64(unit), 0
+	for m := n / unit; m >= unit && exp < 5; m /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %ciB", float64(n)/float64(div), "KMGTPE"[exp])
+}
+
+// humanDuration formats a long duration coarsely: "11 days 2 hours",
+// "3 hours 5 minutes", "42 minutes".
+func humanDuration(d time.Duration) string {
+	days := int(d.Hours()) / 24
+	hours := int(d.Hours()) % 24
+	mins := int(d.Minutes()) % 60
+	switch {
+	case days > 0:
+		return plural(days, "day") + " " + plural(hours, "hour")
+	case hours > 0:
+		return plural(hours, "hour") + " " + plural(mins, "minute")
+	}
+	return plural(mins, "minute")
 }

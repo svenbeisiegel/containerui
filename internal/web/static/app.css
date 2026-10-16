@@ -384,6 +384,7 @@ pre.log {
 dl.props { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1.25rem; margin: 0 0 1rem; }
 dl.props dt { color: var(--muted); }
 dl.props dd { margin: 0; }
+.syslog-actions { justify-content: flex-start; }
 
 /* ---------- networks ---------- */
 .connect-form { display: grid; grid-template-columns: minmax(12rem, 1.2fr) minmax(10rem, 1fr) minmax(9rem, .8fr) auto; gap: .9rem 1.2rem; align-items: end; margin-bottom: .5rem; }

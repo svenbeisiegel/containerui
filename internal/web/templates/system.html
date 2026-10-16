@@ -3,9 +3,10 @@
 <div class="page-head">
   <div>
     <h1>System</h1>
-    <p class="muted small">This ContainerUI and how it is installed.</p>
+    <p class="muted small">This ContainerUI, how it is installed and the host it runs on.</p>
   </div>
 </div>
+<div class="grid2">
 <section class="panel">
   <h2>ContainerUI</h2>
   <dl class="props">
@@ -17,4 +18,56 @@
   </dl>
   <p class="muted small">{{if eq $d.InstallType "rpm package"}}Update with the rpm of the newer release: <code>dnf upgrade ./containerui-&lt;version&gt;.rpm</code>.{{else if eq $d.InstallType "msi package"}}Update by running the msi of the newer release; the service is restarted and the configuration kept.{{else}}Install the rpm or msi package of a release to update.{{end}}</p>
 </section>
+{{$h := $d.Host}}
+<section class="panel">
+  <h2>Host</h2>
+  <dl class="props">
+    {{with $h.Hostname}}<dt>Hostname</dt><dd class="mono">{{.}}</dd>{{end}}
+    {{with $h.OSName}}<dt>Operating system</dt><dd>{{.}}{{if $h.Build}}{{with $h.OSVersion}} {{.}}{{end}}{{end}}</dd>{{end}}
+    {{with $h.Build}}<dt>Build</dt><dd class="mono">{{.}}</dd>{{end}}
+    {{with $h.Kernel}}<dt>Kernel</dt><dd class="mono">{{.}}</dd>{{end}}
+    {{with $h.Arch}}<dt>Architecture</dt><dd class="mono">{{.}}</dd>{{end}}
+    {{with $h.Virtualization}}<dt>Virtualization</dt><dd>{{.}}</dd>{{end}}
+    {{if $h.Uptime}}<dt>Uptime</dt><dd>{{duration $h.Uptime}} <span class="muted small">since {{datetime $h.BootTime}}</span></dd>{{end}}
+    {{if or $h.CPUModel $h.CPUs}}<dt>CPU</dt><dd>{{$h.CPUModel}}{{if $h.CPUs}}{{if $h.CPUModel}} · {{end}}{{$h.CPUs}} logical CPUs{{end}}</dd>{{end}}
+    {{if $h.MemTotal}}<dt>Memory</dt><dd>{{bytes $h.MemAvailable}} available of {{bytes $h.MemTotal}}</dd>{{end}}
+    {{if $h.HasLoad}}<dt>Load average</dt><dd class="mono">{{printf "%.2f %.2f %.2f" (index $h.Load 0) (index $h.Load 1) (index $h.Load 2)}}</dd>{{end}}
+    {{if $h.StorageTotal}}<dt>Storage</dt><dd>{{bytes $h.StorageFree}} free of {{bytes $h.StorageTotal}} <span class="mono muted small">{{$h.StorageMount}}</span></dd>{{end}}
+    {{with $h.SELinux}}<dt>SELinux</dt><dd>{{.}}</dd>{{end}}
+    {{with $h.Cgroup}}<dt>cgroup</dt><dd>{{.}}</dd>{{end}}
+    {{with $h.Systemd}}<dt>systemd</dt><dd class="mono">{{.}}</dd>{{end}}
+    {{with $h.WSL}}<dt>WSL</dt><dd class="mono">{{.}}</dd>{{end}}
+    {{with $h.HyperV}}<dt>Hyper-V</dt><dd>{{.}}</dd>{{end}}
+  </dl>
+</section>
+</div>
+{{with $d.Logs}}
+<section class="panel syslogs">
+  <h2>System Logs <span class="muted small">{{.Label}}</span></h2>
+  {{if .Err}}<div class="flash error" role="alert">{{.Err}}</div>{{else}}
+  <form method="get" action="/system/logs/watch" target="_blank" class="stack">
+    <div class="fields three">
+      <label class="field">
+        <span class="field-label">{{.SelectorLabel}}</span>
+        <select name="sel">{{range .Selectors}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select>
+      </label>
+      <label class="field">
+        <span class="field-label">Priority</span>
+        <select name="prio">{{range .Priorities}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select>
+      </label>
+      <label class="field">
+        <span class="field-label">Time range</span>
+        <select name="since">{{range .Ranges}}<option value="{{.Value}}">{{.Label}}</option>{{end}}</select>
+      </label>
+    </div>
+    <div class="actions syslog-actions">
+      <button type="submit" class="primary" formaction="/system/logs/watch" formtarget="_blank">Watch logs</button>
+      <button type="submit" formaction="/system/logs/download" formtarget="_self">Download logs</button>
+      {{with .ExportExt}}<button type="submit" name="format" value="native" formaction="/system/logs/download" formtarget="_self">Download {{.}}</button>{{end}}
+    </div>
+  </form>
+  <p class="muted small">Watching opens a new tab that starts with the last 100 matching entries of the time range and follows new ones. Downloading saves every matching entry of the time range.</p>
+  {{end}}
+</section>
+{{end}}
 {{end}}
