@@ -27,8 +27,6 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/term"
-
 	"github.com/svenbeisiegel/containerui/internal/auth"
 	"github.com/svenbeisiegel/containerui/internal/config"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
@@ -419,7 +417,7 @@ func ensureUser(cfg *config.Config, path string) (*config.Config, error) {
 	if len(cfg.Users) > 0 {
 		return cfg, nil
 	}
-	if !term.IsTerminal(int(os.Stdin.Fd())) {
+	if !isTerminal(os.Stdin) {
 		return nil, fmt.Errorf("%s has no users: start containerui once in a terminal to create one, or add one under users (see: containerui hash-password)", path)
 	}
 	fmt.Fprintf(os.Stderr, "No user is configured yet. Create the account for signing in to ContainerUI.\nIt is saved in %s.\n", path)
@@ -466,13 +464,13 @@ var errMismatch = errors.New("passwords do not match")
 // without echo.
 func readPasswordTwice() (string, error) {
 	fmt.Fprint(os.Stderr, "Password: ")
-	p1, err := term.ReadPassword(int(os.Stdin.Fd()))
+	p1, err := readPassword(os.Stdin)
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return "", err
 	}
 	fmt.Fprint(os.Stderr, "Repeat password: ")
-	p2, err := term.ReadPassword(int(os.Stdin.Fd()))
+	p2, err := readPassword(os.Stdin)
 	fmt.Fprintln(os.Stderr)
 	if err != nil {
 		return "", err
@@ -485,7 +483,7 @@ func readPasswordTwice() (string, error) {
 
 func hashPassword() error {
 	var pw string
-	if term.IsTerminal(int(os.Stdin.Fd())) {
+	if isTerminal(os.Stdin) {
 		p, err := readPasswordTwice()
 		if err != nil {
 			return err

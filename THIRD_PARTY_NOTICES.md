@@ -17,7 +17,6 @@ into the binary differ from this list.
 | Go standard library and runtime | go1.27.1 | BSD-3-Clause | all | https://go.dev |
 | golang.org/x/crypto | v0.57.0 | BSD-3-Clause | all | https://go.googlesource.com/crypto |
 | golang.org/x/sys | v0.48.0 | BSD-3-Clause | all | https://go.googlesource.com/sys |
-| golang.org/x/term | v0.46.0 | BSD-3-Clause | all | https://go.googlesource.com/term |
 | github.com/aymanbagabas/go-pty | v0.2.3 | MIT | all | https://github.com/aymanbagabas/go-pty |
 | github.com/coder/websocket | v1.8.15 | ISC | all | https://github.com/coder/websocket |
 | gopkg.in/yaml.v3 | v3.0.1 | MIT and Apache-2.0 | all | https://github.com/go-yaml/yaml |
@@ -31,7 +30,6 @@ into the binary differ from this list.
 |---|---|---|---|---|
 | htmx | 2.0.4 | 0BSD | `internal/web/static/htmx.min.js` | https://github.com/bigskysoftware/htmx |
 | xterm.js (@xterm/xterm) | 5.5.0 | MIT | `internal/web/static/vendor/xterm/xterm.js`, `xterm.css` | https://github.com/xtermjs/xterm.js |
-| @xterm/addon-fit | 0.10.0 | MIT | `internal/web/static/vendor/xterm/addon-fit.js` | https://github.com/xtermjs/xterm.js |
 
 The vendored JavaScript files are the unmodified npm release files, with only
 the trailing `sourceMappingURL` comment removed.
@@ -47,7 +45,7 @@ These are not part of the binaries or packages and are listed for completeness:
 
 ## License texts
 
-### Go standard library and runtime, golang.org/x/crypto, golang.org/x/sys, golang.org/x/term
+### Go standard library and runtime, golang.org/x/crypto, golang.org/x/sys
 
 The Go distribution and the golang.org/x modules carry the same BSD-3-Clause
 license. The text below is the Go distribution's; the x modules' LICENSE files
@@ -523,30 +521,6 @@ OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 Copyright (c) 2017-2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 Copyright (c) 2014-2016, SourceLair Private Company (https://www.sourcelair.com)
 Copyright (c) 2012-2013, Christopher Jeffrey (https://github.com/chjj/)
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
-THE SOFTWARE.
-```
-
-### @xterm/addon-fit
-
-```text
-Copyright (c) 2019, The xterm.js authors (https://github.com/xtermjs/xterm.js)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

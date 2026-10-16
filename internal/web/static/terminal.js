@@ -25,8 +25,32 @@
     disconnectBtn.hidden = !connected;
   }
 
+  // fit resizes term to the cells that fit into the terminal box. xterm.js
+  // sizes its screen element to exactly cols x rows cells, which gives the
+  // cell size without reaching into its internals.
+  function fit(term) {
+    var el = term.element;
+    if (!el || !el.parentElement) return;
+    var screen = el.querySelector(".xterm-screen");
+    var viewport = el.querySelector(".xterm-viewport");
+    if (!screen) return;
+    var r = screen.getBoundingClientRect();
+    var cellW = r.width / term.cols, cellH = r.height / term.rows;
+    if (!cellW || !cellH) return;
+    // Content box of the parent (clientWidth includes its padding),
+    // less the terminal's own padding and scrollbar.
+    var parent = el.parentElement, ps = window.getComputedStyle(parent), es = window.getComputedStyle(el);
+    var px = function (style, a, b) { return (parseFloat(style[a]) || 0) + (parseFloat(style[b]) || 0); };
+    var scrollbar = viewport ? viewport.offsetWidth - viewport.clientWidth : 0;
+    var w = parent.clientWidth - px(ps, "paddingLeft", "paddingRight") - px(es, "paddingLeft", "paddingRight") - scrollbar;
+    var h = parent.clientHeight - px(ps, "paddingTop", "paddingBottom") - px(es, "paddingTop", "paddingBottom");
+    var cols = Math.max(2, Math.floor(w / cellW));
+    var rows = Math.max(1, Math.floor(h / cellH));
+    if (cols !== term.cols || rows !== term.rows) term.resize(cols, rows);
+  }
+
   function connect() {
-    if (session || !window.Terminal || !window.FitAddon) return;
+    if (session || !window.Terminal) return;
 
     if (lastTerm) lastTerm.dispose();
     var term = new window.Terminal({
@@ -37,10 +61,8 @@
       theme: { background: "#071026", foreground: "#e6edf7", cursor: "#00a1e0", selectionBackground: "#35508a" }
     });
     lastTerm = term;
-    var fit = new window.FitAddon.FitAddon();
-    term.loadAddon(fit);
     term.open(box);
-    fit.fit();
+    fit(term);
 
     var proto = location.protocol === "https:" ? "wss:" : "ws:";
     var url = proto + "//" + location.host + box.getAttribute("data-url") +
@@ -64,7 +86,7 @@
     }
 
     var observer = window.ResizeObserver ? new ResizeObserver(function () {
-      try { fit.fit(); } catch (e) { /* terminal disposed */ }
+      try { fit(term); } catch (e) { /* terminal disposed */ }
     }) : null;
     if (observer) observer.observe(box);
     term.onResize(sendResize);

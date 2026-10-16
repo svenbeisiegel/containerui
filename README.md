@@ -460,8 +460,8 @@ SDK driver can be added behind the same interface.
 
 ### Terminal
 
-The browser runs [xterm.js](https://xtermjs.org/) 5.5 with the fit addon
-(MIT, vendored in `internal/web/static/vendor/xterm/`). It talks to
+The browser runs [xterm.js](https://xtermjs.org/) 5.5 (MIT, vendored in
+`internal/web/static/vendor/xterm/`); `terminal.js` sizes it to the window. It talks to
 `/containers/{id}/terminal/ws` over a WebSocket: binary messages carry raw
 terminal bytes, text messages carry JSON control messages (`resize` from the
 browser, `exit` / `error` from the server).
