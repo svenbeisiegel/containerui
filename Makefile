@@ -65,7 +65,10 @@ clean:
 # packages builds the rpm and deb packages into DIST, and the binaries and
 # configuration the msi is made of, which only the WiX Toolset on Windows can
 # build, into PKG.
+# The third-party notices go with the packages, as a release asset of their own.
 packages: rpm deb msi-inputs
+	@mkdir -p $(DIST)
+	cp THIRD_PARTY_NOTICES.md $(DIST)/
 	@$(MAKE) --no-print-directory checksums
 
 # nfpm takes its files from fixed paths, see packaging/linux/nfpm.yaml, so the

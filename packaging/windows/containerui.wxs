@@ -8,10 +8,13 @@
     wix build packaging/windows/containerui.wxs -arch x64 -ext WixToolset.Util.wixext
       -ext WixToolset.Firewall.wixext -ext WixToolset.UI.wixext -d Version=1.0.0
       -d Bin=build/pkg/containerui_windows_amd64.exe -d Config=build/pkg/config.windows.yaml
+      -d License=LICENSE -d Notices=THIRD_PARTY_NOTICES.md
       -o dist/containerui-1.0.0-x64.msi
 
   Bin is the binary built with -X main.packaging=msi and Config the default
-  configuration; make msi-inputs builds both.
+  configuration; make msi-inputs builds both. License and Notices are the
+  repository's LICENSE and THIRD_PARTY_NOTICES.md, installed beside the
+  binary.
 
   Users sign in with their Windows account when they may use the Docker
   named pipe (members of docker-users or Administrators). wslc and podman
@@ -102,6 +105,7 @@
 
     <Feature Id="Main" Title="ContainerUI" AllowAbsent="no">
       <ComponentRef Id="Executable" />
+      <ComponentRef Id="Licenses" />
       <ComponentRef Id="DataFolder" />
       <ComponentRef Id="ComposeFolder" />
       <ComponentRef Id="LogFolder" />
@@ -134,6 +138,12 @@
                       Stop="both"
                       Remove="uninstall"
                       Wait="yes" />
+    </Component>
+
+    <!-- ContainerUI's license and the third-party notices -->
+    <Component Id="Licenses" Directory="INSTALLFOLDER">
+      <File Id="LicenseFile" Name="LICENSE.txt" Source="$(License)" KeyPath="yes" />
+      <File Id="NoticesFile" Name="THIRD_PARTY_NOTICES.md" Source="$(Notices)" />
     </Component>
 
     <!-- The configuration and the generated TLS key: SYSTEM and

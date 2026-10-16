@@ -5,6 +5,7 @@ import (
 	"os"
 	goruntime "runtime"
 
+	"github.com/svenbeisiegel/containerui"
 	"github.com/svenbeisiegel/containerui/internal/hostinfo"
 )
 
@@ -36,4 +37,11 @@ func (s *Server) handleSystem(w http.ResponseWriter, r *http.Request) {
 		d.Executable = exe
 	}
 	s.render(w, "system", s.newPage(r, "System", "system", d))
+}
+
+// handleLicenses serves the third-party notices, the licenses of the
+// open-source components in this binary, as plain text.
+func (s *Server) handleLicenses(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	_, _ = w.Write([]byte(containerui.Notices))
 }

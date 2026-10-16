@@ -566,4 +566,6 @@ go run ./cmd/containerui -config config.yaml -driver fake -debug
 
 ## License
 
-MIT, see [LICENSE](LICENSE).
+MIT, see [LICENSE](LICENSE). The open-source components ContainerUI contains
+and their licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md);
+the packages install it beside the binary, and the System page links to it.

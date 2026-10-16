@@ -73,6 +73,12 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
+          name: notices
+          path: dist/THIRD_PARTY_NOTICES.md
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        with:
           name: msi-inputs
           path: |
             build/pkg/containerui_windows_*.exe
@@ -119,6 +125,8 @@ jobs:
               -d Version=${{ inputs.version }} `
               -d Bin="$PWD\build\pkg\containerui_windows_$goarch.exe" `
               -d Config="$PWD\build\pkg\config.windows.yaml" `
+              -d License="$PWD\LICENSE" `
+              -d Notices="$PWD\THIRD_PARTY_NOTICES.md" `
               -o dist/containerui-${{ inputs.version }}-$arch.msi
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
@@ -146,6 +154,11 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: msi
+          path: dist
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: notices
           path: dist
 
       - name: checksums

@@ -30,6 +30,16 @@ contents:
     file_info:
       mode: 0755
 
+  # the license and the third-party notices, which go with the binary
+  - src: LICENSE
+    dst: /usr/share/doc/containerui/LICENSE
+    file_info:
+      mode: 0644
+  - src: THIRD_PARTY_NOTICES.md
+    dst: /usr/share/doc/containerui/THIRD_PARTY_NOTICES.md
+    file_info:
+      mode: 0644
+
   - src: packaging/linux/containerui.service
     dst: /usr/lib/systemd/system/containerui.service
     file_info:
