@@ -2,7 +2,7 @@
 //
 //	containerui [serve] [-config config.yaml] [-driver name] [-debug] [-logfile path]
 //	containerui version
-//	containerui init-config [-listen addr] [-compose-dir dir] <path|->
+//	containerui init-config [-listen addr] [-compose-dir dir] [-events-dir dir] <path|->
 //	containerui hash-password
 //
 // Without -config it uses config.yaml next to the executable and writes the
@@ -29,6 +29,7 @@ import (
 
 	"github.com/svenbeisiegel/containerui/internal/auth"
 	"github.com/svenbeisiegel/containerui/internal/config"
+	"github.com/svenbeisiegel/containerui/internal/events"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
 	"github.com/svenbeisiegel/containerui/internal/logfile"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
@@ -91,7 +92,7 @@ func usage() {
       is used (and created with the defaults if missing).
   containerui version
       Print the version.
-  containerui init-config [-listen addr] [-compose-dir dir] <path|->
+  containerui init-config [-listen addr] [-compose-dir dir] [-events-dir dir] <path|->
       Write the default configuration to a new file (- for standard output).
   containerui hash-password
       Read a password and print its bcrypt hash for the config file.
@@ -226,6 +227,8 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		log.Debug("compose not available (needs docker or podman with a compose tool)")
 	}
 
+	evStore := openEvents(ctx, cfg, log)
+
 	s, err := web.New(web.Options{
 		Runtime:  rt,
 		Users:    users,
@@ -235,6 +238,7 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		Logger:   log,
 
 		ComposeDir: cfg.Resolve(cfg.Runtime.ComposeDir),
+		Events:     evStore,
 
 		Version:     version,
 		InstallType: installType(stop != nil),
@@ -297,6 +301,26 @@ func run(o serveOptions, stop <-chan struct{}) error {
 	}
 	jm.Wait()
 	return nil
+}
+
+// openEvents opens the store of the journal's error events and starts
+// collecting them until ctx ends. It returns nil, and the UI has no Events
+// page, without a journal or when the store cannot be opened.
+func openEvents(ctx context.Context, cfg *config.Config, log *slog.Logger) *events.Store {
+	src := events.NewSource()
+	if src == nil {
+		log.Debug("error events not collected: no systemd journal")
+		return nil
+	}
+	dir := cfg.Resolve(cfg.Events.Dir)
+	st, err := events.Open(dir)
+	if err != nil {
+		log.Warn("error events not collected", "dir", dir, "error", err)
+		return nil
+	}
+	log.Info("collecting error events from the journal", "dir", dir, "kept", events.Retention)
+	go (&events.Collector{Store: st, Source: src, Log: log}).Run(ctx)
+	return st
 }
 
 // installType describes how this ContainerUI runs, for the System page.
@@ -391,11 +415,12 @@ func initConfig(args []string) error {
 	fs := flag.NewFlagSet("init-config", flag.ExitOnError)
 	listen := fs.String("listen", "", "listen address (default 0.0.0.0:8443)")
 	composeDir := fs.String("compose-dir", "", "folder for compose projects deployed through the UI (default: compose, next to the config)")
+	eventsDir := fs.String("events-dir", "", "folder for the error events of the journal (default: events, next to the config)")
 	_ = fs.Parse(args)
 	if fs.NArg() != 1 {
-		return errors.New("usage: containerui init-config [-listen addr] [-compose-dir dir] <path|->")
+		return errors.New("usage: containerui init-config [-listen addr] [-compose-dir dir] [-events-dir dir] <path|->")
 	}
-	data, err := config.Template(*listen, *composeDir)
+	data, err := config.Template(*listen, *composeDir, *eventsDir)
 	if err != nil {
 		return err
 	}

@@ -514,3 +514,63 @@
   {{else}}<button type="button" class="unavailable" disabled>Connect</button>{{end}}
 </span>
 {{end}}
+
+{{/* ---------- events ---------- */}}
+{{define "events_unread"}}<span id="events-unread" class="nav-count" hx-get="/partials/events/unread" hx-trigger="every 30s, events-changed from:body" hx-swap="outerHTML">{{if .}}<span class="badge bad" title="{{.}} unread">{{.}}</span>{{end}}</span>{{end}}
+
+{{define "events_list"}}
+<section id="events" class="panel">
+  {{template "flash" .Flash}}
+  <div class="panel-head">
+    <h2>{{.Total}} {{if eq .Total 1}}event{{else}}events{{end}} <span class="muted small">{{.Unread}} unread in all</span></h2>
+    <div class="actions">
+      <button type="button" class="link" hx-get="/partials/events?{{.Query}}&n={{.Limit}}" hx-target="#events" hx-swap="outerHTML">Refresh</button>
+      {{if .Unmarked}}
+      <form hx-post="/events/read" hx-target="#events" hx-swap="outerHTML">
+        <input type="hidden" name="all" value="1">
+        <input type="hidden" name="component" value="{{.Filter.Component}}">
+        <input type="hidden" name="q" value="{{.Filter.Text}}">
+        {{if .Filter.Unread}}<input type="hidden" name="unread" value="1">{{end}}
+        <button type="submit">Mark all shown as read</button>
+      </form>
+      {{end}}
+    </div>
+  </div>
+  {{if not .Events}}<p class="empty">{{if or .Filter.Component .Filter.Text .Filter.Unread}}No events match the filter.{{else}}No error events in the last 7 days.{{end}}</p>
+  {{else}}
+  <div class="event-list">
+    {{range .Events}}{{template "event_item" (dict "E" . "Open" false)}}{{end}}
+  </div>
+  {{if gt .Total (len .Events)}}
+  <p class="footnote">Showing the newest {{len .Events}} of {{.Total}}. <a href="/events?{{.Query}}&n={{.More}}" hx-get="/partials/events?{{.Query}}&n={{.More}}" hx-target="#events" hx-swap="outerHTML">Show more</a></p>
+  {{end}}
+  {{end}}
+</section>
+{{end}}
+
+{{define "event_item"}}{{$e := .E}}
+<details class="event{{if not $e.Read}} unread{{end}}" id="event-{{$e.ID}}"{{if .Open}} open{{end}}
+  {{if not $e.Read}} hx-post="/events/{{$e.ID}}/open" hx-trigger="toggle once" hx-swap="outerHTML"{{end}}>
+  <summary>
+    <span class="event-time" title="{{datetime $e.Time}}">{{datetime $e.Time}}</span>
+    <span class="badge {{if le $e.Priority 2}}bad{{else}}warn{{end}}">{{$e.PriorityName}}</span>
+    <span class="event-component mono">{{$e.Component}}</span>
+    <span class="event-message">{{$e.Message}}</span>
+    {{if not $e.Read}}<span class="badge info">new</span>{{end}}
+  </summary>
+  <div class="event-body">
+    <pre class="log">{{$e.Message}}</pre>
+    <dl class="props">
+      <dt>Time</dt><dd>{{datetime $e.Time}} <span class="muted small">{{ago $e.Time}}</span></dd>
+      <dt>Priority</dt><dd>{{$e.PriorityName}} ({{$e.Priority}})</dd>
+      {{with $e.Unit}}<dt>Unit</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $e.Identifier}}<dt>Identifier</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $e.PID}}<dt>PID</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $e.Host}}<dt>Host</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $e.Transport}}<dt>Transport</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $e.Boot}}<dt>Boot</dt><dd class="mono">{{.}}</dd>{{end}}
+      <dt>Read</dt><dd>{{if $e.Read}}by {{$e.ReadBy}} at {{datetime $e.ReadAt}}{{else}}not yet{{end}}</dd>
+    </dl>
+  </div>
+</details>
+{{end}}

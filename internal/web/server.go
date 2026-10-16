@@ -18,6 +18,7 @@ import (
 
 	"github.com/svenbeisiegel/containerui/internal/auth"
 	"github.com/svenbeisiegel/containerui/internal/compose"
+	"github.com/svenbeisiegel/containerui/internal/events"
 	"github.com/svenbeisiegel/containerui/internal/hostinfo"
 	"github.com/svenbeisiegel/containerui/internal/hostlog"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
@@ -50,6 +51,9 @@ type Options struct {
 	// this platform's system log and host information.
 	HostLog  hostlog.Source
 	HostInfo func(context.Context) hostinfo.Info
+	// Events are the host's error events for the Events page; nil hides
+	// the page.
+	Events *events.Store
 }
 
 // favicon is the first of these files present in static/. None is shipped;
@@ -83,6 +87,7 @@ type Server struct {
 	installType string
 	hostlog     hostlog.Source // nil: no system log on this platform
 	hostinfo    func(context.Context) hostinfo.Info
+	events      *events.Store // nil: no Events page
 
 	terminals  atomic.Int32 // open terminal connections
 	logStreams atomic.Int32 // open live log streams
@@ -94,7 +99,7 @@ func New(o Options) (*Server, error) {
 		throttle: auth.NewThrottle(), secure: o.Secure, log: o.Logger, store: compose.Store{Dir: o.ComposeDir},
 		pages:   map[string]*template.Template{},
 		version: o.Version, installType: o.InstallType,
-		hostlog: o.HostLog, hostinfo: o.HostInfo,
+		hostlog: o.HostLog, hostinfo: o.HostInfo, events: o.Events,
 	}
 	if s.hostlog == nil {
 		s.hostlog = hostlog.New()
@@ -131,7 +136,7 @@ func New(o Options) (*Server, error) {
 }
 
 func (s *Server) parseTemplates() error {
-	pages := []string{"login", "dashboard", "containers", "container_new", "container_detail", "images", "volumes", "volume_detail", "compose", "compose_new", "compose_detail", "networks", "network_detail", "system"}
+	pages := []string{"login", "dashboard", "containers", "container_new", "container_detail", "images", "volumes", "volume_detail", "compose", "compose_new", "compose_detail", "networks", "network_detail", "system", "events"}
 	for _, p := range pages {
 		t, err := template.New(p).Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/partials.html", "templates/"+p+".html")
 		if err != nil {
@@ -219,6 +224,11 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /system/logs/watch", s.handleSysLogsWatch)
 	authed.HandleFunc("GET /system/logs/stream", s.handleSysLogsStream)
 	authed.HandleFunc("GET /system/logs/download", s.handleSysLogsDownload)
+	authed.HandleFunc("GET /events", s.handleEvents)
+	authed.HandleFunc("GET /partials/events", s.handleEventsPartial)
+	authed.HandleFunc("GET /partials/events/unread", s.handleEventsUnread)
+	authed.HandleFunc("POST /events/read", s.handleEventsRead)
+	authed.HandleFunc("POST /events/{id}/open", s.handleEventOpen)
 	mux.Handle("/", s.requireAuth(s.checkCSRF(authed)))
 
 	return s.recoverer(s.logRequests(securityHeaders(s.checkOrigin(mux))))
@@ -396,6 +406,10 @@ type page struct {
 	Caps        runtime.Capabilities
 	Flash       *flash
 	Data        any
+	// HasEvents shows the Events page in the navigation, with the number
+	// of unread events.
+	HasEvents    bool
+	EventsUnread int
 }
 
 type flash struct {
@@ -428,6 +442,9 @@ func userError(err error) string {
 
 func (s *Server) newPage(r *http.Request, title, active string, data any) page {
 	p := page{Title: title, Active: active, Runtime: s.rt.Name(), Caps: s.caps(), Data: data}
+	if s.events != nil {
+		p.HasEvents, p.EventsUnread = true, s.events.Unread()
+	}
 	if sess := sessionFrom(r); sess != nil {
 		p.User, p.CSRF = sess.Username, sess.CSRF
 		if f := sess.PopFlash(); f != "" {

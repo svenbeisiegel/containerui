@@ -477,3 +477,31 @@ body.logwatch [hidden] { display: none !important; }
   font-size: .8rem; line-height: 1.4;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
+
+/* ---------- events ---------- */
+.nav-count .badge { margin-left: .4rem; }
+.events-filter { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 1.5fr) auto; gap: .9rem 1.2rem; align-items: end; }
+@media (max-width: 720px) { .events-filter { grid-template-columns: minmax(0, 1fr); } }
+.event-list { display: flex; flex-direction: column; }
+details.event { border-bottom: 1px solid var(--border); }
+details.event:last-child { border-bottom: 0; }
+details.event > summary {
+  cursor: pointer; display: grid; grid-template-columns: 9.5rem 3.4rem 13rem minmax(0, 1fr) max-content;
+  gap: .4rem .8rem; align-items: baseline; padding: .5rem .4rem; list-style: none;
+}
+details.event > summary::-webkit-details-marker { display: none; }
+details.event > summary:hover { background: color-mix(in srgb, var(--soft) 55%, transparent); }
+details.event > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+details.event > summary .badge { justify-self: start; }
+.event-time { color: var(--muted); font-size: .84rem; white-space: nowrap; }
+.event-component { font-size: .84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
+.event-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+details.event[open] .event-message { white-space: normal; overflow-wrap: anywhere; }
+details.event.unread .event-message, details.event.unread .event-component { font-weight: 700; color: var(--heading); }
+.event-body { padding: 0 .4rem .75rem; }
+.event-body pre.log { margin: 0 0 .75rem; }
+.event-body dl.props { margin: 0; }
+@media (max-width: 720px) {
+  details.event > summary { grid-template-columns: max-content max-content minmax(0, 1fr); }
+  .event-message { grid-column: 1 / -1; }
+}

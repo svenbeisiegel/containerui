@@ -1,0 +1,29 @@
+{{define "content"}}
+{{$d := .Data}}
+<div class="page-head">
+  <div>
+    <h1>Events</h1>
+    <p class="muted small">Errors of the system journal (priority err and worse), kept for 7 days. Opening an event marks it as read for every administrator.</p>
+  </div>
+</div>
+<section class="panel">
+  {{/* The page itself answers, so the address bar keeps the filter; htmx takes the list out of it. */}}
+  <form class="events-filter" method="get" action="/events" hx-get="/events" hx-select="#events" hx-target="#events" hx-swap="outerHTML" hx-push-url="true"
+        hx-trigger="submit, change, keyup changed delay:400ms from:#events-q">
+    <label class="field">
+      <span class="field-label">Component</span>
+      <select name="component">
+        <option value="">All components</option>
+        {{range $d.Components}}<option value="{{.Name}}" {{if eq .Name $d.Filter.Component}}selected{{end}}>{{.Name}} ({{.Total}}{{if .Unread}}, {{.Unread}} unread{{end}})</option>{{end}}
+      </select>
+    </label>
+    <label class="field">
+      <span class="field-label">Search</span>
+      <input type="search" id="events-q" name="q" value="{{$d.Filter.Text}}" placeholder="Text in message or component" maxlength="200">
+    </label>
+    <label class="switch"><input type="checkbox" name="unread" value="1" {{if $d.Filter.Unread}}checked{{end}}><span class="track"></span> Unread only</label>
+    <noscript><button type="submit">Filter</button></noscript>
+  </form>
+</section>
+{{template "events_list" $d}}
+{{end}}

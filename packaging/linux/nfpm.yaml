@@ -3,7 +3,7 @@
 # files are relative to the repository root, where make runs nfpm, and make
 # puts them in build/pkg/linux for each architecture in turn: the binary built
 # with -X main.packaging=rpm, and the config written by init-config with the
-# compose folder in /var/lib/containerui.
+# compose and events folders in /var/lib/containerui.
 name: containerui
 arch: ${ARCH}
 platform: linux
@@ -64,6 +64,11 @@ contents:
     file_info:
       mode: 0750
   - dst: /var/lib/containerui/compose
+    type: dir
+    file_info:
+      mode: 0750
+  # the error events of the journal, kept for 7 days
+  - dst: /var/lib/containerui/events
     type: dir
     file_info:
       mode: 0750

@@ -77,7 +77,7 @@ packages: rpm deb msi-inputs
 rpm deb:
 	@mkdir -p $(PKG)/linux $(DIST)
 	@rm -f $(PKG)/linux/config.yaml
-	go run $(MAIN) init-config -compose-dir /var/lib/containerui/compose $(PKG)/linux/config.yaml
+	go run $(MAIN) init-config -compose-dir /var/lib/containerui/compose -events-dir /var/lib/containerui/events $(PKG)/linux/config.yaml
 	@for arch in amd64 arm64; do \
 		echo "building $(PKG)/linux/$(BINARY) for $$arch"; \
 		GOOS=linux GOARCH=$$arch $(BUILDENV) go build $(GOFLAGS) \

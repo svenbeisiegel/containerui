@@ -25,6 +25,7 @@
       {{if .Caps.Volumes}}<a href="/volumes" {{if eq .Active "volumes"}}aria-current="page"{{end}}>Volumes</a>{{end}}
       {{if .Caps.Networks}}<a href="/networks" {{if eq .Active "networks"}}aria-current="page"{{end}}>Networks</a>{{end}}
       <a href="/system" {{if eq .Active "system"}}aria-current="page"{{end}}>System</a>
+      {{if .HasEvents}}<a href="/events" {{if eq .Active "events"}}aria-current="page"{{end}}>Events{{template "events_unread" .EventsUnread}}</a>{{end}}
     </nav>
     <div class="session">
       <span class="badge runtime" title="Container runtime driver">{{.Runtime}}</span>

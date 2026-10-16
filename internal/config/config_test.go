@@ -180,7 +180,7 @@ func TestAddUserNoUsersKey(t *testing.T) {
 }
 
 func TestTemplate(t *testing.T) {
-	data, err := Template("0.0.0.0:9443", "/var/lib/containerui/compose")
+	data, err := Template("0.0.0.0:9443", "/var/lib/containerui/compose", "/var/lib/containerui/events")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,13 +188,13 @@ func TestTemplate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("template does not parse: %v\n%s", err, data)
 	}
-	if cfg.Server.Listen != "0.0.0.0:9443" || cfg.Runtime.ComposeDir != "/var/lib/containerui/compose" {
-		t.Errorf("listen %q, compose_dir %q", cfg.Server.Listen, cfg.Runtime.ComposeDir)
+	if cfg.Server.Listen != "0.0.0.0:9443" || cfg.Runtime.ComposeDir != "/var/lib/containerui/compose" || cfg.Events.Dir != "/var/lib/containerui/events" {
+		t.Errorf("listen %q, compose_dir %q, events.dir %q", cfg.Server.Listen, cfg.Runtime.ComposeDir, cfg.Events.Dir)
 	}
 	if !strings.Contains(string(data), "# deployed compose files") {
 		t.Error("the comment of compose_dir was dropped")
 	}
-	same, err := Template("", "")
+	same, err := Template("", "", "")
 	if err != nil || string(same) != string(DefaultYAML) {
 		t.Errorf("empty values changed the template: %v", err)
 	}

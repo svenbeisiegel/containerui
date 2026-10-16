@@ -62,6 +62,13 @@ Features:
   new tab like a container log; *Download logs* saves the matching entries as
   text, on Windows also as an `.evtx` file for the Event Viewer. Every
   signed-in user can read the system logs.
+- **Events** (Linux): ContainerUI follows the journal in the background and
+  keeps its **errors** (priority err and worse) for **7 days**, on disk, so
+  they can be browsed on the Events page by component (systemd unit, syslog
+  identifier or `kernel`) and text. The first start imports the last 7 days;
+  later starts continue where the previous one stopped. Opening an event
+  marks it as read for every administrator (who read it and when is kept);
+  the navigation shows how many are unread. See [Events](#events).
 - Login with system accounts: PAM on Linux, Windows accounts on Windows, for
   users who may use the container runtime's socket or pipe; plus optional
   accounts from the config file (Windows); served over HTTP or HTTPS
@@ -123,6 +130,7 @@ sudo dnf install ./containerui-<version>-1.x86_64.rpm
 | Service | `containerui.service` (`/usr/lib/systemd/system`), runs as **root**, enabled and started on install, restarted on upgrade |
 | Configuration | `/etc/containerui/config.yaml` (`%config(noreplace)`: an upgrade keeps your file and puts the new default beside it as `.rpmnew`); the self-signed certificate is generated next to it |
 | Compose projects | `/var/lib/containerui/compose` |
+| Error events | `/var/lib/containerui/events`, see [Events](#events) |
 | Log | the journal: `journalctl -u containerui` |
 
 The service listens on `0.0.0.0:8443`, so other machines can reach it; set
@@ -261,6 +269,7 @@ The default file is [internal/config/default.yaml](internal/config/default.yaml)
 | `runtime.compose_path` | — | A standalone compose binary (`docker-compose`, `podman-compose`); empty = detect, see [Compose](#compose) |
 | `runtime.compose_timeout` | `30m` | Timeout for compose up/down/pull/start/stop |
 | `runtime.compose_dir` | `compose` | Folder for the compose files deployed through the UI (relative to the config file) |
+| `events.dir` | `events` | Linux: folder for the journal's error events and their read state (relative to the config file), see [Events](#events) |
 | `users[]` | — | Windows: additional accounts, `username` plus `password_hash` (bcrypt) or `password` (plaintext, warns). Ignored on Linux |
 
 Configs using the earlier `runtime.wslc:` block (`path`, `session`,
@@ -506,6 +515,36 @@ request reaches the command line. The endpoints are `/system/logs/watch`,
 `/system/logs/stream` and `/system/logs/download` (`?sel=&prio=&since=`,
 `&format=native` for `.evtx`); the stream shares the limit of 16 open log
 streams with the container logs.
+
+### Events
+
+`internal/events` runs `journalctl --priority=err --output=json --follow
+--lines=all`, from `--since=<7 days ago>` on the first start and with
+`--after-cursor=<cursor>` afterwards, and restarts it with a growing delay
+if it ends. The events are stored in `events.dir` as JSON Lines, one file
+per UTC day, and day files older than 7 days are deleted (at start and
+hourly):
+
+| File | Content |
+|---|---|
+| `events-YYYY-MM-DD.jsonl` | one event per line: `id`, `time`, `boot`, `priority` (0–3), `priority_name`, `component`, `unit`, `identifier`, `pid`, `host`, `transport`, `message` |
+| `reads-YYYY-MM-DD.jsonl` | `id`, `user`, `at` for each event of that day somebody read |
+| `state.json` | the journal cursor to continue from |
+
+`component` is the systemd unit, else the syslog identifier, else `kernel`
+for kernel messages, else the command name. The files can be searched
+directly:
+
+```sh
+cd /var/lib/containerui/events
+jq -c 'select(.component=="docker.service")' events-*.jsonl
+jq -r 'select(.priority<=2) | "\(.time) \(.component): \(.message)"' events-*.jsonl
+grep -h '"component":"kernel"' events-*.jsonl
+```
+
+The page is `/events` (`?component=&q=&unread=1`); opening an event posts to
+`/events/<id>/open`, *Mark all shown as read* to `/events/read`. The newest
+100,000 events are held in memory for the page.
 
 ### Adding a driver
 

@@ -41,6 +41,12 @@ runtime:
   compose_timeout: 30m    # compose up/down/pull
   compose_dir: compose    # deployed compose files, one folder per project
 
+# Linux: the errors of the systemd journal (priority err and worse) are
+# kept for 7 days and shown on the Events page, one JSON Lines file per
+# day, which grep and jq can search (relative to this file).
+events:
+  dir: events
+
 # Windows: additional sign-in accounts. When the list is empty and
 # system_accounts is false, ContainerUI asks for a username and password on
 # its first start and adds the account here.

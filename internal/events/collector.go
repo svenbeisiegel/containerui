@@ -1,0 +1,135 @@
+package events
+
+import (
+	"context"
+	"log/slog"
+	"time"
+)
+
+// Source is the system log the error events come from.
+type Source interface {
+	// Follow calls line with each error entry, as journalctl --output=json
+	// writes it, starting after cursor, or at since when cursor is "". It
+	// keeps following new entries until ctx ends or the reader fails.
+	Follow(ctx context.Context, cursor string, since time.Time, line func([]byte)) error
+}
+
+const (
+	batchSize     = 100
+	flushInterval = time.Second
+	pruneInterval = time.Hour
+	minBackoff    = time.Second
+	maxBackoff    = time.Minute
+)
+
+// Collector follows a Source and adds its events to a Store.
+type Collector struct {
+	Store  *Store
+	Source Source
+	Log    *slog.Logger
+}
+
+// Run collects until ctx ends. The first run reads the last Retention of
+// the log; later ones resume after the stored cursor, so nothing logged
+// while ContainerUI was stopped is missed. A reader that ends is restarted
+// with a growing delay.
+func (c *Collector) Run(ctx context.Context) {
+	log := c.Log
+	if log == nil {
+		log = slog.Default()
+	}
+	prune := time.NewTicker(pruneInterval)
+	defer prune.Stop()
+	backoff := minBackoff
+	for ctx.Err() == nil {
+		cursor := c.Store.Cursor()
+		if cursor == "" {
+			log.Info("importing error events from the journal", "since", Retention, "dir", c.Store.Dir())
+		} else {
+			log.Debug("following the journal for error events", "dir", c.Store.Dir())
+		}
+		started := time.Now()
+		err := c.follow(ctx, cursor, prune.C, log)
+		if ctx.Err() != nil {
+			return
+		}
+		if time.Since(started) > maxBackoff {
+			backoff = minBackoff
+		}
+		log.Warn("journal reader for error events ended; restarting", "error", err, "in", backoff)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(backoff):
+		}
+		backoff = min(backoff*2, maxBackoff)
+	}
+}
+
+// follow runs one reader and stores its events in batches until it ends.
+func (c *Collector) follow(ctx context.Context, cursor string, prune <-chan time.Time, log *slog.Logger) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	lines := make(chan []byte, batchSize)
+	done := make(chan error, 1)
+	go func() {
+		done <- c.Source.Follow(ctx, cursor, time.Now().Add(-Retention), func(line []byte) {
+			select {
+			case lines <- line:
+			case <-ctx.Done():
+			}
+		})
+	}()
+
+	var batch []Event
+	last := ""
+	take := func(line []byte) {
+		e, cur, ok := ParseJournal(line)
+		if cur != "" {
+			last = cur
+		}
+		if ok {
+			batch = append(batch, e)
+		}
+	}
+	flush := func() {
+		if last == "" {
+			return
+		}
+		if err := c.Store.Add(batch, last); err != nil {
+			log.Error("store error events", "error", err)
+		}
+		batch, last = batch[:0], ""
+	}
+	tick := time.NewTicker(flushInterval)
+	defer tick.Stop()
+	for {
+		select {
+		case line := <-lines:
+			take(line)
+			if len(batch) >= batchSize {
+				flush()
+			}
+		case <-tick.C:
+			flush()
+		case <-prune:
+			flush()
+			if err := c.Store.Prune(); err != nil {
+				log.Warn("prune error events", "error", err)
+			}
+		case err := <-done:
+			// the reader has stopped sending; take what it left
+		drain:
+			for {
+				select {
+				case line := <-lines:
+					take(line)
+				default:
+					break drain
+				}
+			}
+			flush()
+			return err
+		}
+	}
+}

@@ -28,6 +28,7 @@ const FileName = "config.yaml"
 type Config struct {
 	Server  Server  `yaml:"server"`
 	Runtime Runtime `yaml:"runtime"`
+	Events  Events  `yaml:"events"`
 	Users   []User  `yaml:"users"`
 
 	// Dir is the directory the config file was loaded from. Relative paths
@@ -89,6 +90,13 @@ type legacyWSLC struct {
 	PullTimeout    time.Duration `yaml:"pull_timeout"`
 }
 
+// Events configures the error events kept from the systemd journal (Linux).
+type Events struct {
+	// Dir holds the events and their read state (relative to the config
+	// file).
+	Dir string `yaml:"dir"`
+}
+
 // User is a login account. Either PasswordHash (bcrypt, preferred) or
 // Password (plaintext) must be set.
 type User struct {
@@ -116,6 +124,7 @@ func Default() *Config {
 			ComposeTimeout: 30 * time.Minute,
 			ComposeDir:     "compose",
 		},
+		Events: Events{Dir: "events"},
 	}
 }
 
@@ -131,14 +140,16 @@ func DefaultPath() (string, error) {
 	return filepath.Join(filepath.Dir(exe), FileName), nil
 }
 
-// Template is DefaultYAML with the listen address and the compose folder
-// replaced where they are set (empty keeps the default), which is how the
-// installers write a configuration that fits the folders of the platform.
-func Template(listen, composeDir string) ([]byte, error) {
+// Template is DefaultYAML with the listen address, the compose folder and
+// the events folder replaced where they are set (empty keeps the default),
+// which is how the installers write a configuration that fits the folders
+// of the platform.
+func Template(listen, composeDir, eventsDir string) ([]byte, error) {
 	out := DefaultYAML
 	for _, r := range []struct{ key, value string }{
 		{"listen", listen},
 		{"compose_dir", composeDir},
+		{"dir", eventsDir},
 	} {
 		if r.value == "" {
 			continue
@@ -277,6 +288,7 @@ func (c *Config) applyDefaults() {
 	c.Runtime.PullTimeout = cmp(c.Runtime.PullTimeout, d.Runtime.PullTimeout)
 	c.Runtime.ComposeTimeout = cmp(c.Runtime.ComposeTimeout, d.Runtime.ComposeTimeout)
 	c.Runtime.ComposeDir = cmp(c.Runtime.ComposeDir, d.Runtime.ComposeDir)
+	c.Events.Dir = cmp(c.Events.Dir, d.Events.Dir)
 }
 
 // cmp returns v, or def if v is the zero value.
