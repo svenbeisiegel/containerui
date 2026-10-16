@@ -197,7 +197,8 @@ wix extension add --global WixToolset.Util.wixext/5.0.2
 wix extension add --global WixToolset.Firewall.wixext/5.0.2
 wix extension add --global WixToolset.UI.wixext/5.0.2
 wix build packaging/windows/containerui.wxs -arch x64 -ext WixToolset.Util.wixext -ext WixToolset.Firewall.wixext -ext WixToolset.UI.wixext `
-  -d Version=1.0.0 -d Bin=build\pkg\containerui_windows_amd64.exe -d Config=build\pkg\config.windows.yaml -o dist\containerui-1.0.0-x64.msi
+  -d Version=1.0.0 -d Bin=build\pkg\containerui_windows_amd64.exe -d Config=build\pkg\config.windows.yaml `
+  -d License=LICENSE -d Notices=THIRD_PARTY_NOTICES.md -o dist\containerui-1.0.0-x64.msi
 ```
 
 A release is made by running the **Release** workflow with a version: it

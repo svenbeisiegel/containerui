@@ -165,6 +165,8 @@ jobs:
             -d Version="$(Get-Content VERSION)" `
             -d Bin="$PWD\build\pkg\containerui_windows_amd64.exe" `
             -d Config="$PWD\build\pkg\config.windows.yaml" `
+            -d License="$PWD\LICENSE" `
+            -d Notices="$PWD\THIRD_PARTY_NOTICES.md" `
             -o containerui.msi
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
