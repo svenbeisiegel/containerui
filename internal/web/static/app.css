@@ -195,6 +195,7 @@ tbody tr:hover { background: color-mix(in srgb, var(--soft) 55%, transparent); }
 
 .mono, .id, pre { font-family: var(--mono); }
 .mono { font-size: .9rem; word-break: break-all; }
+.in-use { color: var(--muted); margin-left: .15em; cursor: help; }
 .id { color: var(--muted); font-size: .8rem; }
 .muted { color: var(--muted); }
 .small { font-size: .82rem; }

@@ -241,7 +241,7 @@ func TestPagesRender(t *testing.T) {
 		"/containers/new":          {`name="image"`, "alpine:latest", "bridge"},
 		"/containers/new?image=x":  {`value="x"`},
 		"/containers/c0ffee000001": {"Inspect", "nginx:1.27", "Restart"},
-		"/images":                  {"Pull an Image", "alpine", "nginx", "Tag…"},
+		"/images":                  {"Pull an Image", "alpine", "nginx", "Tag…", `class="in-use"`, "Warning: this image is in use"},
 		"/partials/images":         {`id="images"`},
 		"/partials/pulls":          {`id="pulls"`},
 		"/volumes":                 {"Create a Volume", "Prune volumes", "cache", `href="/volumes/data"`, `href="/containers/web"`, "Force delete"},

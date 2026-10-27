@@ -32,15 +32,13 @@
     {{else if not .Running}}<p class="empty">No containers are running. <a href="/containers/new">Create one</a>.</p>
     {{else}}
     <div class="table-wrap"><table>
-      <thead><tr><th>Name</th><th>Image</th><th>Status</th><th>Ports</th><th>Networks</th></tr></thead>
+      <thead><tr><th>Name</th><th>Image</th><th>Status</th></tr></thead>
       <tbody>
       {{range .Running}}
         <tr>
-          <td><a href="/containers/{{.ID}}">{{.Name}}</a><div class="id">{{shortID .ID}}</div></td>
+          <td><a href="/containers/{{.ID}}">{{.Name}}</a></td>
           <td class="mono">{{.Image}}</td>
           <td>{{template "state" .State}} <span class="muted">{{.Status}}</span></td>
-          <td class="mono">{{.Ports}}</td>
-          <td>{{join .Networks ", "}}</td>
         </tr>
       {{end}}
       </tbody>
@@ -168,7 +166,7 @@
     {{$caps := .Caps}}{{$csrf := .CSRF}}
     {{range .Images}}
       <tr>
-        <td class="mono">{{.Repository}}</td>
+        <td class="mono">{{.Repository}}{{if .Containers}}<span class="in-use" title="In use by {{.Containers}} container(s)">*</span>{{end}}</td>
         <td class="mono">{{.Tag}}</td>
         <td class="id" title="{{.ID}}">{{shortID .ID}}</td>
         <td>{{.Size}}</td>
@@ -188,11 +186,11 @@
             </details>
             {{end}}
             <form method="post" action="/images/delete" hx-post="/images/delete" hx-target="#images" hx-swap="outerHTML" hx-disabled-elt="find button"
-                  hx-confirm="{{if .Containers}}Force delete {{.Ref}}? It is used by {{.Containers}} container(s).{{else}}Delete image {{.Ref}}?{{end}}">
+                  hx-confirm="Delete image {{.Ref}}?{{if .Containers}} Warning: this image is in use by {{.Containers}} container(s); it will be removed anyway.{{end}}">
               <input type="hidden" name="csrf" value="{{$csrf}}">
               <input type="hidden" name="ref" value="{{.Ref}}">
-              {{if .Containers}}<input type="hidden" name="force" value="true"><button type="submit" class="danger">Force delete</button>
-              {{else}}<button type="submit" class="danger">Delete</button>{{end}}
+              {{if .Containers}}<input type="hidden" name="force" value="true">{{end}}
+              <button type="submit" class="danger">Delete</button>
             </form>
           </div>
         </td>

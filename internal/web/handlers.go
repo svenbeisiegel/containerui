@@ -571,7 +571,7 @@ func (s *Server) handleImageDelete(w http.ResponseWriter, r *http.Request) {
 		s.log.Warn("image delete failed", "ref", ref, "error", err)
 		f := errFlash(err)
 		if errors.Is(err, runtime.ErrConflict) {
-			f.Msg += " The image is used by a container; delete the container first or use Force delete."
+			f.Msg += " The image is used by a container; delete the container first, or refresh the list and delete again to remove it anyway."
 		}
 		s.imageResult(w, r, f)
 		return
