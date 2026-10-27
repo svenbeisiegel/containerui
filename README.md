@@ -65,7 +65,8 @@ Features:
 - **Events** (Linux): ContainerUI follows the journal in the background and
   keeps its **errors** (priority err and worse) for **7 days**, on disk, so
   they can be browsed on the Events page by component (systemd unit, syslog
-  identifier or `kernel`) and text. The first start imports the last 7 days;
+  identifier or `kernel`) and text. Lines a process writes together, such
+  as a stack trace, are shown as one event. The first start imports the last 7 days;
   later starts continue where the previous one stopped. Opening an event
   marks it as read for every administrator (who read it and when is kept);
   the navigation shows how many are unread. See [Events](#events).
@@ -527,12 +528,13 @@ hourly):
 
 | File | Content |
 |---|---|
-| `events-YYYY-MM-DD.jsonl` | one event per line: `id`, `time`, `boot`, `priority` (0–3), `priority_name`, `component`, `unit`, `identifier`, `pid`, `host`, `transport`, `message` |
+| `events-YYYY-MM-DD.jsonl` | one event per line: `id`, `time`, `boot`, `priority` (0–3), `priority_name`, `component`, `unit`, `identifier`, `container`, `pid`, `host`, `transport`, `message` |
 | `reads-YYYY-MM-DD.jsonl` | `id`, `user`, `at` for each event of that day somebody read |
 | `state.json` | the journal cursor to continue from |
 
 `component` is the systemd unit, else the syslog identifier, else `kernel`
-for kernel messages, else the command name. The files can be searched
+for kernel messages, else the command name; `container` is the container
+name the Docker journald log driver sets. The files can be searched
 directly:
 
 ```sh
@@ -545,6 +547,14 @@ grep -h '"component":"kernel"' events-*.jsonl
 The page is `/events` (`?component=&q=&unread=1`); opening an event posts to
 `/events/<id>/open`, *Mark all shown as read* to `/events/read`. The newest
 100,000 events are held in memory for the page.
+
+Programs write a multi-line message, such as a stack trace on stderr, as
+one journal entry per line. The page therefore shows groups: the entries of
+the same boot, component, container and PID, each at most a second after the
+one before, are one event, shown with its first non-blank line and the
+number of further lines, and in full when opened. Opening it, the counts and
+*Mark all shown as read* all count groups; the files keep one line per
+entry.
 
 ### Adding a driver
 

@@ -28,6 +28,8 @@ func TestParseJournal(t *testing.T) {
 	}{
 		{"unit", journalLine("c1", at, 3, `,"_SYSTEMD_UNIT":"docker.service","SYSLOG_IDENTIFIER":"dockerd","_PID":"42","MESSAGE":"boom\n"`),
 			true, "docker.service", "boom", 3, 42},
+		{"container", journalLine("c8", at, 3, `,"_SYSTEMD_UNIT":"docker.service","CONTAINER_NAME":"web","_PID":"42","MESSAGE":"at x"`),
+			true, "docker.service", "at x", 3, 42},
 		{"identifier", journalLine("c2", at, 2, `,"SYSLOG_IDENTIFIER":"myapp","MESSAGE":"crit"`), true, "myapp", "crit", 2, 0},
 		{"kernel", journalLine("c3", at, 3, `,"_TRANSPORT":"kernel","MESSAGE":"oops"`), true, "kernel", "oops", 3, 0},
 		{"comm", journalLine("c4", at, 0, `,"_COMM":"bash","MESSAGE":"x"`), true, "bash", "x", 0, 0},
@@ -48,6 +50,9 @@ func TestParseJournal(t *testing.T) {
 		}
 		if e.Component != c.component || e.Message != c.message || e.Priority != c.priority || e.PID != c.pid {
 			t.Errorf("%s: got component %q message %q priority %d pid %d", c.name, e.Component, e.Message, e.Priority, e.PID)
+		}
+		if (c.name == "container") != (e.Container == "web") {
+			t.Errorf("%s: container %q", c.name, e.Container)
 		}
 		if !e.Time.Equal(at) || e.Boot != "b1" || e.Host != "host" || len(e.ID) != 16 || e.PriorityName != PriorityName(c.priority) {
 			t.Errorf("%s: got %+v", c.name, e)
@@ -82,10 +87,11 @@ func ev(id string, t time.Time, component, msg string) Event {
 	return Event{ID: id, Time: t, Priority: 3, PriorityName: "err", Component: component, Message: msg}
 }
 
-func ids(evs []Event) []string {
+// ids are the IDs of the groups, joined with + within a group.
+func ids(gs []Group) []string {
 	var out []string
-	for _, e := range evs {
-		out = append(out, e.ID)
+	for _, g := range gs {
+		out = append(out, strings.Join(g.IDs(), "+"))
 	}
 	return out
 }
@@ -209,6 +215,70 @@ func TestStoreFilter(t *testing.T) {
 	}
 	if n, _ := s.MarkAllRead("u", Filter{Component: "docker.service"}); n != 1 || s.Unread() != 2 {
 		t.Errorf("MarkAllRead marked %d, %d unread left", n, s.Unread())
+	}
+}
+
+func TestStoreGroups(t *testing.T) {
+	now := time.Now()
+	s, err := open(t.TempDir(), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := now.Add(-time.Hour)
+	line := func(id string, after time.Duration, container string, pid int, msg string) Event {
+		e := ev(id, at.Add(after), "docker.service", msg)
+		e.Container, e.PID, e.Boot = container, pid, "b1"
+		return e
+	}
+	ms := time.Millisecond
+	err = s.Add([]Event{
+		line("t1", 0, "web", 7, "Error: boom"),
+		line("t2", 2*ms, "web", 7, "    at main (/app/index.js:1:1)"),
+		line("o1", 3*ms, "db", 7, "other container"),
+		ev("k1", at.Add(4*ms), "kernel", "interleaved"),
+		line("t3", 5*ms, "web", 7, ""),
+		line("p1", 6*ms, "web", 8, "other pid"),
+		line("t4", 900*ms, "web", 7, "Node.js v26"),
+	}, "c1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// a later batch continues the group, a gap starts a new one
+	_ = s.Add([]Event{line("t5", 1800*ms, "web", 7, "exit"), line("n1", 2900*ms, "web", 7, "restarted")}, "c2")
+	got, total := s.List(Filter{}, 0)
+	if want := []string{"n1", "p1", "k1", "o1", "t1+t2+t3+t4+t5"}; !slices.Equal(ids(got), want) || total != 5 {
+		t.Fatalf("List = %v (%d), want %v", ids(got), total, want)
+	}
+	g := got[4]
+	if g.Message() != "Error: boom\n    at main (/app/index.js:1:1)\n\nNode.js v26\nexit" || g.Summary() != "Error: boom" || g.Lines() != 5 {
+		t.Errorf("group: %q, summary %q", g.Message(), g.Summary())
+	}
+	if got, _ := s.List(Filter{Text: "index.js"}, 0); !slices.Equal(ids(got), []string{"t1+t2+t3+t4+t5"}) {
+		t.Errorf("text filter: %v", ids(got))
+	}
+	if n, _ := s.MarkAllRead("u", Filter{Text: "index.js"}); n != 1 || s.Unread() != 4 {
+		t.Errorf("MarkAllRead marked %d, %d unread", n, s.Unread())
+	}
+	if e, _ := s.Get("t5"); !e.Read() {
+		t.Error("marking by text did not mark the whole group")
+	}
+	if n, _ := s.MarkRead("u", "o1", "t3"); n != 1 {
+		t.Errorf("MarkRead of an event in a read group marked %d groups", n)
+	}
+	if g, ok := s.GroupOf("t4"); !ok || g.ID() != "t1" || !g.Read() {
+		t.Errorf("GroupOf(t4) = %v %v", g.IDs(), ok)
+	}
+	if c := s.Components(); c[0] != (Component{"docker.service", 4, 2}) {
+		t.Errorf("Components = %+v", c)
+	}
+
+	// the groups are rebuilt from the day files
+	s2, err := open(s.Dir(), func() time.Time { return now })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s2.List(Filter{Unread: true}, 0); !slices.Equal(ids(got), []string{"n1", "p1", "k1"}) {
+		t.Errorf("after reopen: %v", ids(got))
 	}
 }
 

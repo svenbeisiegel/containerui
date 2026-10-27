@@ -17,11 +17,11 @@ const eventsPageSize = 200
 type eventsView struct {
 	Filter     events.Filter
 	Components []events.Component
-	Events     []events.Event
-	Total      int    // events matching the filter
-	Unread     int    // unread events of all
-	Unmarked   int    // unread events matching the filter
-	Limit      int    // events shown at most
+	Events     []events.Group
+	Total      int    // groups matching the filter
+	Unread     int    // unread groups of all
+	Unmarked   int    // unread groups matching the filter
+	Limit      int    // groups shown at most
 	Query      string // the filter as query parameters
 	Flash      *flash
 }
@@ -109,14 +109,14 @@ func (s *Server) handleEventsUnread(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "events_unread", s.events.Unread())
 }
 
-// handleEventOpen marks an event read as its details are opened and
-// renders it again, open and read.
+// handleEventOpen marks an event and the rest of its group read as its
+// details are opened and renders the group again, open and read.
 func (s *Server) handleEventOpen(w http.ResponseWriter, r *http.Request) {
 	if !s.requireEvents(w) {
 		return
 	}
 	id := r.PathValue("id")
-	if _, ok := s.events.Get(id); !ok {
+	if _, ok := s.events.GroupOf(id); !ok {
 		http.Error(w, "unknown event", http.StatusNotFound)
 		return
 	}
@@ -126,12 +126,12 @@ func (s *Server) handleEventOpen(w http.ResponseWriter, r *http.Request) {
 	} else if n > 0 {
 		w.Header().Set("HX-Trigger", "events-changed")
 	}
-	e, _ := s.events.Get(id)
-	s.renderPartial(w, "event_item", map[string]any{"E": e, "Open": true})
+	g, _ := s.events.GroupOf(id)
+	s.renderPartial(w, "event_item", map[string]any{"G": g, "Open": true})
 }
 
-// handleEventsRead marks the selected events read: those in the ids
-// field, or with all=1 every unread event matching the filter. It renders
+// handleEventsRead marks the selected groups read: those of the events in
+// the ids field, or with all=1 every unread group matching the filter. It renders
 // the list again.
 func (s *Server) handleEventsRead(w http.ResponseWriter, r *http.Request) {
 	if !s.requireEvents(w) {

@@ -8,6 +8,11 @@
 //	reads-YYYY-MM-DD.jsonl   who read which event of that day, and when
 //	state.json               the journal cursor to resume from
 //
+// The lines a process writes together, such as a stack trace on stderr,
+// are journal entries of their own. The store groups them: entries of the
+// same boot, component, container and PID, each at most groupGap after the
+// one before, make one Group, which the Events page shows as one event.
+//
 // Day files make the retention a matter of deleting files, and JSON Lines
 // can be searched with grep or jq, e.g. by component:
 //
@@ -38,10 +43,13 @@ type Event struct {
 	Component  string `json:"component"`
 	Unit       string `json:"unit,omitempty"`
 	Identifier string `json:"identifier,omitempty"`
-	PID        int    `json:"pid,omitempty"`
-	Host       string `json:"host,omitempty"`
-	Transport  string `json:"transport,omitempty"`
-	Message    string `json:"message"`
+	// Container is the container name the Docker journald log driver
+	// sets; its entries all have the PID of dockerd.
+	Container string `json:"container,omitempty"`
+	PID       int    `json:"pid,omitempty"`
+	Host      string `json:"host,omitempty"`
+	Transport string `json:"transport,omitempty"`
+	Message   string `json:"message"`
 
 	// Who read the event and when; kept in the reads files.
 	ReadBy string    `json:"-"`
@@ -50,6 +58,103 @@ type Event struct {
 
 // Read reports whether somebody has read the event.
 func (e Event) Read() bool { return !e.ReadAt.IsZero() }
+
+// groupGap is how long after the previous entry of the same source an
+// entry still belongs to its group.
+const groupGap = time.Second
+
+// groupKey is the source of an event, for grouping.
+type groupKey struct {
+	boot, component, container string
+	pid                        int
+}
+
+func (e *Event) groupKey() groupKey {
+	return groupKey{e.Boot, e.Component, e.Container, e.PID}
+}
+
+// Group is the events one source logged together, oldest first, such as
+// the lines of a stack trace. It has at least one event.
+type Group struct {
+	Events []*Event
+}
+
+// ID is the ID of the first event.
+func (g Group) ID() string { return g.Events[0].ID }
+
+// First is the oldest event.
+func (g Group) First() Event { return *g.Events[0] }
+
+// Last is the newest event.
+func (g Group) Last() Event { return *g.Events[len(g.Events)-1] }
+
+// Lines is the number of events.
+func (g Group) Lines() int { return len(g.Events) }
+
+// More is the number of events after the first.
+func (g Group) More() int { return len(g.Events) - 1 }
+
+// IDs are the IDs of the events.
+func (g Group) IDs() []string {
+	ids := make([]string, len(g.Events))
+	for i, e := range g.Events {
+		ids[i] = e.ID
+	}
+	return ids
+}
+
+// Message is the messages of the events, one per line.
+func (g Group) Message() string {
+	msgs := make([]string, len(g.Events))
+	for i, e := range g.Events {
+		msgs[i] = e.Message
+	}
+	return strings.Join(msgs, "\n")
+}
+
+// Summary is the first line of the message that is not blank.
+func (g Group) Summary() string {
+	for _, e := range g.Events {
+		for line := range strings.Lines(e.Message) {
+			if s := strings.TrimSpace(line); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
+}
+
+// Priority is the most severe priority of the events.
+func (g Group) Priority() int {
+	p := g.Events[0].Priority
+	for _, e := range g.Events[1:] {
+		p = min(p, e.Priority)
+	}
+	return p
+}
+
+// PriorityName is the syslog name of the group's priority.
+func (g Group) PriorityName() string { return PriorityName(g.Priority()) }
+
+// Read reports whether somebody has read all events of the group.
+func (g Group) Read() bool {
+	for _, e := range g.Events {
+		if !e.Read() {
+			return false
+		}
+	}
+	return true
+}
+
+// clone copies the events, so the group can be used outside the lock.
+func (g *Group) clone() Group {
+	evs := make([]*Event, len(g.Events))
+	for i, e := range g.Events {
+		c := *e
+		evs[i] = &c
+	}
+	return Group{Events: evs}
+}
 
 // day is the UTC day the event is filed under.
 func (e Event) day() string { return e.Time.UTC().Format(dayLayout) }
@@ -100,6 +205,7 @@ func ParseJournal(line []byte) (e Event, cursor string, ok bool) {
 		PriorityName: PriorityName(prio),
 		Unit:         firstNonEmpty(field("_SYSTEMD_UNIT"), field("_SYSTEMD_USER_UNIT")),
 		Identifier:   field("SYSLOG_IDENTIFIER"),
+		Container:    field("CONTAINER_NAME"),
 		Host:         field("_HOSTNAME"),
 		Transport:    field("_TRANSPORT"),
 		Message:      strings.TrimRight(field("MESSAGE"), "\n"),

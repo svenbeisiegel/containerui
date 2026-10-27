@@ -539,7 +539,7 @@
   {{if not .Events}}<p class="empty">{{if or .Filter.Component .Filter.Text .Filter.Unread}}No events match the filter.{{else}}No error events in the last 7 days.{{end}}</p>
   {{else}}
   <div class="event-list">
-    {{range .Events}}{{template "event_item" (dict "E" . "Open" false)}}{{end}}
+    {{range .Events}}{{template "event_item" (dict "G" . "Open" false)}}{{end}}
   </div>
   {{if gt .Total (len .Events)}}
   <p class="footnote">Showing the newest {{len .Events}} of {{.Total}}. <a href="/events?{{.Query}}&n={{.More}}" hx-get="/partials/events?{{.Query}}&n={{.More}}" hx-target="#events" hx-swap="outerHTML">Show more</a></p>
@@ -548,28 +548,30 @@
 </section>
 {{end}}
 
-{{define "event_item"}}{{$e := .E}}
-<details class="event{{if not $e.Read}} unread{{end}}" id="event-{{$e.ID}}"{{if .Open}} open{{end}}
-  {{if not $e.Read}} hx-post="/events/{{$e.ID}}/open" hx-trigger="toggle once" hx-swap="outerHTML"{{end}}>
+{{define "event_item"}}{{$g := .G}}{{$e := $g.First}}
+<details class="event{{if not $g.Read}} unread{{end}}" id="event-{{$g.ID}}"{{if .Open}} open{{end}}
+  {{if not $g.Read}} hx-post="/events/{{$g.ID}}/open" hx-trigger="toggle once" hx-swap="outerHTML"{{end}}>
   <summary>
     <span class="event-time" title="{{datetime $e.Time}}">{{datetime $e.Time}}</span>
-    <span class="badge {{if le $e.Priority 2}}bad{{else}}warn{{end}}">{{$e.PriorityName}}</span>
-    <span class="event-component mono">{{$e.Component}}</span>
-    <span class="event-message">{{$e.Message}}</span>
-    {{if not $e.Read}}<span class="badge info">new</span>{{end}}
+    <span class="badge {{if le $g.Priority 2}}bad{{else}}warn{{end}}">{{$g.PriorityName}}</span>
+    <span class="event-component mono" title="{{$e.Component}}{{with $e.Container}} · {{.}}{{end}}">{{$e.Component}}{{with $e.Container}} · {{.}}{{end}}</span>
+    <span class="event-message"><span class="event-text">{{$g.Summary}}</span>{{if $g.More}}<span class="event-more">+{{$g.More}} {{if eq $g.More 1}}line{{else}}lines{{end}}</span>{{end}}</span>
+    {{if not $g.Read}}<span class="badge info">new</span>{{end}}
   </summary>
   <div class="event-body">
-    <pre class="log">{{$e.Message}}</pre>
+    <pre class="log">{{$g.Message}}</pre>
     <dl class="props">
-      <dt>Time</dt><dd>{{datetime $e.Time}} <span class="muted small">{{ago $e.Time}}</span></dd>
-      <dt>Priority</dt><dd>{{$e.PriorityName}} ({{$e.Priority}})</dd>
+      <dt>Time</dt><dd>{{datetime $e.Time}}{{if $g.More}} – {{datetime $g.Last.Time}}{{end}} <span class="muted small">{{ago $e.Time}}</span></dd>
+      {{if $g.More}}<dt>Lines</dt><dd>{{$g.Lines}}</dd>{{end}}
+      <dt>Priority</dt><dd>{{$g.PriorityName}} ({{$g.Priority}})</dd>
       {{with $e.Unit}}<dt>Unit</dt><dd class="mono">{{.}}</dd>{{end}}
       {{with $e.Identifier}}<dt>Identifier</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $e.Container}}<dt>Container</dt><dd class="mono">{{.}}</dd>{{end}}
       {{with $e.PID}}<dt>PID</dt><dd class="mono">{{.}}</dd>{{end}}
       {{with $e.Host}}<dt>Host</dt><dd class="mono">{{.}}</dd>{{end}}
       {{with $e.Transport}}<dt>Transport</dt><dd class="mono">{{.}}</dd>{{end}}
       {{with $e.Boot}}<dt>Boot</dt><dd class="mono">{{.}}</dd>{{end}}
-      <dt>Read</dt><dd>{{if $e.Read}}by {{$e.ReadBy}} at {{datetime $e.ReadAt}}{{else}}not yet{{end}}</dd>
+      <dt>Read</dt><dd>{{if $g.Read}}by {{$g.Last.ReadBy}} at {{datetime $g.Last.ReadAt}}{{else}}not yet{{end}}</dd>
     </dl>
   </div>
 </details>

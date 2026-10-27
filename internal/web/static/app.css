@@ -495,8 +495,10 @@ details.event > summary:focus-visible { outline: 2px solid var(--focus); outline
 details.event > summary .badge { justify-self: start; }
 .event-time { color: var(--muted); font-size: .84rem; white-space: nowrap; }
 .event-component { font-size: .84rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; word-break: normal; }
-.event-message { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-details.event[open] .event-message { white-space: normal; overflow-wrap: anywhere; }
+.event-message { display: flex; gap: .6rem; align-items: baseline; min-width: 0; }
+.event-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.event-more { flex: none; color: var(--muted); font-size: .8rem; font-weight: 400; white-space: nowrap; }
+details.event[open] .event-text { white-space: normal; overflow-wrap: anywhere; }
 details.event.unread .event-message, details.event.unread .event-component { font-weight: 700; color: var(--heading); }
 .event-body { padding: 0 .4rem .75rem; }
 .event-body pre.log { margin: 0 0 .75rem; }
