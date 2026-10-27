@@ -168,7 +168,7 @@ main { max-width: 1280px; margin: 0 auto; padding: 1.5rem 1.25rem 2rem; }
   margin-bottom: 1rem;
   min-width: 0;
 }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
 .grid2 > .panel { margin-bottom: 0; }
 
 .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
