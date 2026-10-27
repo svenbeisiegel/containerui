@@ -33,6 +33,9 @@ func replay(t *testing.T, in string) ([]string, []events.Event, string) {
 }
 
 func TestConvertFormats(t *testing.T) {
+	// the fixtures were captured on a CET host
+	defer func(l *time.Location) { time.Local = l }(time.Local)
+	time.Local = time.FixedZone("CET", 3600)
 	want := []string{"Error: probe A +2", "[27.10.2026 - 00:00:00.000] [0] [warn ] probe C +0"}
 	cases := []struct{ name, format, in string }{
 		{"short", formatShort, `-- Boot fc000899846a450d9a37cba81a853732 --
