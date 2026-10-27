@@ -81,25 +81,22 @@ func (c *Collector) follow(ctx context.Context, cursor string, prune <-chan time
 		})
 	}()
 
+	// The cursor stored is the one before the oldest message that may
+	// still get lines, so a restart reads it again instead of losing it.
+	m := newMerger()
 	var batch []Event
-	last := ""
 	take := func(line []byte) {
-		e, cur, ok := ParseJournal(line)
-		if cur != "" {
-			last = cur
-		}
-		if ok {
-			batch = append(batch, e)
-		}
+		batch = append(batch, m.add(line, time.Now())...)
 	}
 	flush := func() {
-		if last == "" {
+		cursor := m.resume()
+		if len(batch) == 0 && (cursor == "" || cursor == c.Store.Cursor()) {
 			return
 		}
-		if err := c.Store.Add(batch, last); err != nil {
+		if err := c.Store.Add(batch, cursor); err != nil {
 			log.Error("store error events", "error", err)
 		}
-		batch, last = batch[:0], ""
+		batch = batch[:0]
 	}
 	tick := time.NewTicker(flushInterval)
 	defer tick.Stop()
@@ -111,6 +108,7 @@ func (c *Collector) follow(ctx context.Context, cursor string, prune <-chan time
 				flush()
 			}
 		case <-tick.C:
+			batch = append(batch, m.expire(time.Now())...)
 			flush()
 		case <-prune:
 			flush()
@@ -128,6 +126,7 @@ func (c *Collector) follow(ctx context.Context, cursor string, prune <-chan time
 					break drain
 				}
 			}
+			batch = append(batch, m.close()...)
 			flush()
 			return err
 		}

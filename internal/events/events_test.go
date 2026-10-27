@@ -2,10 +2,12 @@ package events
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -274,6 +276,8 @@ func TestCollector(t *testing.T) {
 	}
 	src := &fakeSource{runs: [][]string{
 		{journalLine("c1", now.Add(-time.Hour), 3, `,"SYSLOG_IDENTIFIER":"a","MESSAGE":"one"`),
+			journalLine("c1a", now, 3, `,"CONTAINER_ID_FULL":"x","MESSAGE":"Error: boom"`),
+			journalLine("c1b", now, 3, `,"CONTAINER_ID_FULL":"x","MESSAGE":"    at main"`),
 			journalLine("c2", now, 5, `,"MESSAGE":"notice"`)},
 		{journalLine("c3", now, 2, `,"SYSLOG_IDENTIFIER":"b","MESSAGE":"two"`)},
 	}}
@@ -285,7 +289,7 @@ func TestCollector(t *testing.T) {
 	}()
 	deadline := time.Now().Add(10 * time.Second)
 	for {
-		if _, n := s.List(Filter{}, 0); n == 2 && s.Cursor() == "c3" {
+		if _, n := s.List(Filter{}, 0); n == 3 && s.Cursor() == "c3" {
 			break
 		}
 		if time.Now().After(deadline) {
@@ -296,9 +300,196 @@ func TestCollector(t *testing.T) {
 	}
 	cancel()
 	<-done
+	if got, _ := s.List(Filter{Text: "boom"}, 0); len(got) != 1 || got[0].Message != "Error: boom\n    at main" {
+		t.Errorf("the lines of a container message are one event: %+v", got)
+	}
 	src.mu.Lock()
 	defer src.mu.Unlock()
 	if want := []string{"since -168h0m0s", "c2"}; !slices.Equal(src.calls, want) {
 		t.Errorf("Follow calls = %q, want %q (resume after the last cursor, even of a skipped entry)", src.calls, want)
+	}
+}
+
+// containerFeed adds lines a container wrote to m, each 50µs after the one
+// before, and collects the events completed.
+type containerFeed struct {
+	m   *merger
+	at  time.Time
+	n   int
+	got []Event
+}
+
+func (f *containerFeed) lines(container string, lines ...string) {
+	for _, l := range lines {
+		f.n++
+		msg, _ := json.Marshal(l)
+		line := journalLine(fmt.Sprintf("c%d", f.n), f.at.Add(time.Duration(f.n)*50*time.Microsecond), 3,
+			fmt.Sprintf(`,"_SYSTEMD_UNIT":"docker.service","_TRANSPORT":"journal","CONTAINER_NAME":%q,"CONTAINER_ID_FULL":"id-%s","MESSAGE":%s`, container, container, msg))
+		f.got = append(f.got, f.m.add([]byte(line), f.at)...)
+	}
+}
+
+func TestMerger(t *testing.T) {
+	at := time.Date(2026, 10, 27, 22, 30, 43, 0, time.UTC)
+	f := &containerFeed{m: newMerger(), at: at}
+	// a Node error object, and the next record a few µs later
+	f.lines("discovery",
+		"[27.10.2026 - 22:30:43.482] [0] [error ] [events.js:185] Error: connect ECONNREFUSED 192.0.2.10:443",
+		"    at TCPConnectWrap.afterConnect [as oncomplete] (node:net:2083:16) {",
+		"  errno: -111,")
+	// another container in between
+	f.lines("osem",
+		"node:internal/process/promises:324",
+		"    triggerUncaughtException(err, true /* fromPromise */);",
+		"    ^",
+		"",
+		"TypeError: fetch failed",
+		"    at async find (/opt/app/index.js:334:10) {",
+		"  [cause]: SocketError: other side closed",
+		"}",
+		"",
+		"Node.js v26.11.1")
+	f.lines("discovery",
+		"  port: 443",
+		"}",
+		"[27.10.2026 - 22:30:43.484] [0] [error ] [events.js:185] reconnect failed",
+		"[27.10.2026 - 22:30:43.484] [0] [error ] [startup.js:186] TZ= is not a valid timezone",
+		"Exiting now due to failing startup conditions")
+	f.lines("couchdb",
+		"[info] 2026-10-27T10:35:58.447313Z couchdb@couchdb-0.local <0.43.0> -------- SIGTERM received - shutting down",
+		"",
+		"[info] 2026-10-27T10:35:58.447410Z couchdb@couchdb-0.local <0.43.0> -------- SIGTERM received - shutting down",
+		"",
+		"[error] 2026-10-27T11:00:37.297932Z couchdb@couchdb-0.local <0.1900.0> -------- gen_server terminated with reason: killed",
+		"  last msg: redacted",
+		"     state: {st,<0.1897.0>,couch_mrview_index,nil}",
+		"    extra: []",
+		"Kernel pid terminated (application_controller) (\"{application_terminated,couch_log,shutdown}\")",
+		"",
+		"Crash dump is being written to: erl_crash.dump...done")
+	f.lines("node",
+		"Error: probe A",
+		"    at [eval]:2:11",
+		"Error: probe B",
+		"    at [eval]:3:15")
+	f.lines("python",
+		"ERROR:root:probe E",
+		"Traceback (most recent call last):",
+		`  File "<string>", line 3, in <module>`,
+		"    try: 1/0",
+		"         ~^~",
+		"ZeroDivisionError: division by zero",
+		"ERROR:root:probe F",
+		`{"level":"error","msg":"probe G json"}`)
+	f.got = append(f.got, f.m.expire(at.Add(2*time.Second))...)
+
+	var got []string
+	for _, e := range f.got {
+		got = append(got, fmt.Sprintf("%s %s +%d", e.Container, e.Summary(), e.More()))
+	}
+	want := []string{
+		"discovery [27.10.2026 - 22:30:43.482] [0] [error ] [events.js:185] Error: connect ECONNREFUSED 192.0.2.10:443 +4",
+		"discovery [27.10.2026 - 22:30:43.484] [0] [error ] [events.js:185] reconnect failed +0",
+		"discovery [27.10.2026 - 22:30:43.484] [0] [error ] [startup.js:186] TZ= is not a valid timezone +0",
+		"couchdb [info] 2026-10-27T10:35:58.447313Z couchdb@couchdb-0.local <0.43.0> -------- SIGTERM received - shutting down +0",
+		"couchdb [info] 2026-10-27T10:35:58.447410Z couchdb@couchdb-0.local <0.43.0> -------- SIGTERM received - shutting down +0",
+		"couchdb [error] 2026-10-27T11:00:37.297932Z couchdb@couchdb-0.local <0.1900.0> -------- gen_server terminated with reason: killed +3",
+		"node Error: probe A +1",
+		"python ERROR:root:probe E +5",
+		"python ERROR:root:probe F +0",
+		"osem node:internal/process/promises:324 +9",
+		"discovery Exiting now due to failing startup conditions +0",
+		`couchdb Kernel pid terminated (application_controller) ("{application_terminated,couch_log,shutdown}") +2`,
+		"node Error: probe B +1",
+		`python {"level":"error","msg":"probe G json"} +0`,
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("events:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	if e := f.got[0]; !strings.HasSuffix(e.Message, "\n  errno: -111,\n  port: 443\n}") {
+		t.Errorf("merged message: %q", e.Message)
+	}
+	if len(f.m.open) != 0 {
+		t.Errorf("%d messages still open", len(f.m.open))
+	}
+}
+
+func TestMergerBounds(t *testing.T) {
+	at := time.Date(2026, 10, 27, 22, 30, 43, 0, time.UTC)
+	m := newMerger()
+	cont := func(cursor string, after time.Duration, msg string) []byte {
+		return []byte(journalLine(cursor, at.Add(after), 3, `,"CONTAINER_ID_FULL":"x","MESSAGE":`+strconv.Quote(msg)))
+	}
+	// entries that are whole messages are never merged
+	if evs := m.add([]byte(journalLine("w1", at, 3, `,"SYSLOG_IDENTIFIER":"app","MESSAGE":"boom"`)), at); len(evs) != 1 {
+		t.Fatalf("whole message: %v", evs)
+	}
+	if evs := m.add([]byte(journalLine("w2", at, 3, `,"SYSLOG_IDENTIFIER":"app","MESSAGE":"  detail"`)), at); len(evs) != 1 || evs[0].Message != "  detail" {
+		t.Fatalf("whole message: %v", evs)
+	}
+	// an open message holds the cursor back until it is complete
+	m.add(cont("x1", 0, "Error: boom"), at)
+	m.add(cont("x2", time.Millisecond, "    at main"), at)
+	if m.resume() != "w2" {
+		t.Errorf("resume with an open message = %q, want w2", m.resume())
+	}
+	// a line after more than mergeGap starts a new message, however it looks
+	if evs := m.add(cont("x3", 2*time.Second, "    at late"), at); len(evs) != 1 || evs[0].Message != "Error: boom\n    at main" {
+		t.Errorf("after the gap: %v", evs)
+	}
+	if m.resume() != "x2" {
+		t.Errorf("resume = %q, want x2", m.resume())
+	}
+	if evs := m.expire(at.Add(mergeGap)); len(evs) != 0 {
+		t.Errorf("expired too early: %v", evs)
+	}
+	if evs := m.expire(at.Add(2 * mergeGap)); len(evs) != 1 || m.resume() != "x3" {
+		t.Errorf("expire: %v, resume %q", evs, m.resume())
+	}
+	// a message ends after maxMergeLines
+	m.add(cont("y0", 3*time.Second, "Error: endless"), at)
+	var evs []Event
+	for i := 1; i < maxMergeLines; i++ {
+		evs = append(evs, m.add(cont(fmt.Sprintf("y%d", i), 3*time.Second, "  more"), at)...)
+	}
+	if len(evs) != 1 || evs[0].More() != maxMergeLines-1 || len(m.open) != 0 {
+		t.Errorf("long message: %d events, open %d", len(evs), len(m.open))
+	}
+}
+
+func TestStoreReimport(t *testing.T) {
+	dir := t.TempDir()
+	clk := &clock{time.Date(2026, 10, 16, 12, 0, 0, 0, time.UTC)}
+	s, err := open(dir, clk.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, b := ev("a", clk.t.Add(-time.Hour), "kernel", "one"), ev("b", clk.t.Add(-time.Minute), "kernel", "two")
+	_ = s.Add([]Event{a, b}, "cur1")
+	_, _ = s.MarkRead("alice", "a")
+	// as stored by a version before merging
+	if err := os.WriteFile(filepath.Join(dir, stateFile), []byte(`{"cursor":"cur1"}`), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	s, err = open(dir, clk.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, n := s.List(Filter{}, 0); n != 0 || s.Cursor() != "" {
+		t.Fatalf("after a merge version change: %d events, cursor %q", n, s.Cursor())
+	}
+	if files, _ := filepath.Glob(filepath.Join(dir, eventsPrefix+"*")); len(files) != 0 {
+		t.Errorf("event files kept: %v", files)
+	}
+	_ = s.Add([]Event{a, b}, "cur2")
+	if got, _ := s.Get("a"); got.ReadBy != "alice" {
+		t.Errorf("read mark of an imported event: %+v", got)
+	}
+	if got, _ := s.Get("b"); got.Read() {
+		t.Errorf("b is read: %+v", got)
+	}
+	s, _ = open(dir, clk.now)
+	if got, _ := s.Get("a"); s.Cursor() != "cur2" || got.ReadBy != "alice" {
+		t.Errorf("after reopening: cursor %q, a %+v", s.Cursor(), got)
 	}
 }

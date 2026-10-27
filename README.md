@@ -65,8 +65,10 @@ Features:
 - **Events** (Linux): ContainerUI follows the journal in the background and
   keeps its **errors** (priority err and worse) for **7 days**, on disk, so
   they can be browsed on the Events page by component (systemd unit, syslog
-  identifier or `kernel`) and text. The first start imports the last 7 days;
-  later starts continue where the previous one stopped. Opening an event
+  identifier or `kernel`) and text. The lines of a stack trace, which
+  containers log one by one, are merged into one event. The first start
+  imports the last 7 days; later starts continue where the previous one
+  stopped. Opening an event
   marks it as read for every administrator (who read it and when is kept);
   the navigation shows how many are unread. See [Events](#events).
 - Login with system accounts: PAM on Linux, Windows accounts on Windows, for
@@ -547,33 +549,22 @@ The page is `/events` (`?component=&q=&unread=1`); opening an event posts to
 `/events/<id>/open`, *Mark all shown as read* to `/events/read`. The newest
 100,000 events are held in memory for the page.
 
-Each journal entry is one event. The page shows the first non-blank line of
-its message and the number of further lines, and the whole message when
-opened.
+Containers (Docker's journald log driver) and services writing to stdout or
+stderr log one journal entry per line, so a stack trace arrives as many
+entries. ContainerUI merges them as it collects them: a line continues the
+message before it from the same container or service output when it comes
+within a second and is indented, a closing `}`, `]` or `)`, blank, a known
+stack trace line (`Caused by`, `Traceback (most recent call last):`,
+`Node.js v…`), text after a blank line, or the exception line ending a Python
+traceback. A line that starts like a log record (`[`, `{`, a date, or a level
+such as `ERROR`) always starts a new event, so separate messages logged at the
+same moment stay apart. Entries a program sends to the journal directly are
+whole messages and are never merged.
 
-#### Logging multi-line errors
-
-journald stores what a service writes to stdout or stderr as one entry per
-line, and Docker's journald log driver does the same for a container's
-output; neither can be told otherwise. A stack trace written there therefore
-shows as one event per line. To have it shown as one event, log it as one
-entry:
-
-- Log to the journal directly, where newlines in `MESSAGE` are kept:
-  `sd_journal_send()` / `sd_journal_print()` in C,
-  `github.com/coreos/go-systemd/v22/journal.Send` in Go, `systemd.journal.send`
-  or `systemd.journal.JournalHandler` in Python, or any library that speaks the
-  journal's native protocol on `/run/systemd/journal/socket`. A container can
-  do the same with that socket bind-mounted
-  (`-v /run/systemd/journal/socket:/run/systemd/journal/socket`).
-- Or write one line per error, e.g. JSON logging with the stack trace escaped
-  in a field.
-
-`systemd-cat` and `logger` split what they read into lines as well. To try it:
-
-```sh
-python3 -c 'from systemd import journal; journal.send("Error: boom\n    at main", PRIORITY=3)'
-```
+The page shows the first non-blank line of each event and the number of
+further lines, and the whole message when opened. When the merge rules change,
+the next start imports the last 7 days from the journal again; read marks are
+kept.
 
 ### Adding a driver
 

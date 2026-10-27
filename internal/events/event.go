@@ -8,6 +8,10 @@
 //	reads-YYYY-MM-DD.jsonl   who read which event of that day, and when
 //	state.json               the journal cursor to resume from
 //
+// Containers and the stdout of services log one journal entry per line;
+// the lines of one message, such as a stack trace, are merged into one
+// event as they are collected (see merge.go).
+//
 // Day files make the retention a matter of deleting files, and JSON Lines
 // can be searched with grep or jq, e.g. by component:
 //
@@ -45,6 +49,11 @@ type Event struct {
 	Host      string `json:"host,omitempty"`
 	Transport string `json:"transport,omitempty"`
 	Message   string `json:"message"`
+
+	// source is the stream whose lines are merged into messages: a
+	// container, or the stdout of a service; "" for entries that are
+	// whole messages.
+	source string
 
 	// Who read the event and when; kept in the reads files.
 	ReadBy string    `json:"-"`
@@ -128,10 +137,15 @@ func ParseJournal(line []byte) (e Event, cursor string, ok bool) {
 		Container:    field("CONTAINER_NAME"),
 		Host:         field("_HOSTNAME"),
 		Transport:    field("_TRANSPORT"),
-		Message:      strings.TrimRight(field("MESSAGE"), "\n"),
+		Message:      strings.TrimRight(field("MESSAGE"), "\r\n"),
 	}
 	e.PID, _ = strconv.Atoi(firstNonEmpty(field("_PID"), field("SYSLOG_PID")))
 	e.Component = component(e, field("_COMM"))
+	if id := firstNonEmpty(field("CONTAINER_ID_FULL"), field("CONTAINER_ID")); id != "" {
+		e.source = e.Boot + "/container/" + id
+	} else if e.Transport == "stdout" && field("_STREAM_ID") != "" {
+		e.source = e.Boot + "/stream/" + field("_STREAM_ID")
+	}
 	return e, cursor, true
 }
 

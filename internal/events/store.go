@@ -35,11 +35,15 @@ type Store struct {
 	events []*Event // sorted by time, oldest first
 	byID   map[string]*Event
 	cursor string
+	// reads are the read marks of events not stored (yet), applied when
+	// they are imported again.
+	reads map[string]readMark
 }
 
 // state is what state.json holds.
 type state struct {
 	Cursor string `json:"cursor"`
+	Merge  int    `json:"merge,omitempty"` // mergeVersion of the events
 }
 
 // readMark is one line of a reads file.
@@ -50,7 +54,9 @@ type readMark struct {
 }
 
 // Open opens the store in dir, creating the folder if needed, and loads
-// the events of the last Retention. Older day files are deleted.
+// the events of the last Retention. Older day files are deleted. Events
+// merged by another version of the merge rules are deleted, so they are
+// imported from the journal again; their read marks are kept.
 func Open(dir string) (*Store, error) {
 	return open(dir, time.Now)
 }
@@ -59,15 +65,20 @@ func open(dir string, now func() time.Time) (*Store, error) {
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("events folder: %w", err)
 	}
-	s := &Store{dir: dir, now: now, byID: map[string]*Event{}}
+	s := &Store{dir: dir, now: now, byID: map[string]*Event{}, reads: map[string]readMark{}}
+	var st state
 	if data, err := os.ReadFile(filepath.Join(dir, stateFile)); err == nil {
-		var st state
 		if err := json.Unmarshal(data, &st); err != nil {
 			return nil, fmt.Errorf("%s: %w", stateFile, err)
 		}
 		s.cursor = st.Cursor
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
+	}
+	if st.Merge != mergeVersion {
+		if err := s.reimport(); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.pruneFiles(); err != nil {
 		return nil, err
@@ -102,7 +113,11 @@ func open(dir string, now func() time.Time) (*Store, error) {
 			if json.Unmarshal(line, &m) != nil {
 				return
 			}
-			if e := s.byID[m.ID]; e != nil && !e.Read() {
+			if e := s.byID[m.ID]; e == nil {
+				if _, ok := s.reads[m.ID]; !ok {
+					s.reads[m.ID] = m
+				}
+			} else if !e.Read() {
 				e.ReadBy, e.ReadAt = m.User, m.At
 			}
 		})
@@ -111,6 +126,22 @@ func open(dir string, now func() time.Time) (*Store, error) {
 		}
 	}
 	return s, nil
+}
+
+// reimport deletes the events and the cursor, so the events are imported
+// from the journal again.
+func (s *Store) reimport() error {
+	days, err := s.days(eventsPrefix)
+	if err != nil {
+		return err
+	}
+	for _, day := range days {
+		if err := os.Remove(s.path(eventsPrefix, day)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+	}
+	s.cursor = ""
+	return writeAtomic(filepath.Join(s.dir, stateFile), state{Merge: mergeVersion})
 }
 
 // Dir is the folder of the store.
@@ -125,7 +156,8 @@ func (s *Store) Cursor() string {
 }
 
 // Add stores new events and the journal cursor after them. Events already
-// stored or older than Retention are skipped. When writing fails the
+// stored or older than Retention are skipped; events read before they
+// were imported again are read. When writing fails the
 // events are still kept in memory, but the cursor is not saved, so a
 // restart reads them from the journal again.
 func (s *Store) Add(evs []Event, cursor string) error {
@@ -141,6 +173,10 @@ func (s *Store) Add(evs []Event, cursor string) error {
 			continue
 		}
 		e.Time, e.ReadBy, e.ReadAt = e.Time.UTC(), "", time.Time{}
+		if m, ok := s.reads[e.ID]; ok {
+			e.ReadBy, e.ReadAt = m.User, m.At
+			delete(s.reads, e.ID)
+		}
 		p := &e
 		s.byID[e.ID] = p
 		if n := len(s.events); n > 0 && e.Time.Before(s.events[n-1].Time) {
@@ -174,7 +210,7 @@ func (s *Store) Add(evs []Event, cursor string) error {
 	if cursor == "" || cursor == s.cursor {
 		return nil
 	}
-	if err := writeAtomic(filepath.Join(s.dir, stateFile), state{Cursor: cursor}); err != nil {
+	if err := writeAtomic(filepath.Join(s.dir, stateFile), state{Cursor: cursor, Merge: mergeVersion}); err != nil {
 		return err
 	}
 	s.cursor = cursor
@@ -346,6 +382,11 @@ func (s *Store) Prune() error {
 		n++
 	}
 	s.events = slices.Delete(s.events, 0, n)
+	for id, m := range s.reads {
+		if m.At.Before(cutoff) {
+			delete(s.reads, id)
+		}
+	}
 	return s.pruneFiles()
 }
 
