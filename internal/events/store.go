@@ -26,8 +26,7 @@ const (
 )
 
 // Store holds the events of the last Retention in memory, oldest first, and
-// in day files on disk. It lists them in groups. It is safe for concurrent
-// use.
+// in day files on disk. It is safe for concurrent use.
 type Store struct {
 	dir string
 	now func() time.Time
@@ -36,10 +35,6 @@ type Store struct {
 	events []*Event // sorted by time, oldest first
 	byID   map[string]*Event
 	cursor string
-
-	groups  []*Group            // sorted by their first event, oldest first
-	groupOf map[string]*Group   // by event ID
-	tails   map[groupKey]*Group // the newest group of each source
 }
 
 // state is what state.json holds.
@@ -97,7 +92,6 @@ func open(dir string, now func() time.Time) (*Store, error) {
 	}
 	s.sort()
 	s.trim()
-	s.regroup()
 	days, err = s.days(readsPrefix)
 	if err != nil {
 		return nil, err
@@ -141,7 +135,6 @@ func (s *Store) Add(evs []Event, cursor string) error {
 	byDay := map[string][]*Event{}
 	var days []string
 	unsorted := false
-	var added []*Event
 	for i := range evs {
 		e := evs[i]
 		if e.ID == "" || e.Time.Before(cutoff) || s.byID[e.ID] != nil {
@@ -154,7 +147,6 @@ func (s *Store) Add(evs []Event, cursor string) error {
 			unsorted = true
 		}
 		s.events = append(s.events, p)
-		added = append(added, p)
 		if byDay[e.day()] == nil {
 			days = append(days, e.day())
 		}
@@ -163,13 +155,7 @@ func (s *Store) Add(evs []Event, cursor string) error {
 	if unsorted {
 		s.sort()
 	}
-	if s.trim() || unsorted {
-		s.regroup()
-	} else {
-		for _, e := range added {
-			s.group(e)
-		}
-	}
+	s.trim()
 	var errs []error
 	for _, day := range days {
 		var lines [][]byte
@@ -195,46 +181,46 @@ func (s *Store) Add(evs []Event, cursor string) error {
 	return nil
 }
 
-// Filter selects groups of events. The zero Filter selects all.
+// Filter selects events. The zero Filter selects all.
 type Filter struct {
 	Component string // exact component, "" = all
-	Text      string // case-insensitive substring of a message, the component or identifier
-	Unread    bool   // only groups with an event nobody has read
+	Text      string // case-insensitive substring of message, component or identifier
+	Unread    bool   // only events nobody has read
 }
 
-func (f Filter) match(g *Group) bool {
-	if f.Component != "" && g.Events[0].Component != f.Component {
+func (f Filter) match(e *Event) bool {
+	if f.Component != "" && e.Component != f.Component {
 		return false
 	}
-	if f.Unread && g.Read() {
+	if f.Unread && e.Read() {
 		return false
 	}
 	if f.Text != "" {
 		t := strings.ToLower(f.Text)
-		return slices.ContainsFunc(g.Events, func(e *Event) bool {
-			return strings.Contains(strings.ToLower(e.Message), t) ||
-				strings.Contains(strings.ToLower(e.Component), t) ||
-				strings.Contains(strings.ToLower(e.Identifier), t)
-		})
+		if !strings.Contains(strings.ToLower(e.Message), t) &&
+			!strings.Contains(strings.ToLower(e.Component), t) &&
+			!strings.Contains(strings.ToLower(e.Identifier), t) {
+			return false
+		}
 	}
 	return true
 }
 
-// List returns up to limit groups matching f, newest first, and how many
+// List returns up to limit events matching f, newest first, and how many
 // match in all. limit <= 0 means no limit.
-func (s *Store) List(f Filter, limit int) ([]Group, int) {
+func (s *Store) List(f Filter, limit int) ([]Event, int) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var out []Group
+	var out []Event
 	total := 0
-	for i := len(s.groups) - 1; i >= 0; i-- {
-		g := s.groups[i]
-		if !f.match(g) {
+	for i := len(s.events) - 1; i >= 0; i-- {
+		e := s.events[i]
+		if !f.match(e) {
 			continue
 		}
 		total++
 		if limit <= 0 || len(out) < limit {
-			out = append(out, g.clone())
+			out = append(out, *e)
 		}
 	}
 	return out, total
@@ -251,18 +237,7 @@ func (s *Store) Get(id string) (Event, bool) {
 	return *e, true
 }
 
-// GroupOf returns the group of the event with the id.
-func (s *Store) GroupOf(id string) (Group, bool) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	g := s.groupOf[id]
-	if g == nil {
-		return Group{}, false
-	}
-	return g.clone(), true
-}
-
-// Component is a component and how many groups of events it has.
+// Component is a component and how many of its events there are.
 type Component struct {
 	Name   string
 	Total  int
@@ -275,16 +250,15 @@ func (s *Store) Components() []Component {
 	defer s.mu.RUnlock()
 	idx := map[string]int{}
 	var out []Component
-	for _, g := range s.groups {
-		name := g.Events[0].Component
-		i, ok := idx[name]
+	for _, e := range s.events {
+		i, ok := idx[e.Component]
 		if !ok {
 			i = len(out)
-			idx[name] = i
-			out = append(out, Component{Name: name})
+			idx[e.Component] = i
+			out = append(out, Component{Name: e.Component})
 		}
 		out[i].Total++
-		if !g.Read() {
+		if !e.Read() {
 			out[i].Unread++
 		}
 	}
@@ -297,68 +271,62 @@ func (s *Store) HasComponent(name string) bool {
 	return slices.ContainsFunc(s.Components(), func(c Component) bool { return c.Name == name })
 }
 
-// Unread counts the groups with an event nobody has read.
+// Unread counts the events nobody has read.
 func (s *Store) Unread() int {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	n := 0
-	for _, g := range s.groups {
-		if !g.Read() {
+	for _, e := range s.events {
+		if !e.Read() {
 			n++
 		}
 	}
 	return n
 }
 
-// MarkRead records that user read the groups of the events with the ids.
-// Unknown ids and read groups are skipped; it returns how many groups were
-// marked.
+// MarkRead records that user read the events with the ids. Unknown and
+// already read events are skipped; it returns how many were marked.
 func (s *Store) MarkRead(user string, ids ...string) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var gs []*Group
+	var evs []*Event
 	for _, id := range ids {
-		if g := s.groupOf[id]; g != nil && !g.Read() && !slices.Contains(gs, g) {
-			gs = append(gs, g)
+		if e := s.byID[id]; e != nil && !e.Read() && !slices.Contains(evs, e) {
+			evs = append(evs, e)
 		}
 	}
-	return len(gs), s.markRead(user, gs)
+	return len(evs), s.markRead(user, evs)
 }
 
-// MarkAllRead records that user read every unread group matching f.
+// MarkAllRead records that user read every unread event matching f.
 func (s *Store) MarkAllRead(user string, f Filter) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var gs []*Group
-	for _, g := range s.groups {
-		if !g.Read() && f.match(g) {
-			gs = append(gs, g)
+	var evs []*Event
+	for _, e := range s.events {
+		if !e.Read() && f.match(e) {
+			evs = append(evs, e)
 		}
 	}
-	return len(gs), s.markRead(user, gs)
+	return len(evs), s.markRead(user, evs)
 }
 
-// markRead marks the unread events of gs read in memory and appends them
-// to the reads file of their day. The caller holds the lock.
-func (s *Store) markRead(user string, gs []*Group) error {
+// markRead marks evs read in memory and appends them to the reads file of
+// their day. The caller holds the lock.
+func (s *Store) markRead(user string, evs []*Event) error {
 	at := s.now().UTC()
 	byDay := map[string][][]byte{}
 	var days []string
-	for _, g := range gs {
-		for _, e := range g.Events {
-			if e.Read() {
-				continue
-			}
-			e.ReadBy, e.ReadAt = user, at
-			b, err := json.Marshal(readMark{ID: e.ID, User: user, At: at})
-			if err != nil {
-				return err
-			}
-			if byDay[e.day()] == nil {
-				days = append(days, e.day())
-			}
-			byDay[e.day()] = append(byDay[e.day()], b)
+	for _, e := range evs {
+		e.ReadBy, e.ReadAt = user, at
+		b, err := json.Marshal(readMark{ID: e.ID, User: user, At: at})
+		if err != nil {
+			return err
 		}
+		if byDay[e.day()] == nil {
+			days = append(days, e.day())
+		}
+		byDay[e.day()] = append(byDay[e.day()], b)
 	}
 	var errs []error
 	for _, day := range days {
@@ -378,9 +346,6 @@ func (s *Store) Prune() error {
 		n++
 	}
 	s.events = slices.Delete(s.events, 0, n)
-	if n > 0 {
-		s.regroup()
-	}
 	return s.pruneFiles()
 }
 
@@ -435,40 +400,14 @@ func (s *Store) sort() {
 	slices.SortStableFunc(s.events, func(a, b *Event) int { return a.Time.Compare(b.Time) })
 }
 
-// trim drops the oldest events beyond MaxInMemory and reports whether
-// there were any.
-func (s *Store) trim() bool {
-	n := len(s.events) - MaxInMemory
-	if n <= 0 {
-		return false
+// trim drops the oldest events beyond MaxInMemory.
+func (s *Store) trim() {
+	if n := len(s.events) - MaxInMemory; n > 0 {
+		for _, e := range s.events[:n] {
+			delete(s.byID, e.ID)
+		}
+		s.events = slices.Delete(s.events, 0, n)
 	}
-	for _, e := range s.events[:n] {
-		delete(s.byID, e.ID)
-	}
-	s.events = slices.Delete(s.events, 0, n)
-	return true
-}
-
-// regroup groups all events anew.
-func (s *Store) regroup() {
-	s.groups, s.groupOf, s.tails = nil, map[string]*Group{}, map[groupKey]*Group{}
-	for _, e := range s.events {
-		s.group(e)
-	}
-}
-
-// group adds e, the newest event, to the newest group of its source, or
-// starts a new group when that is more than groupGap older.
-func (s *Store) group(e *Event) {
-	k := e.groupKey()
-	g := s.tails[k]
-	if g == nil || e.Time.Sub(g.Events[len(g.Events)-1].Time) > groupGap {
-		g = &Group{}
-		s.tails[k] = g
-		s.groups = append(s.groups, g)
-	}
-	g.Events = append(g.Events, e)
-	s.groupOf[e.ID] = g
 }
 
 // readLines calls fn with each line of the file. A missing file has none.

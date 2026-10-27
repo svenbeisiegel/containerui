@@ -65,8 +65,7 @@ Features:
 - **Events** (Linux): ContainerUI follows the journal in the background and
   keeps its **errors** (priority err and worse) for **7 days**, on disk, so
   they can be browsed on the Events page by component (systemd unit, syslog
-  identifier or `kernel`) and text. Lines a process writes together, such
-  as a stack trace, are shown as one event. The first start imports the last 7 days;
+  identifier or `kernel`) and text. The first start imports the last 7 days;
   later starts continue where the previous one stopped. Opening an event
   marks it as read for every administrator (who read it and when is kept);
   the navigation shows how many are unread. See [Events](#events).
@@ -548,13 +547,33 @@ The page is `/events` (`?component=&q=&unread=1`); opening an event posts to
 `/events/<id>/open`, *Mark all shown as read* to `/events/read`. The newest
 100,000 events are held in memory for the page.
 
-Programs write a multi-line message, such as a stack trace on stderr, as
-one journal entry per line. The page therefore shows groups: the entries of
-the same boot, component, container and PID, each at most a second after the
-one before, are one event, shown with its first non-blank line and the
-number of further lines, and in full when opened. Opening it, the counts and
-*Mark all shown as read* all count groups; the files keep one line per
-entry.
+Each journal entry is one event. The page shows the first non-blank line of
+its message and the number of further lines, and the whole message when
+opened.
+
+#### Logging multi-line errors
+
+journald stores what a service writes to stdout or stderr as one entry per
+line, and Docker's journald log driver does the same for a container's
+output; neither can be told otherwise. A stack trace written there therefore
+shows as one event per line. To have it shown as one event, log it as one
+entry:
+
+- Log to the journal directly, where newlines in `MESSAGE` are kept:
+  `sd_journal_send()` / `sd_journal_print()` in C,
+  `github.com/coreos/go-systemd/v22/journal.Send` in Go, `systemd.journal.send`
+  or `systemd.journal.JournalHandler` in Python, or any library that speaks the
+  journal's native protocol on `/run/systemd/journal/socket`. A container can
+  do the same with that socket bind-mounted
+  (`-v /run/systemd/journal/socket:/run/systemd/journal/socket`).
+- Or write one line per error, e.g. JSON logging with the stack trace escaped
+  in a field.
+
+`systemd-cat` and `logger` split what they read into lines as well. To try it:
+
+```sh
+python3 -c 'from systemd import journal; journal.send("Error: boom\n    at main", PRIORITY=3)'
+```
 
 ### Adding a driver
 

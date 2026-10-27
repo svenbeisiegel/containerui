@@ -123,7 +123,7 @@ func TestEventsMarkAllRead(t *testing.T) {
 	}
 }
 
-func TestEventGroup(t *testing.T) {
+func TestEventMultiLine(t *testing.T) {
 	e, st := newEventsEnv(t)
 	at := time.Now().Add(-time.Minute)
 	line := func(id string, after time.Duration, msg string) events.Event {
@@ -131,22 +131,15 @@ func TestEventGroup(t *testing.T) {
 			Container: "web", PID: 7, Message: msg}
 	}
 	_ = st.Add([]events.Event{
-		line("s1", 0, ""),
-		line("s2", time.Millisecond, "Error: boom"),
-		line("s3", 2*time.Millisecond, "    at main (/app/index.js:1:1)"),
+		line("m1", 0, "\nError: boom\n    at main (/app/index.js:1:1)"),
+		line("m2", time.Millisecond, "other error"),
 	}, "cursor2")
 	body := e.do("GET", "/events", nil).Body.String()
-	if strings.Count(body, `<details class="event unread"`) != 4 || !strings.Contains(body, `<span class="event-text">Error: boom</span><span class="event-more">+2 lines</span>`) ||
-		!strings.Contains(body, "docker.service · web") {
-		t.Fatalf("the trace is not one event:\n%s", body)
+	if strings.Count(body, `<details class="event unread"`) != 5 || !strings.Contains(body, `<span class="event-text">Error: boom</span><span class="event-more">+1 line</span>`) ||
+		!strings.Contains(body, `<span class="event-text">other error</span></span>`) || !strings.Contains(body, "docker.service · web") {
+		t.Fatalf("the entries are not one event each:\n%s", body)
 	}
 	if !strings.Contains(body, "\nError: boom\n    at main") {
-		t.Error("the trace is not in order in the details")
-	}
-	if w := e.post("/events/s1/open", nil, htmx); !strings.Contains(w.Body.String(), `<details class="event" id="event-s1" open`) {
-		t.Fatalf("open:\n%s", w.Body.String())
-	}
-	if ev, _ := st.Get("s3"); !ev.Read() || st.Unread() != 3 {
-		t.Errorf("opening did not mark the whole group read: %+v, %d unread", ev, st.Unread())
+		t.Error("the whole message is not in the details")
 	}
 }
