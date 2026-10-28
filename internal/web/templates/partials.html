@@ -552,7 +552,7 @@
   <summary>
     <span class="event-time" title="{{datetime $e.Time}}">{{datetime $e.Time}}</span>
     <span class="badge {{if le $e.Priority 2}}bad{{else}}warn{{end}}">{{$e.PriorityName}}</span>
-    <span class="event-component mono" title="{{$e.Component}}{{with $e.Container}} · {{.}}{{end}}">{{$e.Component}}{{with $e.Container}} · {{.}}{{end}}</span>
+    <span class="event-component mono" title="{{$e.Component}}">{{$e.Component}}</span>
     <span class="event-message"><span class="event-text">{{$e.Summary}}</span>{{with $e.More}}<span class="event-more">+{{.}} {{if eq . 1}}line{{else}}lines{{end}}</span>{{end}}</span>
     {{if not $e.Read}}<span class="badge info">new</span>{{end}}
   </summary>
@@ -561,13 +561,9 @@
     <dl class="props">
       <dt>Time</dt><dd>{{datetime $e.Time}} <span class="muted small">{{ago $e.Time}}</span></dd>
       <dt>Priority</dt><dd>{{$e.PriorityName}} ({{$e.Priority}})</dd>
-      {{with $e.Unit}}<dt>Unit</dt><dd class="mono">{{.}}</dd>{{end}}
       {{with $e.Identifier}}<dt>Identifier</dt><dd class="mono">{{.}}</dd>{{end}}
-      {{with $e.Container}}<dt>Container</dt><dd class="mono">{{.}}</dd>{{end}}
       {{with $e.PID}}<dt>PID</dt><dd class="mono">{{.}}</dd>{{end}}
       {{with $e.Host}}<dt>Host</dt><dd class="mono">{{.}}</dd>{{end}}
-      {{with $e.Transport}}<dt>Transport</dt><dd class="mono">{{.}}</dd>{{end}}
-      {{with $e.Boot}}<dt>Boot</dt><dd class="mono">{{.}}</dd>{{end}}
       <dt>Read</dt><dd>{{if $e.Read}}by {{$e.ReadBy}} at {{datetime $e.ReadAt}}{{else}}not yet{{end}}</dd>
     </dl>
   </div>

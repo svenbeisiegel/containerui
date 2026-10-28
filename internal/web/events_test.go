@@ -21,10 +21,10 @@ func newEventsEnv(t *testing.T) (*env, *events.Store) {
 	}
 	now := time.Now()
 	err = st.Add([]events.Event{
-		{ID: "e1", Time: now.Add(-3 * time.Hour), Priority: 3, PriorityName: "err", Component: "docker.service", Unit: "docker.service", Message: "failed to pull <image>"},
-		{ID: "e2", Time: now.Add(-2 * time.Hour), Priority: 2, PriorityName: "crit", Component: "kernel", Transport: "kernel", Message: "Out of memory: Killed process 1234"},
+		{ID: "e1", Time: now.Add(-3 * time.Hour), Priority: 3, PriorityName: "err", Component: "docker.service", Identifier: "dockerd", Message: "failed to pull <image>"},
+		{ID: "e2", Time: now.Add(-2 * time.Hour), Priority: 2, PriorityName: "crit", Component: "kernel", Identifier: "kernel", Message: "Out of memory: Killed process 1234"},
 		{ID: "e3", Time: now.Add(-1 * time.Hour), Priority: 3, PriorityName: "err", Component: "docker.service", Message: "network error"},
-	}, "cursor")
+	}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,16 +127,16 @@ func TestEventMultiLine(t *testing.T) {
 	e, st := newEventsEnv(t)
 	at := time.Now().Add(-time.Minute)
 	line := func(id string, after time.Duration, msg string) events.Event {
-		return events.Event{ID: id, Time: at.Add(after), Priority: 3, PriorityName: "err", Component: "docker.service",
-			Container: "web", PID: 7, Message: msg}
+		return events.Event{ID: id, Time: at.Add(after), Priority: 3, PriorityName: "err", Component: "web",
+			Identifier: "web", PID: 7, Message: msg}
 	}
 	_ = st.Add([]events.Event{
 		line("m1", 0, "\nError: boom\n    at main (/app/index.js:1:1)"),
 		line("m2", time.Millisecond, "other error"),
-	}, "cursor2")
+	}, at)
 	body := e.do("GET", "/events", nil).Body.String()
 	if strings.Count(body, `<details class="event unread"`) != 5 || !strings.Contains(body, `<span class="event-text">Error: boom</span><span class="event-more">+1 line</span>`) ||
-		!strings.Contains(body, `<span class="event-text">other error</span></span>`) || !strings.Contains(body, "docker.service · web") {
+		!strings.Contains(body, `<span class="event-text">other error</span></span>`) || !strings.Contains(body, `<span class="event-component mono" title="web">web</span>`) {
 		t.Fatalf("the entries are not one event each:\n%s", body)
 	}
 	if !strings.Contains(body, "\nError: boom\n    at main") {

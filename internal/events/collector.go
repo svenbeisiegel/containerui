@@ -8,10 +8,11 @@ import (
 
 // Source is the system log the error events come from.
 type Source interface {
-	// Follow calls line with each error entry, as journalctl --output=json
-	// writes it, starting after cursor, or at since when cursor is "". It
-	// keeps following new entries until ctx ends or the reader fails.
-	Follow(ctx context.Context, cursor string, since time.Time, line func([]byte)) error
+	// Follow calls line with each line journalctl
+	// --output=short-iso-precise writes for the error entries from since
+	// on. It keeps following new entries until ctx ends or the reader
+	// fails.
+	Follow(ctx context.Context, since time.Time, line func([]byte)) error
 }
 
 const (
@@ -30,7 +31,7 @@ type Collector struct {
 }
 
 // Run collects until ctx ends. The first run reads the last Retention of
-// the log; later ones resume after the stored cursor, so nothing logged
+// the log; later ones resume at the stored journal time, so nothing logged
 // while ContainerUI was stopped is missed. A reader that ends is restarted
 // with a growing delay.
 func (c *Collector) Run(ctx context.Context) {
@@ -42,14 +43,15 @@ func (c *Collector) Run(ctx context.Context) {
 	defer prune.Stop()
 	backoff := minBackoff
 	for ctx.Err() == nil {
-		cursor := c.Store.Cursor()
-		if cursor == "" {
+		since := c.Store.Since()
+		if since.IsZero() {
+			since = time.Now().Add(-Retention)
 			log.Info("importing error events from the journal", "since", Retention, "dir", c.Store.Dir())
 		} else {
-			log.Debug("following the journal for error events", "dir", c.Store.Dir())
+			log.Debug("following the journal for error events", "since", since, "dir", c.Store.Dir())
 		}
 		started := time.Now()
-		err := c.follow(ctx, cursor, prune.C, log)
+		err := c.follow(ctx, since, prune.C, log)
 		if ctx.Err() != nil {
 			return
 		}
@@ -67,13 +69,13 @@ func (c *Collector) Run(ctx context.Context) {
 }
 
 // follow runs one reader and stores its events in batches until it ends.
-func (c *Collector) follow(ctx context.Context, cursor string, prune <-chan time.Time, log *slog.Logger) error {
+func (c *Collector) follow(ctx context.Context, since time.Time, prune <-chan time.Time, log *slog.Logger) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	lines := make(chan []byte, batchSize)
 	done := make(chan error, 1)
 	go func() {
-		done <- c.Source.Follow(ctx, cursor, time.Now().Add(-Retention), func(line []byte) {
+		done <- c.Source.Follow(ctx, since, func(line []byte) {
 			select {
 			case lines <- line:
 			case <-ctx.Done():
@@ -81,19 +83,20 @@ func (c *Collector) follow(ctx context.Context, cursor string, prune <-chan time
 		})
 	}()
 
-	// The cursor stored is the one before the oldest message that may
-	// still get lines, so a restart reads it again instead of losing it.
+	// The time stored is that of the oldest message that may still get
+	// lines, so a restart reads it again instead of losing it; the events
+	// read again have the same ids and are skipped.
 	m := newMerger()
 	var batch []Event
 	take := func(line []byte) {
-		batch = append(batch, m.add(line, time.Now())...)
+		batch = append(batch, m.add(string(line), time.Now())...)
 	}
 	flush := func() {
-		cursor := m.resume()
-		if len(batch) == 0 && (cursor == "" || cursor == c.Store.Cursor()) {
+		pos := m.resume()
+		if len(batch) == 0 && (pos.IsZero() || pos.Equal(c.Store.Since())) {
 			return
 		}
-		if err := c.Store.Add(batch, cursor); err != nil {
+		if err := c.Store.Add(batch, pos); err != nil {
 			log.Error("store error events", "error", err)
 		}
 		batch = batch[:0]

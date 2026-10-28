@@ -64,9 +64,11 @@ Features:
   signed-in user can read the system logs.
 - **Events** (Linux): ContainerUI follows the journal in the background and
   keeps its **errors** (priority err and worse) for **7 days**, on disk, so
-  they can be browsed on the Events page by component (systemd unit, syslog
-  identifier or `kernel`) and text. The lines of a stack trace, which
-  containers log one by one, are merged into one event. The first start
+  they can be browsed on the Events page by component (the process or
+  container name the journal has, or `kernel`) and text. The lines of a
+  stack trace, which containers log one by one, are merged into one event;
+  messages that name a level below error (`[warn ]`, `[log   ]`, `INFO:`)
+  are left out. The first start
   imports the last 7 days; later starts continue where the previous one
   stopped. Opening an event
   marks it as read for every administrator (who read it and when is kept);
@@ -520,27 +522,28 @@ streams with the container logs.
 
 ### Events
 
-`internal/events` runs `journalctl --priority=err --output=json --follow
---lines=all`, from `--since=<7 days ago>` on the first start and with
-`--after-cursor=<cursor>` afterwards, and restarts it with a growing delay
-if it ends. The events are stored in `events.dir` as JSON Lines, one file
+`internal/events` runs `journalctl --priority=err
+--output=short-iso-precise --all --follow --lines=all`, from `--since=<7 days
+ago>` on the first start and from the journal time stored afterwards (in
+UTC, to the microsecond), and restarts it with a growing delay if it ends.
+Each line has the exact time, the host and the identifier with its PID. The events are stored in `events.dir` as JSON Lines, one file
 per UTC day, and day files older than 7 days are deleted (at start and
 hourly):
 
 | File | Content |
 |---|---|
-| `events-YYYY-MM-DD.jsonl` | one event per line: `id`, `time`, `boot`, `priority` (0–3), `priority_name`, `component`, `unit`, `identifier`, `container`, `pid`, `host`, `transport`, `message` |
+| `events-YYYY-MM-DD.jsonl` | one event per line: `id`, `time`, `priority` (0–3), `priority_name`, `component`, `identifier`, `pid`, `host`, `message` |
 | `reads-YYYY-MM-DD.jsonl` | `id`, `user`, `at` for each event of that day somebody read |
-| `state.json` | the journal cursor to continue from |
+| `state.json` | the journal time to continue from |
 
-`component` is the systemd unit, else the syslog identifier, else `kernel`
-for kernel messages, else the command name; `container` is the container
-name the Docker journald log driver sets. The files can be searched
-directly:
+`component` is the syslog identifier: the process name, `kernel`, or for a
+container the tag of its journald log driver. The `id` is derived from the
+host, identifier, PID, time and first line, so lines read again after a
+restart are not stored twice. The files can be searched directly:
 
 ```sh
 cd /var/lib/containerui/events
-jq -c 'select(.component=="docker.service")' events-*.jsonl
+jq -c 'select(.component=="discovery")' events-*.jsonl
 jq -r 'select(.priority<=2) | "\(.time) \(.component): \(.message)"' events-*.jsonl
 grep -h '"component":"kernel"' events-*.jsonl
 ```
@@ -551,20 +554,36 @@ The page is `/events` (`?component=&q=&unread=1`); opening an event posts to
 
 Containers (Docker's journald log driver) and services writing to stdout or
 stderr log one journal entry per line, so a stack trace arrives as many
-entries. ContainerUI merges them as it collects them: a line continues the
-message before it from the same container or service output when it comes
+entries. ContainerUI merges them as it collects them, taking the lines of
+one host, identifier and PID as one stream: a line continues the
+message before it from the same stream when it comes
 within a second and is indented, a closing `}`, `]` or `)`, blank, a known
 stack trace line (`Caused by`, `Traceback (most recent call last):`,
 `Node.js v…`), text after a blank line, or the exception line ending a Python
 traceback. A line that starts like a log record (`[`, `{`, a date, or a level
 such as `ERROR`) always starts a new event, so separate messages logged at the
-same moment stay apart. Entries a program sends to the journal directly are
-whole messages and are never merged.
+same moment stay apart. The further lines of an entry with newlines, which
+journalctl prints indented below it, always belong to its message.
+
+The journal has everything a container writes to stderr at err, also its
+warnings and log lines, so the level a message names decides: when its
+first line names a level below error in a leading `[…]` group (`[warn ]`,
+`[log   ]`, `[info]`), as an upper case word at its start (`INFO:root`,
+`WARN`) or in a field (`level=info`, `"level":"debug"`), the message is
+dropped with all its lines. A level of crit or worse (`FATAL`, `[critical]`)
+sets the event's priority; a message naming no level is kept as err.
 
 The page shows the first non-blank line of each event and the number of
 further lines, and the whole message when opened. When the merge rules change,
 the next start imports the last 7 days from the journal again; read marks are
-kept.
+kept for the events whose id stays the same.
+
+`cmd/eventparse` (not packaged) reads journalctl output from stdin and
+prints the events ContainerUI would store, parsed and merged the same way:
+
+```sh
+journalctl --priority=err --output=short-iso-precise --since=-1h | eventparse [-text]
+```
 
 ### Adding a driver
 

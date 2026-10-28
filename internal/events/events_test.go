@@ -2,22 +2,19 @@ package events
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 )
 
-// journalLine is a journalctl --output=json line.
-func journalLine(cursor string, t time.Time, prio int, fields string) string {
-	return fmt.Sprintf(`{"__CURSOR":%q,"__REALTIME_TIMESTAMP":"%d","PRIORITY":"%d","_BOOT_ID":"b1","_HOSTNAME":"host"%s}`,
-		cursor, t.UnixMicro(), prio, fields)
+// shortLine is a journalctl --output=short-iso-precise line of ident.
+func shortLine(t time.Time, ident, msg string) string {
+	return t.In(time.FixedZone("CET", 3600)).Format("2006-01-02T15:04:05.000000-07:00") + " host " + ident + ": " + msg
 }
 
 func TestEventSummary(t *testing.T) {
@@ -38,66 +35,92 @@ func TestEventSummary(t *testing.T) {
 	}
 }
 
-func TestParseJournal(t *testing.T) {
-	at := time.Date(2026, 10, 16, 8, 30, 0, 123000, time.UTC)
+func TestParseShort(t *testing.T) {
+	defer func(l *time.Location) { time.Local = l }(time.Local)
+	time.Local = time.FixedZone("CET", 3600)
+	now := time.Date(2026, 10, 28, 9, 0, 0, 0, time.UTC)
+	at := time.Date(2026, 10, 27, 22, 1, 27, 553124000, time.UTC)
 	cases := []struct {
 		name, line         string
-		ok                 bool
+		at                 time.Time
 		component, message string
-		priority, pid      int
+		pid                int
 	}{
-		{"unit", journalLine("c1", at, 3, `,"_SYSTEMD_UNIT":"docker.service","SYSLOG_IDENTIFIER":"dockerd","_PID":"42","MESSAGE":"boom\n"`),
-			true, "docker.service", "boom", 3, 42},
-		{"container", journalLine("c8", at, 3, `,"_SYSTEMD_UNIT":"docker.service","CONTAINER_NAME":"web","_PID":"42","MESSAGE":"at x"`),
-			true, "docker.service", "at x", 3, 42},
-		{"multi-line", journalLine("c9", at, 3, `,"SYSLOG_IDENTIFIER":"app","MESSAGE":"Error: boom\n    at main\n"`),
-			true, "app", "Error: boom\n    at main", 3, 0},
-		{"identifier", journalLine("c2", at, 2, `,"SYSLOG_IDENTIFIER":"myapp","MESSAGE":"crit"`), true, "myapp", "crit", 2, 0},
-		{"kernel", journalLine("c3", at, 3, `,"_TRANSPORT":"kernel","MESSAGE":"oops"`), true, "kernel", "oops", 3, 0},
-		{"comm", journalLine("c4", at, 0, `,"_COMM":"bash","MESSAGE":"x"`), true, "bash", "x", 0, 0},
-		{"bytes message", journalLine("c5", at, 3, `,"SYSLOG_IDENTIFIER":"a","MESSAGE":[104,105,255]`), true, "a", "hi�", 3, 0},
-		{"repeated field", journalLine("c6", at, 3, `,"SYSLOG_IDENTIFIER":["first","second"],"MESSAGE":"m"`), true, "first", "m", 3, 0},
-		{"warning skipped", journalLine("c7", at, 4, `,"MESSAGE":"w"`), false, "", "", 0, 0},
-		{"no cursor", `{"PRIORITY":"3","MESSAGE":"m"}`, false, "", "", 0, 0},
-		{"not json", `nope`, false, "", "", 0, 0},
+		{"short-iso-precise", "2026-10-27T23:01:27.553124+01:00 appliance-1 discovery[962]: Error: connect ECONNREFUSED",
+			at, "discovery", "Error: connect ECONNREFUSED", 962},
+		{"short-precise", "Oct 27 23:01:27.553124 appliance-1 discovery[962]:   errno: -111,",
+			at, "discovery", "  errno: -111,", 962},
+		{"short", "Oct 27 23:01:27 appliance-1 discovery[962]: }",
+			at.Truncate(time.Second), "discovery", "}", 962},
+		{"kernel", "2026-10-27T23:01:27.553124+0100 appliance-1 kernel: Out of memory",
+			at, "kernel", "Out of memory", 0},
+		{"empty message", "2026-10-27T23:01:27.553124+01:00 appliance-1 app[7]:", at, "app", "", 7},
 	}
 	for _, c := range cases {
-		e, _, ok := ParseJournal([]byte(c.line))
-		if ok != c.ok {
-			t.Errorf("%s: ok = %v, want %v", c.name, ok, c.ok)
-			continue
-		}
+		e, prefix, ok := parseShort(c.line, now)
 		if !ok {
+			t.Errorf("%s: not parsed", c.name)
 			continue
 		}
-		if e.Component != c.component || e.Message != c.message || e.Priority != c.priority || e.PID != c.pid {
-			t.Errorf("%s: got component %q message %q priority %d pid %d", c.name, e.Component, e.Message, e.Priority, e.PID)
-		}
-		if (c.name == "container") != (e.Container == "web") {
-			t.Errorf("%s: container %q", c.name, e.Container)
-		}
-		if !e.Time.Equal(at) || e.Boot != "b1" || e.Host != "host" || len(e.ID) != 16 || e.PriorityName != PriorityName(c.priority) {
+		if !e.Time.Equal(c.at) || e.Component != c.component || e.Identifier != c.component || e.Message != c.message || e.PID != c.pid ||
+			e.Host != "appliance-1" || e.Priority != 3 || e.PriorityName != "err" || len(e.ID) != 16 {
 			t.Errorf("%s: got %+v", c.name, e)
 		}
+		if !strings.HasSuffix(c.line[:prefix], ":") && !strings.HasSuffix(c.line[:prefix], ": ") || c.line[prefix:] != c.message {
+			t.Errorf("%s: prefix %q", c.name, c.line[:prefix])
+		}
 	}
-	a, cur, _ := ParseJournal([]byte(journalLine("same", at, 3, "")))
-	b, _, _ := ParseJournal([]byte(journalLine("same", at.Add(time.Hour), 3, "")))
-	if cur != "same" || a.ID != b.ID {
-		t.Errorf("the id must only depend on the cursor: %q %q (cursor %q)", a.ID, b.ID, cur)
+	for _, line := range []string{"                                                      at main", "-- Boot fc000899846a450d9a37cba81a853732 --", "plain text", ""} {
+		if _, _, ok := parseShort(line, now); ok {
+			t.Errorf("%q parsed as an entry", line)
+		}
 	}
-	if _, cur, ok := ParseJournal([]byte(journalLine("c7", at, 6, ""))); ok || cur != "c7" {
-		t.Errorf("an entry that is not kept still returns its cursor: %q %v", cur, ok)
+	a, _, _ := parseShort(cases[0].line, now)
+	b, _, _ := parseShort(cases[0].line, now.Add(time.Hour))
+	c, _, _ := parseShort(strings.Replace(cases[0].line, "553124", "553125", 1), now)
+	if a.ID != b.ID || a.ID == c.ID {
+		t.Errorf("the id must depend on the line only: %q %q %q", a.ID, b.ID, c.ID)
+	}
+}
+
+func TestMessageLevel(t *testing.T) {
+	cases := []struct {
+		line string
+		prio int
+		ok   bool
+	}{
+		{"[27.10.2026 - 23:01:27.553] [0] [error ] [events.js:185] Error: connect ECONNREFUSED", 3, true},
+		{"[27.10.2026 - 23:01:27.555] [0] [log   ] [events.js:194] stop() connection", 6, true},
+		{"[27.10.2026 - 00:00:00.000] [0] [warn ] probe C", 4, true},
+		{"[info] 2026-10-27T10:35:58.447313Z couchdb@couchdb-0.local <0.43.0> -------- SIGTERM received", 6, true},
+		{"[error] 2026-10-27T11:00:37.297932Z couchdb@couchdb-0.local gen_server terminated", 3, true},
+		{"ERROR:root:probe E", 3, true},
+		{"INFO:root:started", 6, true},
+		{"2026-10-27 22:40:20,123 WARNING something", 4, true},
+		{"FATAL: database is gone", 2, true},
+		{`{"level":"error","msg":"probe G json"}`, 3, true},
+		{`{"msg":"x","level":"debug"}`, 7, true},
+		{"time=2026-10-27T22:40:20Z level=info msg=started", 6, true},
+		{"Error: probe A", 0, false},
+		{"TypeError: fetch failed", 0, false},
+		{"Log in failed for admin", 0, false},
+		{"[x] next", 0, false},
+		{"loglevel=info is not supported", 0, false},
+		{"", 0, false},
+	}
+	for _, c := range cases {
+		if p, ok := messageLevel(c.line); p != c.prio || ok != c.ok {
+			t.Errorf("%q: %d %v, want %d %v", c.line, p, ok, c.prio, c.ok)
+		}
 	}
 }
 
 func TestJournalFollowArgs(t *testing.T) {
-	got := strings.Join(journalFollowArgs("s=abc;i=1", time.Time{}), " ")
-	if !strings.HasSuffix(got, " --after-cursor=s=abc;i=1") || !strings.Contains(got, "--priority=err --output=json --follow") {
-		t.Errorf("with cursor: %q", got)
-	}
-	since := time.Date(2026, 10, 9, 8, 0, 0, 0, time.Local)
-	if got := journalFollowArgs("", since); got[len(got)-1] != "--since=2026-10-09 08:00:00" {
-		t.Errorf("without cursor: %q", got)
+	since := time.Date(2026, 10, 27, 23, 1, 27, 553124000, time.FixedZone("CET", 3600))
+	got := strings.Join(journalFollowArgs(since), " ")
+	if !strings.HasPrefix(got, "--priority=err --output=short-iso-precise ") || !strings.Contains(got, " --follow ") ||
+		!strings.HasSuffix(got, " --since=2026-10-27 22:01:27.553124 UTC") {
+		t.Errorf("args: %q", got)
 	}
 }
 
@@ -124,8 +147,8 @@ func TestStorePersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s.Cursor() != "" {
-		t.Fatalf("new store has cursor %q", s.Cursor())
+	if !s.Since().IsZero() {
+		t.Fatalf("new store has since %v", s.Since())
 	}
 	day := 24 * time.Hour
 	err = s.Add([]Event{
@@ -133,11 +156,11 @@ func TestStorePersists(t *testing.T) {
 		ev("b", clk.t.Add(-time.Hour), "kernel", "Out of memory"),
 		ev("old", clk.t.Add(-8*day), "kernel", "too old"),
 		ev("c", clk.t.Add(-3*day), "sshd.service", "auth failure"), // out of order
-	}, "cur1")
+	}, clk.t.Add(-time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Add([]Event{ev("b", clk.t, "kernel", "duplicate")}, "cur2"); err != nil {
+	if err := s.Add([]Event{ev("b", clk.t, "kernel", "duplicate")}, clk.t); err != nil {
 		t.Fatal(err)
 	}
 	all, total := s.List(Filter{}, 0)
@@ -169,8 +192,8 @@ func TestStorePersists(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s2.Cursor() != "cur2" {
-		t.Errorf("cursor after reopen = %q", s2.Cursor())
+	if !s2.Since().Equal(clk.t) {
+		t.Errorf("since after reopen = %v", s2.Since())
 	}
 	a, ok := s2.Get("a")
 	if !ok || !a.Read() || a.ReadBy != "alice" || !a.ReadAt.Equal(clk.t) {
@@ -206,7 +229,7 @@ func TestStoreFilter(t *testing.T) {
 		ev("2", now.Add(-3*time.Minute), "kernel", "Out of memory: killed process"),
 		ev("3", now.Add(-2*time.Minute), "docker.service", "network error"),
 		ev("4", now.Add(-1*time.Minute), "sshd.service", "error: kex"),
-	}, "c")
+	}, now)
 	_, _ = s.MarkRead("u", "3")
 	cases := []struct {
 		f     Filter
@@ -242,16 +265,13 @@ func TestStoreFilter(t *testing.T) {
 // fakeSource replays lines, then ends or waits for the context.
 type fakeSource struct {
 	mu    sync.Mutex
-	calls []string // cursor of each call, "since" without one
+	calls []time.Time // since of each call
 	runs  [][]string
 }
 
-func (f *fakeSource) Follow(ctx context.Context, cursor string, since time.Time, line func([]byte)) error {
+func (f *fakeSource) Follow(ctx context.Context, since time.Time, line func([]byte)) error {
 	f.mu.Lock()
-	if cursor == "" {
-		cursor = "since " + time.Until(since).Round(time.Hour).String()
-	}
-	f.calls = append(f.calls, cursor)
+	f.calls = append(f.calls, since)
 	var lines []string
 	if len(f.runs) > 0 {
 		lines, f.runs = f.runs[0], f.runs[1:]
@@ -259,7 +279,7 @@ func (f *fakeSource) Follow(ctx context.Context, cursor string, since time.Time,
 	last := len(f.runs) == 0
 	f.mu.Unlock()
 	for _, l := range lines {
-		line([]byte(l))
+		line([]byte(l + "\n"))
 	}
 	if last {
 		<-ctx.Done()
@@ -269,17 +289,20 @@ func (f *fakeSource) Follow(ctx context.Context, cursor string, since time.Time,
 }
 
 func TestCollector(t *testing.T) {
-	now := time.Now()
+	now := time.Now().Truncate(time.Microsecond)
 	s, err := Open(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
 	src := &fakeSource{runs: [][]string{
-		{journalLine("c1", now.Add(-time.Hour), 3, `,"SYSLOG_IDENTIFIER":"a","MESSAGE":"one"`),
-			journalLine("c1a", now, 3, `,"CONTAINER_ID_FULL":"x","MESSAGE":"Error: boom"`),
-			journalLine("c1b", now, 3, `,"CONTAINER_ID_FULL":"x","MESSAGE":"    at main"`),
-			journalLine("c2", now, 5, `,"MESSAGE":"notice"`)},
-		{journalLine("c3", now, 2, `,"SYSLOG_IDENTIFIER":"b","MESSAGE":"two"`)},
+		{shortLine(now.Add(-time.Hour), "a[1]", "one"),
+			shortLine(now, "x[2]", "Error: boom"),
+			shortLine(now, "x[2]", "    at main"),
+			shortLine(now, "x[2]", "[warn ] only a warning")},
+		// read again after a restart: stored already
+		{shortLine(now, "x[2]", "Error: boom"),
+			shortLine(now, "x[2]", "    at main"),
+			shortLine(now.Add(time.Second), "b[3]", "two")},
 	}}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -287,26 +310,27 @@ func TestCollector(t *testing.T) {
 		(&Collector{Store: s, Source: src}).Run(ctx)
 		close(done)
 	}()
+	end := now.Add(time.Second + time.Microsecond)
 	deadline := time.Now().Add(10 * time.Second)
-	for {
-		if _, n := s.List(Filter{}, 0); n == 3 && s.Cursor() == "c3" {
-			break
-		}
+	for !s.Since().Equal(end) {
 		if time.Now().After(deadline) {
 			_, n := s.List(Filter{}, 0)
-			t.Fatalf("collected %d events, cursor %q", n, s.Cursor())
+			t.Fatalf("collected %d events, since %v", n, s.Since())
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
 	cancel()
 	<-done
+	if got, n := s.List(Filter{}, 0); n != 3 {
+		t.Errorf("events: %+v", got)
+	}
 	if got, _ := s.List(Filter{Text: "boom"}, 0); len(got) != 1 || got[0].Message != "Error: boom\n    at main" {
 		t.Errorf("the lines of a container message are one event: %+v", got)
 	}
 	src.mu.Lock()
 	defer src.mu.Unlock()
-	if want := []string{"since -168h0m0s", "c2"}; !slices.Equal(src.calls, want) {
-		t.Errorf("Follow calls = %q, want %q (resume after the last cursor, even of a skipped entry)", src.calls, want)
+	if len(src.calls) != 2 || time.Until(src.calls[0]).Round(time.Hour) != -Retention || !src.calls[1].Equal(now.Add(time.Microsecond)) {
+		t.Errorf("Follow calls = %v (resume just after the last line, even of a dropped message)", src.calls)
 	}
 }
 
@@ -322,10 +346,8 @@ type containerFeed struct {
 func (f *containerFeed) lines(container string, lines ...string) {
 	for _, l := range lines {
 		f.n++
-		msg, _ := json.Marshal(l)
-		line := journalLine(fmt.Sprintf("c%d", f.n), f.at.Add(time.Duration(f.n)*50*time.Microsecond), 3,
-			fmt.Sprintf(`,"_SYSTEMD_UNIT":"docker.service","_TRANSPORT":"journal","CONTAINER_NAME":%q,"CONTAINER_ID_FULL":"id-%s","MESSAGE":%s`, container, container, msg))
-		f.got = append(f.got, f.m.add([]byte(line), f.at)...)
+		line := shortLine(f.at.Add(time.Duration(f.n)*50*time.Microsecond), container, l)
+		f.got = append(f.got, f.m.add(line+"\n", f.at)...)
 	}
 }
 
@@ -385,14 +407,12 @@ func TestMerger(t *testing.T) {
 
 	var got []string
 	for _, e := range f.got {
-		got = append(got, fmt.Sprintf("%s %s +%d", e.Container, e.Summary(), e.More()))
+		got = append(got, fmt.Sprintf("%s %s +%d", e.Component, e.Summary(), e.More()))
 	}
 	want := []string{
 		"discovery [27.10.2026 - 22:30:43.482] [0] [error ] [events.js:185] Error: connect ECONNREFUSED 192.0.2.10:443 +4",
 		"discovery [27.10.2026 - 22:30:43.484] [0] [error ] [events.js:185] reconnect failed +0",
 		"discovery [27.10.2026 - 22:30:43.484] [0] [error ] [startup.js:186] TZ= is not a valid timezone +0",
-		"couchdb [info] 2026-10-27T10:35:58.447313Z couchdb@couchdb-0.local <0.43.0> -------- SIGTERM received - shutting down +0",
-		"couchdb [info] 2026-10-27T10:35:58.447410Z couchdb@couchdb-0.local <0.43.0> -------- SIGTERM received - shutting down +0",
 		"couchdb [error] 2026-10-27T11:00:37.297932Z couchdb@couchdb-0.local <0.1900.0> -------- gen_server terminated with reason: killed +3",
 		"node Error: probe A +1",
 		"python ERROR:root:probe E +5",
@@ -409,51 +429,68 @@ func TestMerger(t *testing.T) {
 	if e := f.got[0]; !strings.HasSuffix(e.Message, "\n  errno: -111,\n  port: 443\n}") {
 		t.Errorf("merged message: %q", e.Message)
 	}
-	if len(f.m.open) != 0 {
-		t.Errorf("%d messages still open", len(f.m.open))
+	if len(f.m.open) != 0 || f.m.dropped != 2 {
+		t.Errorf("%d messages still open, %d dropped", len(f.m.open), f.m.dropped)
 	}
 }
 
 func TestMergerBounds(t *testing.T) {
 	at := time.Date(2026, 10, 27, 22, 30, 43, 0, time.UTC)
 	m := newMerger()
-	cont := func(cursor string, after time.Duration, msg string) []byte {
-		return []byte(journalLine(cursor, at.Add(after), 3, `,"CONTAINER_ID_FULL":"x","MESSAGE":`+strconv.Quote(msg)))
+	cont := func(after time.Duration, msg string) string {
+		return shortLine(at.Add(after), "x[1]", msg)
 	}
-	// entries that are whole messages are never merged
-	if evs := m.add([]byte(journalLine("w1", at, 3, `,"SYSLOG_IDENTIFIER":"app","MESSAGE":"boom"`)), at); len(evs) != 1 {
-		t.Fatalf("whole message: %v", evs)
+	if !m.resume().IsZero() {
+		t.Errorf("resume before the first line = %v", m.resume())
 	}
-	if evs := m.add([]byte(journalLine("w2", at, 3, `,"SYSLOG_IDENTIFIER":"app","MESSAGE":"  detail"`)), at); len(evs) != 1 || evs[0].Message != "  detail" {
-		t.Fatalf("whole message: %v", evs)
+	// lines before the first entry are no journal output
+	m.add("Error: not journalctl\n", at)
+	m.add(cont(0, "Error: boom"), at)
+	if m.sample != "Error: not journalctl" || m.seq != 1 {
+		t.Errorf("sample %q, %d entries", m.sample, m.seq)
 	}
-	// an open message holds the cursor back until it is complete
-	m.add(cont("x1", 0, "Error: boom"), at)
-	m.add(cont("x2", time.Millisecond, "    at main"), at)
-	if m.resume() != "w2" {
-		t.Errorf("resume with an open message = %q, want w2", m.resume())
+	// the further lines of an entry are indented to its prefix and always
+	// continue it, even when they look like a new record
+	pad := strings.Repeat(" ", len(cont(0, "")))
+	m.add(pad+"  at main\n", at)
+	m.add(pad+"[error ] still the same entry\n", at)
+	m.add(cont(time.Millisecond, "    at more"), at)
+	// an open message holds the position back until it is complete
+	if !m.resume().Equal(at) {
+		t.Errorf("resume with an open message = %v, want %v", m.resume(), at)
 	}
 	// a line after more than mergeGap starts a new message, however it looks
-	if evs := m.add(cont("x3", 2*time.Second, "    at late"), at); len(evs) != 1 || evs[0].Message != "Error: boom\n    at main" {
-		t.Errorf("after the gap: %v", evs)
+	evs := m.add(cont(2*time.Second, "    at late"), at)
+	if len(evs) != 1 || evs[0].Message != "Error: boom\n  at main\n[error ] still the same entry\n    at more" {
+		t.Errorf("after the gap: %+v", evs)
 	}
-	if m.resume() != "x2" {
-		t.Errorf("resume = %q, want x2", m.resume())
+	if !m.resume().Equal(at.Add(2 * time.Second)) {
+		t.Errorf("resume = %v", m.resume())
 	}
 	if evs := m.expire(at.Add(mergeGap)); len(evs) != 0 {
 		t.Errorf("expired too early: %v", evs)
 	}
-	if evs := m.expire(at.Add(2 * mergeGap)); len(evs) != 1 || m.resume() != "x3" {
-		t.Errorf("expire: %v, resume %q", evs, m.resume())
+	if evs := m.expire(at.Add(2 * mergeGap)); len(evs) != 1 || !m.resume().Equal(at.Add(2*time.Second+time.Microsecond)) {
+		t.Errorf("expire: %v, resume %v", evs, m.resume())
 	}
 	// a message ends after maxMergeLines
-	m.add(cont("y0", 3*time.Second, "Error: endless"), at)
-	var evs []Event
+	m.add(cont(3*time.Second, "Error: endless"), at)
+	evs = nil
 	for i := 1; i < maxMergeLines; i++ {
-		evs = append(evs, m.add(cont(fmt.Sprintf("y%d", i), 3*time.Second, "  more"), at)...)
+		evs = append(evs, m.add(cont(3*time.Second, "  more"), at)...)
 	}
 	if len(evs) != 1 || evs[0].More() != maxMergeLines-1 || len(m.open) != 0 {
 		t.Errorf("long message: %d events, open %d", len(evs), len(m.open))
+	}
+	// the further lines of an entry whose message ended are dropped
+	if evs := m.add(pad+"  more\n", at); len(evs) != 0 || len(m.open) != 0 {
+		t.Errorf("line after a full message: %v", evs)
+	}
+	// a message below error is dropped with its lines
+	m.add(cont(5*time.Second, "[warn ] slow"), at)
+	m.add(cont(5*time.Second, "  detail"), at)
+	if evs := m.close(); len(evs) != 0 || m.dropped != 1 {
+		t.Errorf("warning: %v, %d dropped", evs, m.dropped)
 	}
 }
 
@@ -465,7 +502,7 @@ func TestStoreReimport(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, b := ev("a", clk.t.Add(-time.Hour), "kernel", "one"), ev("b", clk.t.Add(-time.Minute), "kernel", "two")
-	_ = s.Add([]Event{a, b}, "cur1")
+	_ = s.Add([]Event{a, b}, clk.t.Add(-time.Second))
 	_, _ = s.MarkRead("alice", "a")
 	// as stored by a version before merging
 	if err := os.WriteFile(filepath.Join(dir, stateFile), []byte(`{"cursor":"cur1"}`), 0o640); err != nil {
@@ -475,13 +512,13 @@ func TestStoreReimport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, n := s.List(Filter{}, 0); n != 0 || s.Cursor() != "" {
-		t.Fatalf("after a merge version change: %d events, cursor %q", n, s.Cursor())
+	if _, n := s.List(Filter{}, 0); n != 0 || !s.Since().IsZero() {
+		t.Fatalf("after a merge version change: %d events, since %v", n, s.Since())
 	}
 	if files, _ := filepath.Glob(filepath.Join(dir, eventsPrefix+"*")); len(files) != 0 {
 		t.Errorf("event files kept: %v", files)
 	}
-	_ = s.Add([]Event{a, b}, "cur2")
+	_ = s.Add([]Event{a, b}, clk.t)
 	if got, _ := s.Get("a"); got.ReadBy != "alice" {
 		t.Errorf("read mark of an imported event: %+v", got)
 	}
@@ -489,7 +526,7 @@ func TestStoreReimport(t *testing.T) {
 		t.Errorf("b is read: %+v", got)
 	}
 	s, _ = open(dir, clk.now)
-	if got, _ := s.Get("a"); s.Cursor() != "cur2" || got.ReadBy != "alice" {
-		t.Errorf("after reopening: cursor %q, a %+v", s.Cursor(), got)
+	if got, _ := s.Get("a"); !s.Since().Equal(clk.t) || got.ReadBy != "alice" {
+		t.Errorf("after reopening: since %v, a %+v", s.Since(), got)
 	}
 }

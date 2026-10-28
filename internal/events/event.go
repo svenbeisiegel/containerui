@@ -6,22 +6,22 @@
 //
 //	events-YYYY-MM-DD.jsonl  the events of one UTC day, one JSON object per line
 //	reads-YYYY-MM-DD.jsonl   who read which event of that day, and when
-//	state.json               the journal cursor to resume from
+//	state.json               the journal time to resume from
 //
-// Containers and the stdout of services log one journal entry per line;
-// the lines of one message, such as a stack trace, are merged into one
-// event as they are collected (see merge.go).
+// The journal is read as journalctl --output=short-iso-precise (see
+// short.go), which has the exact time, the identifier and the PID of each
+// line. Containers and the stdout of services log one journal entry per
+// line; the lines of one message, such as a stack trace, are merged into
+// one event as they are collected, and messages whose log level is below
+// error are dropped (see merge.go).
 //
 // Day files make the retention a matter of deleting files, and JSON Lines
 // can be searched with grep or jq, e.g. by component:
 //
-//	jq -c 'select(.component=="docker.service")' events-*.jsonl
+//	jq -c 'select(.component=="discovery")' events-*.jsonl
 package events
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
 	"strconv"
 	"strings"
 	"time"
@@ -34,25 +34,18 @@ const Retention = 7 * 24 * time.Hour
 type Event struct {
 	ID           string    `json:"id"`
 	Time         time.Time `json:"time"`
-	Boot         string    `json:"boot,omitempty"`
 	Priority     int       `json:"priority"`
 	PriorityName string    `json:"priority_name"`
-	// Component is what the event is filtered by: the systemd unit, else
-	// the syslog identifier, else the command.
+	// Component is what the event is filtered by: the syslog identifier,
+	// which is the process or, for a container, the tag of its log driver.
 	Component  string `json:"component"`
-	Unit       string `json:"unit,omitempty"`
 	Identifier string `json:"identifier,omitempty"`
-	// Container is the container name the Docker journald log driver
-	// sets; its entries all have the PID of dockerd.
-	Container string `json:"container,omitempty"`
-	PID       int    `json:"pid,omitempty"`
-	Host      string `json:"host,omitempty"`
-	Transport string `json:"transport,omitempty"`
-	Message   string `json:"message"`
+	PID        int    `json:"pid,omitempty"`
+	Host       string `json:"host,omitempty"`
+	Message    string `json:"message"`
 
-	// source is the stream whose lines are merged into messages: a
-	// container, or the stdout of a service; "" for entries that are
-	// whole messages.
+	// source is the stream whose lines are merged into messages: host,
+	// identifier and PID.
 	source string
 
 	// Who read the event and when; kept in the reads files.
@@ -102,92 +95,6 @@ func PriorityName(p int) string {
 		return priorityNames[p]
 	}
 	return strconv.Itoa(p)
-}
-
-// ParseJournal turns one line of `journalctl --output=json` into an event.
-// It returns the entry's cursor, which is set even when the entry is not
-// kept, and ok false for entries that are not error events.
-func ParseJournal(line []byte) (e Event, cursor string, ok bool) {
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(line, &raw); err != nil {
-		return Event{}, "", false
-	}
-	field := func(name string) string { return journalValue(raw[name]) }
-	cursor = field("__CURSOR")
-	if cursor == "" {
-		return Event{}, "", false
-	}
-	prio, err := strconv.Atoi(field("PRIORITY"))
-	if err != nil || prio < 0 || prio > MaxPriority {
-		return Event{}, cursor, false
-	}
-	usec, err := strconv.ParseInt(field("__REALTIME_TIMESTAMP"), 10, 64)
-	if err != nil {
-		return Event{}, cursor, false
-	}
-	sum := sha256.Sum256([]byte(cursor))
-	e = Event{
-		ID:           hex.EncodeToString(sum[:8]),
-		Time:         time.UnixMicro(usec).UTC(),
-		Boot:         field("_BOOT_ID"),
-		Priority:     prio,
-		PriorityName: PriorityName(prio),
-		Unit:         firstNonEmpty(field("_SYSTEMD_UNIT"), field("_SYSTEMD_USER_UNIT")),
-		Identifier:   field("SYSLOG_IDENTIFIER"),
-		Container:    field("CONTAINER_NAME"),
-		Host:         field("_HOSTNAME"),
-		Transport:    field("_TRANSPORT"),
-		Message:      strings.TrimRight(field("MESSAGE"), "\r\n"),
-	}
-	e.PID, _ = strconv.Atoi(firstNonEmpty(field("_PID"), field("SYSLOG_PID")))
-	e.Component = component(e, field("_COMM"))
-	if id := firstNonEmpty(field("CONTAINER_ID_FULL"), field("CONTAINER_ID")); id != "" {
-		e.source = e.Boot + "/container/" + id
-	} else if e.Transport == "stdout" && field("_STREAM_ID") != "" {
-		e.source = e.Boot + "/stream/" + field("_STREAM_ID")
-	}
-	return e, cursor, true
-}
-
-// component names what an event came from, for filtering.
-func component(e Event, comm string) string {
-	switch {
-	case e.Unit != "":
-		return e.Unit
-	case e.Identifier != "":
-		return e.Identifier
-	case e.Transport == "kernel":
-		return "kernel"
-	case comm != "":
-		return comm
-	}
-	return "unknown"
-}
-
-// journalValue decodes a journal JSON field: a string, an array of bytes
-// for values that are not valid UTF-8, or an array of those for a field set
-// more than once (the first value is used). Null and missing are "".
-func journalValue(v json.RawMessage) string {
-	if len(v) == 0 {
-		return ""
-	}
-	var s string
-	if json.Unmarshal(v, &s) == nil {
-		return s
-	}
-	var b []byte
-	var nums []int
-	if json.Unmarshal(v, &nums) == nil {
-		for _, n := range nums {
-			b = append(b, byte(n))
-		}
-		return strings.ToValidUTF8(string(b), "�")
-	}
-	var many []json.RawMessage
-	if json.Unmarshal(v, &many) == nil && len(many) > 0 {
-		return journalValue(many[0])
-	}
-	return ""
 }
 
 func firstNonEmpty(vals ...string) string {

@@ -22,8 +22,8 @@ func NewSource() Source {
 
 type journal struct{ path string }
 
-func (j *journal) Follow(ctx context.Context, cursor string, since time.Time, line func([]byte)) error {
-	cmd := exec.CommandContext(ctx, j.path, journalFollowArgs(cursor, since)...)
+func (j *journal) Follow(ctx context.Context, since time.Time, line func([]byte)) error {
+	cmd := exec.CommandContext(ctx, j.path, journalFollowArgs(since)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	cmd.WaitDelay = 2 * time.Second
@@ -37,7 +37,7 @@ func (j *journal) Follow(ctx context.Context, cursor string, since time.Time, li
 	r := bufio.NewReaderSize(out, 64<<10)
 	for {
 		b, err := r.ReadBytes('\n')
-		if len(b) > 1 {
+		if len(b) > 0 {
 			line(b)
 		}
 		if err != nil {

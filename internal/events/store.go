@@ -34,7 +34,7 @@ type Store struct {
 	mu     sync.RWMutex
 	events []*Event // sorted by time, oldest first
 	byID   map[string]*Event
-	cursor string
+	since  time.Time
 	// reads are the read marks of events not stored (yet), applied when
 	// they are imported again.
 	reads map[string]readMark
@@ -42,8 +42,8 @@ type Store struct {
 
 // state is what state.json holds.
 type state struct {
-	Cursor string `json:"cursor"`
-	Merge  int    `json:"merge,omitempty"` // mergeVersion of the events
+	Since time.Time `json:"since,omitzero"`  // the journal time to resume from
+	Merge int       `json:"merge,omitempty"` // mergeVersion of the events
 }
 
 // readMark is one line of a reads file.
@@ -71,7 +71,7 @@ func open(dir string, now func() time.Time) (*Store, error) {
 		if err := json.Unmarshal(data, &st); err != nil {
 			return nil, fmt.Errorf("%s: %w", stateFile, err)
 		}
-		s.cursor = st.Cursor
+		s.since = st.Since
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return nil, err
 	}
@@ -128,8 +128,8 @@ func open(dir string, now func() time.Time) (*Store, error) {
 	return s, nil
 }
 
-// reimport deletes the events and the cursor, so the events are imported
-// from the journal again.
+// reimport deletes the events and the journal time, so the events are
+// imported from the journal again.
 func (s *Store) reimport() error {
 	days, err := s.days(eventsPrefix)
 	if err != nil {
@@ -140,27 +140,27 @@ func (s *Store) reimport() error {
 			return err
 		}
 	}
-	s.cursor = ""
+	s.since = time.Time{}
 	return writeAtomic(filepath.Join(s.dir, stateFile), state{Merge: mergeVersion})
 }
 
 // Dir is the folder of the store.
 func (s *Store) Dir() string { return s.dir }
 
-// Cursor is the journal position after the last event added, "" before
-// the first.
-func (s *Store) Cursor() string {
+// Since is the journal time to resume from, after the events added; zero
+// before the first.
+func (s *Store) Since() time.Time {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return s.cursor
+	return s.since
 }
 
-// Add stores new events and the journal cursor after them. Events already
-// stored or older than Retention are skipped; events read before they
-// were imported again are read. When writing fails the
-// events are still kept in memory, but the cursor is not saved, so a
-// restart reads them from the journal again.
-func (s *Store) Add(evs []Event, cursor string) error {
+// Add stores new events and the journal time to resume from after them.
+// Events already stored or older than Retention are skipped; events read
+// before they were imported again are read. When writing fails the events
+// are still kept in memory, but the time is not saved, so a restart reads
+// them from the journal again.
+func (s *Store) Add(evs []Event, since time.Time) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	cutoff := s.cutoff()
@@ -207,13 +207,14 @@ func (s *Store) Add(evs []Event, cursor string) error {
 	if err := errors.Join(errs...); err != nil {
 		return err
 	}
-	if cursor == "" || cursor == s.cursor {
+	if since.IsZero() || since.Equal(s.since) {
 		return nil
 	}
-	if err := writeAtomic(filepath.Join(s.dir, stateFile), state{Cursor: cursor, Merge: mergeVersion}); err != nil {
+	since = since.UTC()
+	if err := writeAtomic(filepath.Join(s.dir, stateFile), state{Since: since, Merge: mergeVersion}); err != nil {
 		return err
 	}
-	s.cursor = cursor
+	s.since = since
 	return nil
 }
 
