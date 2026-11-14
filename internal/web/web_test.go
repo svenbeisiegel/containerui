@@ -31,6 +31,7 @@ type env struct {
 	logs *syncBuffer
 	// composeDir holds the compose files deployed in the test.
 	composeDir string
+	srv        *Server
 
 	cookie *http.Cookie
 	csrf   string
@@ -85,8 +86,9 @@ func newEnvWith(t *testing.T, opt func(*Options)) *env {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e := &env{t: t, h: s.Handler(), rt: rt, jobs: jm, logs: logs, composeDir: composeDir}
+	e := &env{t: t, h: s.Handler(), rt: rt, jobs: jm, logs: logs, composeDir: composeDir, srv: s}
 	t.Cleanup(func() {
+		s.Close()
 		if strings.Contains(logs.String(), "render") {
 			t.Errorf("template errors logged:\n%s", logs.String())
 		}
@@ -234,7 +236,7 @@ func TestPagesRender(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 	pages := map[string][]string{
-		"/":                        {"Running Containers", "web", "nginx", "data", "bridge"},
+		"/":                        {"Running Containers", "web", "nginx", "Container Metrics", "Disk Usage per Container", "Disk Usage by Category", "/static/metrics.js"},
 		"/partials/dashboard":      {`id="dashboard"`},
 		"/containers":              {"web", "job", "Force delete", "Start"},
 		"/partials/containers":     {`id="containers"`},

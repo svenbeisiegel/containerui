@@ -299,6 +299,7 @@ func run(o serveOptions, stop <-chan struct{}) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Warn("shutdown", "error", err)
 	}
+	s.Close()
 	jm.Wait()
 	return nil
 }

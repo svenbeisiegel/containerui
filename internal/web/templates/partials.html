@@ -19,11 +19,11 @@
       <span class="sub">{{len .Containers}} total</span>
     </a>
     <a class="card" href="/images">
-      <span class="num">{{len .Images}}</span><span class="label">images</span>
+      <span class="num">{{.Images}}</span><span class="label">images</span>
     </a>
-    {{if .Caps.Volumes}}<a class="card" href="/volumes"><span class="num">{{len .Volumes}}</span><span class="label">volumes</span></a>{{end}}
-    {{if .Caps.Networks}}<a class="card" href="/networks"><span class="num">{{len .Networks}}</span><span class="label">networks</span></a>{{end}}
-    {{if .Caps.Compose}}<a class="card" href="/compose"><span class="num">{{len .Projects}}</span><span class="label">compose projects</span></a>{{end}}
+    {{if .Caps.Volumes}}<a class="card" href="/volumes"><span class="num">{{.Volumes}}</span><span class="label">volumes</span></a>{{end}}
+    {{if .Caps.Networks}}<a class="card" href="/networks"><span class="num">{{.Networks}}</span><span class="label">networks</span></a>{{end}}
+    {{if .Caps.Compose}}<a class="card" href="/compose"><span class="num">{{.Projects}}</span><span class="label">compose projects</span></a>{{end}}
   </section>
 
   <section class="panel">
@@ -32,13 +32,14 @@
     {{else if not .Running}}<p class="empty">No containers are running. <a href="/containers/new">Create one</a>.</p>
     {{else}}
     <div class="table-wrap"><table>
-      <thead><tr><th>Name</th><th>Image</th><th>Status</th></tr></thead>
+      <thead><tr><th>Name</th><th>Image</th><th>Status</th>{{if .Metrics}}<th class="num">CPU</th><th class="num">RAM</th><th class="num">Disk I/O</th>{{end}}</tr></thead>
       <tbody>
       {{range .Running}}
         <tr>
           <td><a href="/containers/{{.ID}}">{{.Name}}</a></td>
           <td class="mono">{{.Image}}</td>
           <td>{{template "state" .State}} <span class="muted">{{.Status}}</span></td>
+          {{if $.Metrics}}{{$c := index $.Current .ID}}<td class="num">{{or $c.CPU "–"}}</td><td class="num">{{or $c.Mem "–"}}</td><td class="num">{{or $c.IO "–"}}</td>{{end}}
         </tr>
       {{end}}
       </tbody>
@@ -46,52 +47,67 @@
     {{end}}
   </section>
 
+  {{with .Metrics}}
   <section class="panel">
-    <h2>Images</h2>
-    {{if .ImagesErr}}<div class="flash error">{{.ImagesErr}}</div>
-    {{else if not .Images}}<p class="empty">No images. <a href="/images">Pull one</a>.</p>
+    <div class="panel-head"><h2>Container Metrics</h2><span class="muted small">last 15 minutes</span></div>
+    {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
+    {{if .Collecting}}{{if not .Err}}<p class="empty">Collecting metrics…</p>{{end}}
     {{else}}
-    <div class="table-wrap"><table>
-      <thead><tr><th>Repository</th><th>Tag</th><th>ID</th><th>Size</th><th>Created</th></tr></thead>
-      <tbody>
-      {{range .Images}}
-        <tr><td class="mono">{{.Repository}}</td><td class="mono">{{.Tag}}</td><td class="id">{{shortID .ID}}</td><td>{{.Size}}</td><td title="{{datetime .Created}}">{{ago .Created}}</td></tr>
-      {{end}}
-      </tbody>
-    </table></div>
+    <ul class="chart-legend">{{range .Legend}}<li><span class="swatch {{.Class}}"></span>{{.Name}}</li>{{end}}</ul>
+    <div class="charts">
+      <div><h3>CPU usage</h3>{{template "linechart" .CPU}}</div>
+      <div><h3>RAM usage</h3>{{template "linechart" .Mem}}</div>
+      <div><h3>Disk I/O <span class="muted small">read + write</span></h3>{{template "linechart" .IO}}</div>
+    </div>
     {{end}}
   </section>
-
   <div class="grid2">
-  {{if .Caps.Volumes}}
-  <section class="panel">
-    <h2>Volumes</h2>
-    {{if .VolumesErr}}<div class="flash error">{{.VolumesErr}}</div>
-    {{else if not .Volumes}}<p class="empty">No volumes.</p>
-    {{else}}
-    <div class="table-wrap"><table>
-      <thead><tr><th>Name</th><th>Driver</th><th>Mountpoint</th></tr></thead>
-      <tbody>{{range .Volumes}}<tr><td><a href="/volumes/{{.Name}}">{{.Name}}</a></td><td>{{.Driver}}</td><td class="mono small">{{.Mountpoint}}</td></tr>{{end}}</tbody>
-    </table></div>
-    {{end}}
-  </section>
-  {{end}}
-  {{if .Caps.Networks}}
-  <section class="panel">
-    <h2>Networks</h2>
-    {{if .NetworksErr}}<div class="flash error">{{.NetworksErr}}</div>
-    {{else if not .Networks}}<p class="empty">No networks.</p>
-    {{else}}
-    <div class="table-wrap"><table>
-      <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>ID</th></tr></thead>
-      <tbody>{{range .Networks}}<tr><td><a href="/networks/{{.Name}}">{{.Name}}</a></td><td>{{.Driver}}</td><td>{{.Scope}}</td><td class="id">{{shortID .ID}}</td></tr>{{end}}</tbody>
-    </table></div>
-    {{end}}
-  </section>
-  {{end}}
+    <section class="panel">
+      <h2>Disk Usage per Container</h2>
+      <p class="muted small">Writable layer plus the volumes only this container mounts.</p>
+      {{template "donut_panel" dict "Chart" .DiskContainers "Err" .DiskErr "Loading" .DiskLoading}}
+    </section>
+    <section class="panel">
+      <h2>Disk Usage by Category</h2>
+      <p class="muted small">Everything the runtime stores.</p>
+      {{template "donut_panel" dict "Chart" .DiskCategories "Err" .DiskErr "Loading" .DiskLoading}}
+    </section>
   </div>
+  {{end}}
   <p class="footnote">{{if .InfoErr}}<span class="error-text">Runtime unavailable: {{.InfoErr}}</span>{{else}}{{.Info.Driver}} {{.Info.Version}}{{end}} · updated {{.Updated.Format "15:04:05"}}</p>
 </div>
+{{end}}
+
+{{define "linechart"}}
+<figure class="chart" data-chart="{{.Data}}">
+  <div class="chart-y" aria-hidden="true">{{range .YTicks}}<span>{{.}}</span>{{end}}</div>
+  <div class="chart-plot">
+    <svg viewBox="0 0 600 160" preserveAspectRatio="none" role="img" aria-label="{{.Label}}">
+      {{range .Grid}}<line class="grid" x1="0" x2="600" y1="{{.}}" y2="{{.}}"/>{{end}}
+      {{range .Paths}}<path class="line {{.Class}}" d="{{.D}}"><title>{{.Title}}</title></path>{{end}}
+      <line class="crosshair" x1="0" x2="0" y1="0" y2="160"/>
+    </svg>
+    <div class="chart-tip" hidden></div>
+  </div>
+  <div class="chart-x" aria-hidden="true">{{range .XTicks}}<span>{{.}}</span>{{end}}</div>
+</figure>
+{{end}}
+
+{{define "donut_panel"}}
+{{if .Err}}<div class="flash error">{{.Err}}</div>
+{{else if .Loading}}<p class="empty">Measuring disk usage…</p>
+{{else if not .Chart.Arcs}}<p class="empty">No disk usage reported.</p>
+{{else}}{{with .Chart}}
+<div class="donut-wrap">
+  <svg class="donut" viewBox="0 0 42 42" role="img" aria-label="{{.Label}}: {{.Total}}">
+    {{range .Arcs}}<circle class="arc {{.Class}}" cx="21" cy="21" r="15.9155" fill="none" stroke-width="6" stroke-dasharray="{{.Dash}}" stroke-dashoffset="{{.Offset}}" transform="rotate(-90 21 21)"><title>{{.Title}}</title></circle>{{end}}
+    <text class="donut-total" x="21" y="22.6" text-anchor="middle">{{.Total}}</text>
+  </svg>
+  <table class="donut-legend">
+    <tbody>{{range .Legend}}<tr><td><span class="swatch {{.Class}}"></span>{{.Name}}</td><td class="num">{{.Value}}</td><td class="num muted">{{.Pct}}</td></tr>{{end}}</tbody>
+  </table>
+</div>
+{{end}}{{end}}
 {{end}}
 
 {{/* ---------- containers ---------- */}}

@@ -77,7 +77,8 @@ type Server struct {
 	partials *template.Template
 	static   http.Handler
 	warm     *warmer
-	favicon  string // URL path, "" if none
+	metrics  *metricsSampler // nil: the runtime reports no resource usage
+	favicon  string          // URL path, "" if none
 	favType  string
 
 	logsPage     *template.Template // standalone live log page
@@ -115,6 +116,9 @@ func New(o Options) (*Server, error) {
 		interval = defaultWarmInterval
 	}
 	s.warm = &warmer{rt: s.rt, log: s.log, interval: interval}
+	if st, ok := s.rt.(runtime.Stater); ok && s.rt.Capabilities().Stats {
+		s.metrics = newMetricsSampler(st, s.log)
+	}
 	if s.jobs == nil {
 		s.jobs = jobs.NewManager(context.Background())
 	}
@@ -133,6 +137,13 @@ func New(o Options) (*Server, error) {
 		}
 	}
 	return s, nil
+}
+
+// Close stops background work: the metrics sampler.
+func (s *Server) Close() {
+	if s.metrics != nil {
+		s.metrics.close()
+	}
 }
 
 func (s *Server) parseTemplates() error {

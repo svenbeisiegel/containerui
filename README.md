@@ -7,7 +7,20 @@ plugged in. It drives the **WSL container CLI (`wslc`)**, **docker** or
 
 Features:
 
-- **Dashboard**: running containers, images, volumes and networks (refreshes every 5 s)
+- **Dashboard** (refreshes every 5 s): the number of containers, images,
+  volumes, networks and compose projects, and the running containers with
+  their current CPU, RAM and disk I/O. On docker and podman it also shows
+  **container metrics**: CPU usage, RAM usage and disk I/O (read + write) of
+  the last 15 minutes as line charts, and two pie charts of the **disk
+  usage**, per container (its writable layer plus the volumes only it mounts;
+  volumes several containers share are one slice) and by category (images,
+  containers, volumes, build cache). The six busiest containers get their own
+  color, the rest are summed as *other*. Metrics are sampled every 5 s
+  (`container stats --no-stream`) only while a dashboard is open, and for
+  15 minutes after, and are kept in memory only; the disk usage
+  (`system df`) is measured once a minute. On podman the per-container pie
+  shows the writable layers only, as podman reports no volume sizes there.
+  wslc shows no metrics yet.
 - **Containers**: create (image, name, command, ports, env, volumes, network, pull policy), start, stop, restart, delete / force delete, inspect
   - A collapsible **Advanced options** section on the create form adds
     `--tty` and `--interactive` (on by default), `--rm`, `--no-healthcheck`,

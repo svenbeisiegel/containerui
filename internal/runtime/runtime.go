@@ -85,6 +85,7 @@ type Capabilities struct {
 	Networks bool
 	Terminal bool // interactive shell in running containers
 	Logs     bool // container output (download and follow)
+	Stats    bool // the driver implements Stater (CPU, memory, disk usage)
 
 	// VolumeDrivers lists the volume drivers CreateVolume accepts; the
 	// first is the runtime's default.

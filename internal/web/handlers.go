@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/svenbeisiegel/containerui/internal/compose"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 )
@@ -20,26 +19,29 @@ import (
 // ---- dashboard ----
 
 type dashboardView struct {
-	Info        runtime.Info
-	InfoErr     string
-	Containers  []runtime.Container // all containers
-	Running     []runtime.Container
-	ContErr     string
-	Images      []runtime.Image
-	ImagesErr   string
-	Volumes     []runtime.Volume
-	VolumesErr  string
-	Networks    []runtime.Network
-	NetworksErr string
-	Projects    []compose.Project // compose projects, if supported
-	Caps        runtime.Capabilities
-	Updated     time.Time
+	Info       runtime.Info
+	InfoErr    string
+	Containers []runtime.Container // all containers
+	Running    []runtime.Container
+	ContErr    string
+	Images     int // counts for the cards
+	Volumes    int
+	Networks   int
+	Projects   int // compose projects, if supported
+	Caps       runtime.Capabilities
+	Updated    time.Time
+	Metrics    *metricsView            // nil: the runtime reports no resource usage
+	Current    map[string]currentStats // latest values by container ID
 }
 
 // loadDashboard queries everything concurrently; a failing section only
-// shows its own error.
+// shows its own error. Showing the dashboard keeps the metrics sampler
+// running (see metricsSampler).
 func (s *Server) loadDashboard(ctx context.Context) dashboardView {
 	v := dashboardView{Caps: s.caps(), Updated: time.Now()}
+	if s.metrics != nil && v.Caps.Stats {
+		s.metrics.touch()
+	}
 	var wg sync.WaitGroup
 	run := func(f func()) { wg.Add(1); go func() { defer wg.Done(); f() }() }
 	run(func() {
@@ -62,36 +64,38 @@ func (s *Server) loadDashboard(ctx context.Context) dashboardView {
 		}
 	})
 	run(func() {
-		var err error
-		if v.Images, err = s.rt.ListImages(ctx); err != nil {
-			v.ImagesErr = userError(err)
+		if images, err := s.rt.ListImages(ctx); err == nil {
+			v.Images = len(images)
 		}
 	})
 	if v.Caps.Volumes {
 		run(func() {
-			var err error
-			if v.Volumes, err = s.rt.ListVolumes(ctx); err != nil {
-				v.VolumesErr = userError(err)
+			if vols, err := s.rt.ListVolumes(ctx); err == nil {
+				v.Volumes = len(vols)
 			}
 		})
 	}
 	if v.Caps.Networks {
 		run(func() {
-			var err error
-			if v.Networks, err = s.rt.ListNetworks(ctx); err != nil {
-				v.NetworksErr = userError(err)
+			if nets, err := s.rt.ListNetworks(ctx); err == nil {
+				v.Networks = len(nets)
 			}
 		})
 	}
 	if _, ok := s.composer(); ok {
 		run(func() {
-			ps, err := s.loadProjects(ctx)
-			if err == nil {
-				v.Projects = ps
+			if ps, err := s.loadProjects(ctx); err == nil {
+				v.Projects = len(ps)
 			}
 		})
 	}
 	wg.Wait()
+	if s.metrics != nil && v.Caps.Stats {
+		snap := s.metrics.snapshot()
+		now := time.Now()
+		v.Metrics = s.metrics.buildMetricsView(snap, now)
+		v.Current = currentFor(v.Running, snap, now, 3*s.metrics.interval)
+	}
 	return v
 }
 

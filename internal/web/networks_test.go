@@ -33,7 +33,7 @@ func TestNetworkPagesRender(t *testing.T) {
 		"/networks/bridge":         {"built-in", "web", "Disconnect", "Inspect"},
 		"/networks/shop_default":   {"shop-web-1", "shop-db-1"},
 		"/containers/c0ffee000001": {`<a href="/networks/bridge">bridge</a>`},
-		"/":                        {`href="/networks/backend"`},
+		"/":                        {`href="/networks"`},
 	}
 	for path, want := range pages {
 		w := e.do("GET", path, nil)

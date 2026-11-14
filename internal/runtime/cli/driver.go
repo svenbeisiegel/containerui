@@ -106,7 +106,7 @@ func (d *Driver) Path() string { return d.path }
 func (d *Driver) Capabilities() runtime.Capabilities {
 	c := runtime.Capabilities{Restart: true, Inspect: true, Pull: true, Tag: true, Volumes: true, Networks: true, Terminal: true, Logs: true,
 		VolumeDrivers: d.flavor.volumeDrivers, PruneAnonymous: d.flavor.pruneAnonymous,
-		NetworkDrivers: d.flavor.networkDrivers, NetworkIPv6: d.flavor.networkIPv6}
+		NetworkDrivers: d.flavor.networkDrivers, NetworkIPv6: d.flavor.networkIPv6, Stats: d.flavor.stats}
 	if d.compose != nil {
 		c.Compose, c.ComposeVersion = true, d.compose.name+" "+d.compose.version
 	}

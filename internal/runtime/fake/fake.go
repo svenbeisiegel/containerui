@@ -45,6 +45,8 @@ type Runtime struct {
 	NoShell bool
 	// NoNetworks hides network support (Capabilities.Networks).
 	NoNetworks bool
+	// NoStats hides resource usage (Capabilities.Stats).
+	NoStats bool
 	// LogInterval is how often a followed log gets a new line (default 1s).
 	LogInterval time.Duration
 	// ComposeEnabled reports a compose tool (Capabilities.Compose).
@@ -100,7 +102,7 @@ func (f *Runtime) Name() string { return "fake" }
 
 func (f *Runtime) Capabilities() runtime.Capabilities {
 	c := runtime.Capabilities{Restart: true, Inspect: true, Pull: true, Tag: true, Volumes: true, Networks: true, Terminal: true, Logs: true,
-		VolumeDrivers: volumeDrivers, PruneAnonymous: true, NetworkDrivers: networkDrivers, NetworkIPv6: true}
+		VolumeDrivers: volumeDrivers, PruneAnonymous: true, NetworkDrivers: networkDrivers, NetworkIPv6: true, Stats: !f.NoStats}
 	if f.NoNetworks {
 		c.Networks = false
 	}

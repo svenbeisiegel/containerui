@@ -35,6 +35,9 @@ type Flavor struct {
 	// aliasFlag is the network connect option for a container alias.
 	aliasFlag string
 
+	// stats: "container stats" and "system df" print JSON (not wslc).
+	stats bool
+
 	// compose lists the compose tools to try, in order. None for wslc,
 	// which has no compose.
 	compose []composeCandidate
@@ -63,6 +66,7 @@ var (
 		networkDrivers: []string{"bridge", "macvlan", "ipvlan", "overlay"},
 		networkIPv6:    true,
 		aliasFlag:      "--alias",
+		stats:          true,
 		compose:        []composeCandidate{{plugin: true}, {binary: "docker-compose"}},
 	}
 	Podman = &Flavor{
@@ -77,6 +81,7 @@ var (
 		networkDrivers: []string{"bridge", "macvlan", "ipvlan"},
 		networkIPv6:    true,
 		aliasFlag:      "--alias",
+		stats:          true,
 		compose:        []composeCandidate{{plugin: true}, {binary: "podman-compose"}},
 	}
 )

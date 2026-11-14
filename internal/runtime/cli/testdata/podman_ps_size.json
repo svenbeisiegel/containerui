@@ -1,0 +1,5 @@
+[
+ {"Id": "3f7a1c9e2b40d5e6f7081920a1b2c3d4e5f60718293a4b5c6d7e8f9012345678", "Names": ["web"], "State": "running", "Mounts": ["/data"], "Size": {"rootFsSize": 9510000, "rwSize": 4096}},
+ {"Id": "9b2d4e6f8a10b1c2d3e4f5061728394a5b6c7d8e9f0a1b2c3d4e5f6071829304", "Names": ["db"], "State": "running", "Mounts": [], "Size": {"rootFsSize": 160000000, "rwSize": 5242880}},
+ {"Id": "aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233", "Names": ["job"], "State": "exited", "Mounts": [], "Size": null}
+]
