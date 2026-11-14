@@ -1,11 +1,8 @@
 {{define "head"}}<script src="/static/compose_output.js" defer></script>{{end}}
 {{define "content"}}
+<h1 class="sr-only">Compose</h1>
 <div class="page-head">
-  <div>
-    <h1>Compose</h1>
-    <p class="muted small">Projects deployed with {{.Caps.ComposeVersion}}, including those started outside ContainerUI.</p>
-  </div>
-  <div class="actions">{{template "compose_output_toggle" .Data.Output}}<a class="button primary" href="/compose/new">Create compose</a></div>
+  <div class="actions"><a class="button primary" href="/compose/new">Create compose</a></div>
 </div>
 {{template "compose_table" .Data.List}}
 {{template "compose_output" .Data.Output}}

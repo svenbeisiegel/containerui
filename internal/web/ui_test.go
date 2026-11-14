@@ -165,3 +165,40 @@ func TestWarmEndpoint(t *testing.T) {
 		t.Error("login page does not opt into keep-warm pings")
 	}
 }
+
+// List pages show no visible title or sub line, only their buttons; the h1
+// stays for screen readers. Detail pages keep the object's name.
+func TestPageHeaders(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	for path, title := range map[string]string{
+		"/": "Dashboard", "/containers": "Containers", "/images": "Images", "/volumes": "Volumes",
+		"/networks": "Networks", "/compose": "Compose", "/system": "System",
+	} {
+		body := e.do("GET", path, nil).Body.String()
+		if !strings.Contains(body, `<h1 class="sr-only">`+title+`</h1>`) {
+			t.Errorf("GET %s: no screen-reader title %q", path, title)
+		}
+		if n := strings.Count(body, "<h1"); n != 1 {
+			t.Errorf("GET %s: %d h1 elements, want 1", path, n)
+		}
+	}
+	for path, want := range map[string]string{
+		"/":        `href="/containers/new">Create container`,
+		"/compose": `href="/compose/new">Create compose`,
+	} {
+		if body := e.do("GET", path, nil).Body.String(); !strings.Contains(body, want) {
+			t.Errorf("GET %s: missing button %q", path, want)
+		}
+	}
+	for _, gone := range []string{"Projects deployed with", "how it is installed and the host"} {
+		for _, path := range []string{"/compose", "/system"} {
+			if strings.Contains(e.do("GET", path, nil).Body.String(), gone) {
+				t.Errorf("GET %s still shows %q", path, gone)
+			}
+		}
+	}
+	if body := e.do("GET", "/compose/shop", nil).Body.String(); !strings.Contains(body, `<h1 class="wrap">shop</h1>`) || !strings.Contains(body, "← Compose") {
+		t.Error("compose detail lost its name or back link")
+	}
+}

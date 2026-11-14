@@ -6,7 +6,6 @@
     <a class="back" href="/compose">← Compose</a>
     <h1 class="wrap">{{$d.Project.Name}}</h1>
   </div>
-  {{if not $d.Err}}<div class="actions">{{template "compose_output_toggle" .Data.Output}}</div>{{end}}
 </div>
 {{if $d.Err}}<div class="flash error">{{$d.Err}}</div>
 {{else}}

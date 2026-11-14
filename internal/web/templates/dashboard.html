@@ -1,8 +1,8 @@
 {{define "head"}}<script src="/static/metrics.js" defer></script>{{end}}
 {{define "content"}}
+<h1 class="sr-only">Dashboard</h1>
 <div class="page-head">
-  <h1>Dashboard</h1>
-  <a class="button primary" href="/containers/new">Create container</a>
+  <div class="actions"><a class="button primary" href="/containers/new">Create container</a></div>
 </div>
 {{template "dashboard_body" .Data}}
 {{end}}

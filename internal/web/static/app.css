@@ -153,9 +153,14 @@ code { font-family: var(--mono); font-size: .92em; background: var(--code-bg); p
 .theme-toggle .icon-sun { display: var(--icon-sun); }
 
 /* ---------- layout ---------- */
-main { max-width: 1280px; margin: 0; padding: 1.5rem 1.25rem 2rem; }
-body.public main { margin: 0 auto; } /* the sign-in page stays centered */
+main { padding: 1.5rem 1.25rem 2rem; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
+.page-head > .actions { margin-left: auto; }
+/* Visually hidden, read by screen readers (list pages keep their h1 so). */
+.sr-only {
+  position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+  overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0;
+}
 .panel-head { display: flex; align-items: baseline; justify-content: space-between; }
 .back { display: inline-block; font-size: .88rem; font-weight: 600; margin-bottom: .2rem; }
 .wrap { overflow-wrap: anywhere; }
@@ -476,9 +481,27 @@ ul.kv { list-style: none; margin: 0; padding: 0; display: grid; gap: .15rem; ove
 .problem { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; font-size: .88rem; }
 .problem button.link { font-family: var(--mono); font-size: .8rem; }
 /* Compose output drawer (partials.html "compose_output"): fixed on the
-   right over the content, closed by default; compose_output.js toggles it. */
-.output-toggle { display: inline-flex; align-items: center; gap: .45rem; }
-.output-toggle #compose-output-state:empty { display: none; }
+   right over the content, closed by default; the handle on the right edge
+   opens it (compose_output.js). */
+.output-handle {
+  position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 19;
+  width: 28px; height: 84px; padding: 0; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .5rem;
+  background: var(--surface); color: var(--muted);
+  border: 1px solid var(--border-strong); border-right: 0; border-radius: 10px 0 0 10px;
+  box-shadow: -4px 0 14px rgb(0 0 0 / .14);
+}
+.output-handle:hover { color: var(--accent); border-color: var(--accent); width: 32px; }
+.output-handle .chev { font-size: 1.4rem; line-height: 1; }
+.drawer:not([hidden]) + .output-handle { display: none; }
+main:has(.output-handle) { padding-right: calc(1.25rem + 28px); } /* keep content clear of the handle */
+.status-dot { display: block; width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
+.status-dot.running { background: var(--mitel-yellow); }
+.status-dot.succeeded { background: var(--ok); }
+@media (prefers-reduced-motion: no-preference) {
+  .status-dot.running { animation: status-pulse 1.2s ease-in-out infinite; }
+}
+@keyframes status-pulse { 50% { opacity: .35; } }
 .drawer {
   position: fixed; top: 0; right: 0; bottom: 0; z-index: 20;
   width: min(560px, 100vw); display: flex; flex-direction: column;
@@ -507,7 +530,8 @@ ul.kv { list-style: none; margin: 0; padding: 0; display: grid; gap: .15rem; ove
 @media (max-width: 640px) {
   main { padding: 1rem .75rem; }
   .topbar { gap: .4rem 1rem; padding: .5rem .75rem; }
-  .topbar nav { order: 3; flex-basis: 100%; min-height: 40px; }
+  .topbar nav { order: 3; flex-basis: 100%; min-height: 40px; min-width: 0; overflow-x: auto; scrollbar-width: none; } /* scrolls instead of widening the page */
+  .topbar nav a { white-space: nowrap; }
   .session { margin-left: auto; }
   .session .user { display: none; }
   .grid2 { grid-template-columns: 1fr; }

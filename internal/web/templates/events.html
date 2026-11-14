@@ -1,11 +1,6 @@
 {{define "content"}}
 {{$d := .Data}}
-<div class="page-head">
-  <div>
-    <h1>Events</h1>
-    <p class="muted small">Errors of the system journal (priority err and worse), kept for 7 days. Opening an event marks it as read for every administrator.</p>
-  </div>
-</div>
+<h1 class="sr-only">Events</h1>
 <section class="panel">
   {{/* The page itself answers, so the address bar keeps the filter; htmx takes the list out of it. */}}
   <form class="events-filter" method="get" action="/events" hx-get="/events" hx-select="#events" hx-target="#events" hx-swap="outerHTML" hx-push-url="true"

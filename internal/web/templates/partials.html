@@ -364,6 +364,10 @@
   </div>
   {{template "compose_output_body" .}}
 </aside>
+{{/* The handle on the right edge opens the drawer; hidden while it is open. */}}
+<button type="button" class="output-handle" data-output-toggle aria-controls="compose-output" aria-expanded="{{if .Open}}true{{else}}false{{end}}" title="Compose output">
+  <span class="chev" aria-hidden="true">‹</span><span class="sr-only">Compose output</span>{{template "compose_output_state" .}}
+</button>
 {{end}}
 
 {{/* compose_output_body polls while a job runs and starts polling when an
@@ -384,15 +388,10 @@
 {{if .Partial}}{{template "compose_output_state" .}}{{end}}
 {{end}}
 
-{{/* compose_output_state: the status badge in the Output toggle. */}}
-{{define "compose_output_state"}}<span id="compose-output-state"{{if .Partial}} hx-swap-oob="true"{{end}}>{{with .Job}}{{template "job_badge" .Status}}{{end}}</span>{{end}}
+{{/* compose_output_state: the status dot in the edge handle. */}}
+{{define "compose_output_state"}}<span id="compose-output-state"{{if .Partial}} hx-swap-oob="true"{{end}}>{{with .Job}}<span class="status-dot {{.Status}}" title="{{.Status}}"></span><span class="sr-only">{{.Status}}</span>{{end}}</span>{{end}}
 
 {{define "job_badge"}}<span class="badge {{if eq . "running"}}warn{{else if eq . "succeeded"}}ok{{else}}bad{{end}}">{{.}}</span>{{end}}
-
-{{/* compose_output_toggle opens the drawer. */}}
-{{define "compose_output_toggle"}}
-<button type="button" class="output-toggle" data-output-toggle aria-controls="compose-output" aria-expanded="{{if .Open}}true{{else}}false{{end}}">Output {{template "compose_output_state" .}}</button>
-{{end}}
 
 {{define "compose_problems"}}
 <div id="compose-problems" class="problems" aria-live="polite">

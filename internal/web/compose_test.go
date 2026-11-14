@@ -275,7 +275,7 @@ func TestComposeOutputDrawer(t *testing.T) {
 	// Closed on load, with a toggle; nothing to show yet.
 	for _, path := range []string{"/compose", "/compose/shop"} {
 		body := e.do("GET", path, nil).Body.String()
-		if !drawerClosedRe.MatchString(body) || !strings.Contains(body, "data-output-toggle") || !strings.Contains(body, "No compose output.") {
+		if !drawerClosedRe.MatchString(body) || !strings.Contains(body, `class="output-handle" data-output-toggle`) || !strings.Contains(body, "No compose output.") {
 			t.Errorf("GET %s: drawer not closed/empty:\n%s", path, body)
 		}
 		if strings.Contains(body, "hx-swap-oob") {
