@@ -82,8 +82,9 @@ type Session struct {
 	Created  time.Time
 	LastSeen time.Time
 
-	mu    sync.Mutex
-	flash string
+	mu     sync.Mutex
+	flash  string
+	values map[string]any
 }
 
 // SetFlash stores a one-time message shown on the next full page render.
@@ -100,6 +101,33 @@ func (s *Session) PopFlash() string {
 	msg := s.flash
 	s.flash = ""
 	return msg
+}
+
+// Set stores a value for the rest of the session (UI state such as what
+// the user dismissed).
+func (s *Session) Set(key string, v any) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.values == nil {
+		s.values = map[string]any{}
+	}
+	s.values[key] = v
+}
+
+// Get returns a value stored with Set, or nil.
+func (s *Session) Get(key string) any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.values[key]
+}
+
+// Pop returns a value stored with Set and removes it, for one-time state.
+func (s *Session) Pop(key string) any {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	v := s.values[key]
+	delete(s.values, key)
+	return v
 }
 
 // ValidCSRF compares a submitted token in constant time.

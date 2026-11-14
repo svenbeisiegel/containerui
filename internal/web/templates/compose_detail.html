@@ -1,3 +1,4 @@
+{{define "head"}}<script src="/static/compose_output.js" defer></script>{{end}}
 {{define "content"}}
 {{$d := .Data.Detail}}
 <div class="page-head">
@@ -5,10 +6,11 @@
     <a class="back" href="/compose">← Compose</a>
     <h1 class="wrap">{{$d.Project.Name}}</h1>
   </div>
+  {{if not $d.Err}}<div class="actions">{{template "compose_output_toggle" .Data.Output}}</div>{{end}}
 </div>
 {{if $d.Err}}<div class="flash error">{{$d.Err}}</div>
 {{else}}
-{{template "compose_jobs" .Data.Jobs}}
 {{template "compose_project" $d}}
+{{template "compose_output" .Data.Output}}
 {{end}}
 {{end}}

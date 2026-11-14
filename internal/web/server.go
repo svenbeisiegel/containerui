@@ -226,6 +226,7 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /compose/new", s.handleComposeNew)
 	authed.HandleFunc("POST /compose", s.handleComposeCreate)
 	authed.HandleFunc("POST /compose/validate", s.handleComposeValidate)
+	authed.HandleFunc("POST /compose/jobs/clear", s.handleComposeOutputClear)
 	authed.HandleFunc("GET /compose/{project}", s.handleComposeDetail)
 	authed.HandleFunc("GET /compose/{project}/edit", s.handleComposeEdit)
 	authed.HandleFunc("POST /compose/{project}", s.handleComposeUpdate)

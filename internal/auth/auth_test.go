@@ -116,3 +116,17 @@ func TestThrottle(t *testing.T) {
 		t.Fatal("success did not reset")
 	}
 }
+
+func TestSessionValues(t *testing.T) {
+	s := NewSessions(time.Hour, time.Hour).Create("admin")
+	if s.Get("x") != nil || s.Pop("x") != nil {
+		t.Fatal("empty session has values")
+	}
+	s.Set("x", 42)
+	if s.Get("x") != 42 || s.Get("x") != 42 {
+		t.Error("Get should keep the value")
+	}
+	if s.Pop("x") != 42 || s.Get("x") != nil {
+		t.Error("Pop should return and remove the value")
+	}
+}

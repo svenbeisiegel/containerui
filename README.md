@@ -60,6 +60,12 @@ Features:
   project by pasting, opening or dropping a compose file (checked live as you
   type), start, stop, restart, pull, take it down, and edit it. When the
   original file is not available, it is rebuilt from the containers.
+  The output of the last compose action (of any user; on a project's page,
+  of that project) is shown in an **Output** drawer on the right. It is
+  closed when the page opens, opens by itself when you start an action, and
+  can be closed with × or Esc and reopened with the *Output* button, which
+  also shows whether the action is running, succeeded or failed. *Clear*
+  hides the output for you until the next action.
 - **System**: the version and installation of ContainerUI and the **host** it
   runs on: hostname, operating system (with kernel on Linux, build on
   Windows), architecture, virtualization, uptime, CPU, memory, load average

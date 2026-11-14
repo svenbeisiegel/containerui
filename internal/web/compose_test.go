@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -262,5 +263,80 @@ func TestContainerActionReturnsToCompose(t *testing.T) {
 	w = e.post("/containers/shop-web-1/start", url.Values{"view": {"detail"}, "return": {"https://evil.example/"}}, htmx)
 	if got := w.Header().Get("HX-Redirect"); got != "/containers/shop-web-1" {
 		t.Errorf("foreign return = %q", got)
+	}
+}
+
+var drawerClosedRe = regexp.MustCompile(`<aside id="compose-output"[^>]* hidden>`)
+
+func TestComposeOutputDrawer(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+
+	// Closed on load, with a toggle; nothing to show yet.
+	for _, path := range []string{"/compose", "/compose/shop"} {
+		body := e.do("GET", path, nil).Body.String()
+		if !drawerClosedRe.MatchString(body) || !strings.Contains(body, "data-output-toggle") || !strings.Contains(body, "No compose output.") {
+			t.Errorf("GET %s: drawer not closed/empty:\n%s", path, body)
+		}
+		if strings.Contains(body, "hx-swap-oob") {
+			t.Errorf("GET %s: out-of-band badge on a full page", path)
+		}
+	}
+
+	// An htmx action on the list opens the drawer in the browser (event);
+	// the next page load still starts closed.
+	e.post("/compose/shop/stop", url.Values{"view": {"list"}}, htmx)
+	e.jobs.Wait()
+	part := e.do("GET", "/partials/compose/jobs", nil, htmx).Body.String()
+	for _, want := range []string{"shop stop", "succeeded", "by admin", "took ", `id="compose-output-state" hx-swap-oob="true"`} {
+		if !strings.Contains(part, want) {
+			t.Errorf("jobs partial missing %q:\n%s", want, part)
+		}
+	}
+	if body := e.do("GET", "/compose", nil).Body.String(); !drawerClosedRe.MatchString(body) || !strings.Contains(body, "shop stop") {
+		t.Error("list page after an htmx action should start closed and show the output")
+	}
+
+	// A detail-view action redirects; the reload opens the drawer once and
+	// shows only the newest action.
+	e.post("/compose/shop/start", url.Values{"view": {"detail"}}, htmx)
+	e.jobs.Wait()
+	body := e.do("GET", "/compose/shop", nil).Body.String()
+	if drawerClosedRe.MatchString(body) || !strings.Contains(body, "shop start") || strings.Contains(body, "shop stop") {
+		t.Errorf("detail after action: drawer not open with the newest job only:\n%s", body)
+	}
+	if body := e.do("GET", "/compose/shop", nil).Body.String(); !drawerClosedRe.MatchString(body) {
+		t.Error("drawer should open only once after the action")
+	}
+
+	// Clear needs the CSRF token and hides the output for this session only.
+	if w := e.do("POST", "/compose/jobs/clear", url.Values{}); w.Code != http.StatusForbidden {
+		t.Errorf("clear without csrf = %d", w.Code)
+	}
+	w := e.post("/compose/jobs/clear", url.Values{"project": {"shop"}}, htmx)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "No compose output.") {
+		t.Errorf("clear = %d\n%s", w.Code, w.Body.String())
+	}
+	for _, path := range []string{"/partials/compose/jobs", "/partials/compose/jobs?project=shop"} {
+		if p := e.do("GET", path, nil, htmx).Body.String(); !strings.Contains(p, "No compose output.") {
+			t.Errorf("%s after clear shows an older job:\n%s", path, p)
+		}
+	}
+	mine, myCSRF := e.cookie, e.csrf
+	e.cookie = nil
+	e.login() // another session still sees it
+	if p := e.do("GET", "/partials/compose/jobs", nil, htmx).Body.String(); !strings.Contains(p, "shop start") {
+		t.Errorf("other session lost the output:\n%s", p)
+	}
+	e.cookie, e.csrf = mine, myCSRF
+
+	// A newer action shows again.
+	e.post("/compose/shop/restart", url.Values{"view": {"list"}}, htmx)
+	e.jobs.Wait()
+	if p := e.do("GET", "/partials/compose/jobs?project=shop", nil, htmx).Body.String(); !strings.Contains(p, "shop restart") {
+		t.Errorf("new action after clear not shown:\n%s", p)
+	}
+	if w := e.post("/compose/jobs/clear", url.Values{"project": {"Bad Name"}}, htmx); w.Code != http.StatusNotFound {
+		t.Errorf("clear with invalid project = %d", w.Code)
 	}
 }

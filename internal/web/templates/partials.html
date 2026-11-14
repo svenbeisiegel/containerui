@@ -348,24 +348,50 @@
 </section>
 {{end}}
 
-{{/* compose_jobs: progress of compose operations. It polls while one runs
-     and starts polling when an action starts one. */}}
-{{define "compose_jobs"}}
-<div id="compose-jobs" hx-get="/partials/compose/jobs{{with .Project}}?project={{.}}{{end}}" hx-swap="outerHTML"
+{{/* compose_output: drawer on the right with the output of the last
+     compose action (composeOutputView). compose_output.js opens and closes
+     it; only its body is refreshed, so it stays open or closed. */}}
+{{define "compose_output"}}
+<aside id="compose-output" class="drawer" aria-labelledby="compose-output-title"{{if not .Open}} hidden{{end}}>
+  <div class="drawer-head">
+    <h2 id="compose-output-title">Compose output</h2>
+    <form method="post" action="/compose/jobs/clear" hx-post="/compose/jobs/clear" hx-target="#compose-jobs" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      {{if .Project}}<input type="hidden" name="project" value="{{.Project}}">{{end}}
+      <button type="submit" title="Clear the output">Clear</button>
+    </form>
+    <button type="button" class="drawer-close" data-output-close aria-label="Close compose output" title="Close">×</button>
+  </div>
+  {{template "compose_output_body" .}}
+</aside>
+{{end}}
+
+{{/* compose_output_body polls while a job runs and starts polling when an
+     action starts one. As a partial it also updates the toggle's badge. */}}
+{{define "compose_output_body"}}
+<div id="compose-jobs" class="drawer-body" hx-get="/partials/compose/jobs{{with .Project}}?project={{.}}{{end}}" hx-swap="outerHTML"
      hx-trigger="{{if .AnyRunning}}every 1s, {{end}}compose-job-started from:body">
-  {{range .Jobs}}
-  <details class="job {{.Status}}" {{if not .Done}}open{{end}}>
-    <summary>
-      <span class="badge {{if eq .Status "running"}}warn{{else if eq .Status "succeeded"}}ok{{else}}bad{{end}}">{{.Status}}</span>
-      <span class="mono">{{.Target}}</span>
-      <span class="muted small">started {{ago .Started}} by {{.Owner}}</span>
-    </summary>
-    {{if .Error}}<div class="flash error">{{.Error}}</div>{{end}}
-    {{if .Lines}}<pre class="log">{{range .Lines}}{{.}}
-{{end}}</pre>{{end}}
-  </details>
-  {{end}}
+  {{with .Job}}
+  <div class="job-head">
+    {{template "job_badge" .Status}} <span class="mono">{{.Target}}</span>
+    <div class="muted small">started {{ago .Started}} by {{.Owner}}{{with $.Took}} · took {{.}}{{end}}</div>
+  </div>
+  {{if .Error}}<div class="flash error">{{.Error}}</div>{{end}}
+  {{if .Lines}}<pre class="log">{{range .Lines}}{{.}}
+{{end}}</pre>{{else if not .Done}}<p class="muted small">Waiting for output…</p>{{end}}
+  {{else}}<p class="empty">No compose output.</p>{{end}}
 </div>
+{{if .Partial}}{{template "compose_output_state" .}}{{end}}
+{{end}}
+
+{{/* compose_output_state: the status badge in the Output toggle. */}}
+{{define "compose_output_state"}}<span id="compose-output-state"{{if .Partial}} hx-swap-oob="true"{{end}}>{{with .Job}}{{template "job_badge" .Status}}{{end}}</span>{{end}}
+
+{{define "job_badge"}}<span class="badge {{if eq . "running"}}warn{{else if eq . "succeeded"}}ok{{else}}bad{{end}}">{{.}}</span>{{end}}
+
+{{/* compose_output_toggle opens the drawer. */}}
+{{define "compose_output_toggle"}}
+<button type="button" class="output-toggle" data-output-toggle aria-controls="compose-output" aria-expanded="{{if .Open}}true{{else}}false{{end}}">Output {{template "compose_output_state" .}}</button>
 {{end}}
 
 {{define "compose_problems"}}
