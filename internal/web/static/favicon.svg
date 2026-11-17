@@ -1,0 +1,63 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="4 4 52 52" width="64" height="64">
+  <title>ContainerUI</title>
+  <defs>
+    <radialGradient id="disc" cx="0.32" cy="0.28" r="0.85">
+      <stop offset="0" stop-color="#1c95ea"/>
+      <stop offset="0.45" stop-color="#0073d0"/>
+      <stop offset="1" stop-color="#15325f"/>
+    </radialGradient>
+    <linearGradient id="side" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f4f9fe"/>
+      <stop offset="1" stop-color="#b3c9e4"/>
+    </linearGradient>
+    <linearGradient id="door" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#cfe0f2"/>
+      <stop offset="1" stop-color="#93afd2"/>
+    </linearGradient>
+    <clipPath id="inside"><circle cx="30" cy="30" r="24"/></clipPath>
+  </defs>
+  <circle cx="30" cy="30" r="24" fill="url(#disc)"/>
+  <ellipse cx="25" cy="17" rx="14" ry="6" fill="#ffffff" opacity="0.12"/>
+  <circle cx="30" cy="30" r="23.25" fill="none" stroke="#00a1e0" stroke-width="1.5"/>
+  <ellipse cx="31" cy="49" rx="23" ry="2.4" fill="#04102a" opacity="0.3" clip-path="url(#inside)"/>
+  <polygon points="10.00,26.00 42.00,19.00 42.00,47.50 10.00,42.00" fill="url(#side)"/>
+  <polygon points="10.97,26.93 11.49,26.83 11.49,40.60 10.97,40.53" fill="#ffffff" opacity="0.7"/>
+  <polygon points="11.49,26.83 12.02,26.73 12.02,40.67 11.49,40.60" fill="#7f9cc2" opacity="0.6"/>
+  <polygon points="12.75,26.59 13.32,26.48 13.32,40.84 12.75,40.77" fill="#ffffff" opacity="0.7"/>
+  <polygon points="13.32,26.48 13.90,26.37 13.90,40.92 13.32,40.84" fill="#7f9cc2" opacity="0.6"/>
+  <polygon points="14.70,26.22 15.31,26.10 15.31,41.11 14.70,41.02" fill="#ffffff" opacity="0.7"/>
+  <polygon points="15.31,26.10 15.95,25.98 15.95,41.19 15.31,41.11" fill="#7f9cc2" opacity="0.6"/>
+  <polygon points="16.82,25.81 17.50,25.69 17.50,41.40 16.82,41.31" fill="#ffffff" opacity="0.7"/>
+  <polygon points="17.50,25.69 18.19,25.55 18.19,41.49 17.50,41.40" fill="#7f9cc2" opacity="0.6"/>
+  <polygon points="19.15,25.37 19.90,25.23 19.90,41.71 19.15,41.62" fill="#ffffff" opacity="0.7"/>
+  <polygon points="19.90,25.23 20.66,25.08 20.66,41.82 19.90,41.71" fill="#7f9cc2" opacity="0.6"/>
+  <polygon points="21.72,24.88 22.54,24.72 22.54,42.07 21.72,41.96" fill="#ffffff" opacity="0.7"/>
+  <polygon points="22.54,24.72 23.39,24.56 23.39,42.18 22.54,42.07" fill="#7f9cc2" opacity="0.6"/>
+  <polygon points="24.57,24.33 25.48,24.16 25.48,42.46 24.57,42.33" fill="#ffffff" opacity="0.7"/>
+  <polygon points="25.48,24.16 26.43,23.98 26.43,42.58 25.48,42.46" fill="#7f9cc2" opacity="0.6"/>
+  <polygon points="27.74,23.72 28.77,23.53 28.77,42.89 27.74,42.76" fill="#ffffff" opacity="0.7"/>
+  <polygon points="28.77,23.53 29.83,23.33 29.83,43.03 28.77,42.89" fill="#7f9cc2" opacity="0.6"/>
+  <polygon points="31.30,23.04 32.45,22.82 32.45,43.38 31.30,43.23" fill="#ffffff" opacity="0.7"/>
+  <polygon points="32.45,22.82 33.65,22.59 33.65,43.54 32.45,43.38" fill="#7f9cc2" opacity="0.6"/>
+  <polygon points="35.32,22.27 36.62,22.02 36.62,43.94 35.32,43.76" fill="#ffffff" opacity="0.7"/>
+  <polygon points="36.62,22.02 37.98,21.76 37.98,44.12 36.62,43.94" fill="#7f9cc2" opacity="0.6"/>
+  <polygon points="10.00,26.00 42.00,19.00 42.00,21.00 10.00,27.12" fill="#6d8db6"/>
+  <polygon points="10.00,40.40 42.00,44.65 42.00,47.50 10.00,42.00" fill="#4e6f9b"/>
+  <polygon points="10.00,26.00 11.12,25.75 11.12,42.19 10.00,42.00" fill="#6d8db6"/>
+  <polygon points="42.00,19.00 54.00,23.50 54.00,47.00 42.00,47.50" fill="url(#door)"/>
+  <polygon points="42.00,19.00 54.00,23.50 54.00,25.38 42.00,21.28" fill="#5b7caa"/>
+  <polygon points="42.00,44.65 54.00,44.65 54.00,47.00 42.00,47.50" fill="#3f6090"/>
+  <polygon points="47.88,23.29 48.36,23.45 48.36,44.65 47.88,44.65" fill="#3f6090"/>
+  <polygon points="43.62,21.00 44.46,21.30 44.46,46.02 43.62,46.04" fill="#15325f"/>
+  <polygon points="45.90,21.81 46.74,22.10 46.74,45.98 45.90,45.99" fill="#15325f"/>
+  <polygon points="49.26,23.00 50.10,23.29 50.10,45.91 49.26,45.92" fill="#15325f"/>
+  <polygon points="51.54,23.80 52.38,24.10 52.38,45.86 51.54,45.88" fill="#15325f"/>
+  <polygon points="42.48,26.17 53.76,29.24 53.76,30.09 42.48,27.19" fill="#15325f"/>
+  <polygon points="42.48,28.15 53.76,30.89 53.76,31.74 42.48,29.17" fill="#15325f"/>
+  <polygon points="42.48,36.92 53.76,38.21 53.76,39.06 42.48,37.94" fill="#15325f"/>
+  <polygon points="42.48,38.91 53.76,39.86 53.76,40.71 42.48,39.92" fill="#15325f"/>
+  <polygon points="42.00,19.00 42.72,19.27 42.72,47.47 42.00,47.50" fill="#eaf3fc"/>
+  <polygon points="53.40,23.27 54.00,23.50 54.00,47.00 53.40,47.02" fill="#4e6f9b"/>
+  <polygon points="10.00,26.00 42.00,19.00 54.00,23.50 54.00,47.00 42.00,47.50 10.00,42.00" fill="none" stroke="#0b2a5a" stroke-width="0.8" stroke-linejoin="round"/>
+  <line x1="42.0" y1="19.0" x2="42.0" y2="47.5" stroke="#0b2a5a" stroke-width="0.6"/>
+</svg>

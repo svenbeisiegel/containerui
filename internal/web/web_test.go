@@ -163,13 +163,13 @@ func TestAuthRequired(t *testing.T) {
 	if w.Code != http.StatusUnauthorized || w.Header().Get("HX-Redirect") != "/login" {
 		t.Errorf("htmx partial = %d %v", w.Code, w.Header())
 	}
-	for _, p := range []string{"/static/htmx.min.js", "/static/app.js", "/static/app.css", "/static/theme.js"} {
+	for _, p := range []string{"/static/htmx.min.js", "/static/app.js", "/static/app.css", "/static/theme.js", "/static/logo.svg", "/static/favicon.svg"} {
 		if w := e.do("GET", p, nil); w.Code != http.StatusOK {
 			t.Errorf("GET %s = %d", p, w.Code)
 		}
 	}
-	if w := e.do("GET", "/favicon.ico", nil); w.Code != http.StatusNoContent {
-		t.Errorf("favicon = %d", w.Code)
+	if w := e.do("GET", "/favicon.ico", nil); w.Code != http.StatusMovedPermanently || w.Header().Get("Location") != "/static/favicon.svg" {
+		t.Errorf("favicon = %d %q", w.Code, w.Header().Get("Location"))
 	}
 	if w := e.do("GET", "/login", nil); w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `name="password"`) {
 		t.Errorf("login page = %d", w.Code)

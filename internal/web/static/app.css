@@ -128,6 +128,7 @@ code { font-family: var(--mono); font-size: .92em; background: var(--code-bg); p
   color: #fff;
 }
 .brand { font-weight: 700; font-size: 1.1rem; color: #fff; letter-spacing: .01em; user-select: none; }
+.brand-logo { display: block; flex: none; margin-right: -1.1rem; user-select: none; } /* sits snug against .brand despite the topbar gap */
 .topbar nav { display: flex; gap: .25rem; flex: 1; align-self: stretch; }
 .topbar nav a {
   display: flex; align-items: center; padding: 0 .8rem;
@@ -433,12 +434,15 @@ body.public {
 }
 .public-toolbar { position: absolute; top: 1rem; right: 1rem; }
 .login {
+  position: relative;
   max-width: 380px; margin: 14vh auto 0;
   background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
   padding: 2rem 2rem 2.2rem;
   box-shadow: 0 20px 50px rgb(4 14 40 / .45);
 }
-.login h1 { font-size: 1.9rem; }
+.login h1 { font-size: 1.9rem; padding-right: 4.5rem; }
+.login .subtitle { padding-right: 4.5rem; }
+.login-logo { position: absolute; top: 1.25rem; right: 1.25rem; user-select: none; }
 .login h1 .accent { color: var(--highlight); }
 .login .subtitle { margin: .2rem 0 1.5rem; font-weight: 300; color: var(--muted); }
 
@@ -530,6 +534,7 @@ main:has(.output-handle) { padding-right: calc(1.25rem + 28px); } /* keep conten
 @media (max-width: 640px) {
   main { padding: 1rem .75rem; }
   .topbar { gap: .4rem 1rem; padding: .5rem .75rem; }
+  .brand-logo { margin-right: -.6rem; }
   .topbar nav { order: 3; flex-basis: 100%; min-height: 40px; min-width: 0; overflow-x: auto; scrollbar-width: none; } /* scrolls instead of widening the page */
   .topbar nav a { white-space: nowrap; }
   .session { margin-left: auto; }
@@ -540,6 +545,8 @@ main:has(.output-handle) { padding-right: calc(1.25rem + 28px); } /* keep conten
   .form-actions { padding: .7rem .9rem; }
   .form-actions .button, .form-actions button { flex: 1; }
   .login { margin-top: 10vh; padding: 1.5rem; }
+  .login-logo { top: 1rem; right: 1rem; width: 52px; height: 52px; }
+  .login h1, .login .subtitle { padding-right: 3.75rem; }
 }
 
 /* Container terminal (terminal.html, xterm.js): fills the window below the

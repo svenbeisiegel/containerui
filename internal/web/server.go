@@ -60,8 +60,8 @@ type Options struct {
 	Updates *updates.Scanner
 }
 
-// favicon is the first of these files present in static/. None is shipped;
-// drop an official Mitel icon in internal/web/static/ and rebuild.
+// favicon is the first of these files present in static/. favicon.svg ships
+// as a copy of the ContainerUI logo (static/logo.svg).
 var faviconCandidates = []struct{ name, ctype string }{
 	{"favicon.svg", "image/svg+xml"},
 	{"favicon.png", "image/png"},
