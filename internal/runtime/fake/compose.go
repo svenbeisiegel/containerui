@@ -101,8 +101,9 @@ func (f *Runtime) inspectDoc(c *runtime.Container) map[string]any {
 		nanoCPUs, _ = strconv.ParseFloat(opts.CPUs, 64)
 	}
 	return map[string]any{
-		"Id":   c.ID,
-		"Name": "/" + c.Name,
+		"Id":    c.ID,
+		"Name":  "/" + c.Name,
+		"Image": f.imageIDs[c.ID],
 		"Config": map[string]any{
 			"Image": c.Image, "Cmd": cmd, "Env": append(slices.Clone(f.env[c.ID]), imageEnv...), "Labels": c.Labels, "Hostname": hostname,
 			"Entrypoint": opts.Entrypoint, "WorkingDir": opts.WorkDir, "User": opts.User, "Tty": opts.TTY, "OpenStdin": opts.Interactive,
@@ -128,10 +129,19 @@ func (f *Runtime) InspectImage(_ context.Context, ref string) (json.RawMessage, 
 		return nil, err
 	}
 	img, ok := f.images[ref]
+	for _, i := range f.images {
+		if !ok && i.ID == ref {
+			img, ok = i, true
+		}
+	}
 	if !ok {
 		return nil, &runtime.CommandError{Op: "image inspect", Output: "no such image: " + ref, Kind: runtime.ErrNotFound}
 	}
-	return json.Marshal(map[string]any{"Id": img.ID, "RepoTags": []string{img.Ref()}, "Config": map[string]any{"Env": imageEnv}})
+	var digests []string
+	if img.Digest != "" {
+		digests = []string{img.Repository + "@" + img.Digest}
+	}
+	return json.Marshal(map[string]any{"Id": img.ID, "RepoTags": []string{img.Ref()}, "RepoDigests": digests, "Config": map[string]any{"Env": imageEnv}})
 }
 
 func (f *Runtime) composeCheck(op string, t runtime.ComposeTarget) error {

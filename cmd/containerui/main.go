@@ -37,6 +37,7 @@ import (
 	"github.com/svenbeisiegel/containerui/internal/runtime/cli"
 	_ "github.com/svenbeisiegel/containerui/internal/runtime/fake"
 	"github.com/svenbeisiegel/containerui/internal/tlsutil"
+	"github.com/svenbeisiegel/containerui/internal/updates"
 	"github.com/svenbeisiegel/containerui/internal/web"
 )
 
@@ -230,14 +231,16 @@ func run(o serveOptions, stop <-chan struct{}) error {
 
 	evStore := openEvents(ctx, cfg, log)
 
-	var updates registry.UpdateChecker
+	var scanner *updates.Scanner
 	if rc := cfg.Registry; rc.CheckUpdatesOn() {
 		authFile := ""
 		if rc.AuthFile != "" {
 			authFile = cfg.Resolve(rc.AuthFile)
 		}
 		client := registry.NewClient(rc.Timeout, registry.FileCredentials(registry.DefaultAuthFiles(authFile)), rc.Insecure)
-		updates = registry.NewChecker(client, rc.CacheTTL)
+		// Registry answers are reused until the next scheduled check.
+		scanner = updates.New(rt, registry.NewChecker(client, rc.CheckInterval), rc.CheckInterval, log)
+		go scanner.Run(ctx)
 	}
 
 	s, err := web.New(web.Options{
@@ -250,7 +253,7 @@ func run(o serveOptions, stop <-chan struct{}) error {
 
 		ComposeDir: cfg.Resolve(cfg.Runtime.ComposeDir),
 		Events:     evStore,
-		Updates:    updates,
+		Updates:    scanner,
 
 		Version:     version,
 		InstallType: installType(stop != nil),

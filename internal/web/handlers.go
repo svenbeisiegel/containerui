@@ -15,6 +15,7 @@ import (
 
 	"github.com/svenbeisiegel/containerui/internal/jobs"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
+	"github.com/svenbeisiegel/containerui/internal/updates"
 )
 
 // ---- dashboard ----
@@ -112,10 +113,12 @@ func (s *Server) handleDashboardPartial(w http.ResponseWriter, r *http.Request) 
 
 type containersView struct {
 	Containers []runtime.Container
-	Err        string
-	Flash      *flash
-	Caps       runtime.Capabilities
-	CSRF       string
+	// Updates marks containers whose image has a newer version, by ID.
+	Updates map[string]bool
+	Err     string
+	Flash   *flash
+	Caps    runtime.Capabilities
+	CSRF    string
 }
 
 func (s *Server) loadContainers(r *http.Request, f *flash) containersView {
@@ -125,6 +128,14 @@ func (s *Server) loadContainers(r *http.Request, f *flash) containersView {
 		v.Err = userError(err)
 	}
 	v.Containers = cs
+	if s.updates != nil {
+		v.Updates = map[string]bool{}
+		for _, c := range cs {
+			if len(s.updates.ForContainer(c)) > 0 {
+				v.Updates[c.ID] = true
+			}
+		}
+	}
 	return v
 }
 
@@ -148,8 +159,8 @@ type containerDetailView struct {
 	Project string
 	// CanEdit: the container can be edited (recreated).
 	CanEdit bool
-	// Updates: show the image update check.
-	Updates bool
+	// Update offers the newer images the container can be updated to.
+	Update *containerUpdateView
 	// Job is the running or recent recreate job of the container.
 	Job *recreateJobView
 }
@@ -195,7 +206,7 @@ func (s *Server) handleContainerDetail(w http.ResponseWriter, r *http.Request) {
 		title = v.Container.Name
 		v.Project = v.Container.Labels[runtime.LabelProject]
 		v.CanEdit = v.Caps.Inspect && v.Project == ""
-		v.Updates = s.updates != nil
+		v.Update = s.containerUpdate(r, *v.Container, v.Inspect)
 		if v.Caps.Terminal {
 			// Running containers load the shell check asynchronously.
 			v.Terminal = &terminalView{ID: v.Container.ID, Name: v.Container.Name, State: "stopped", CSRF: v.CSRF}
@@ -613,10 +624,14 @@ func splitArgs(s string) ([]string, error) {
 
 type imagesView struct {
 	Images []runtime.Image
-	Err    string
-	Flash  *flash
-	Caps   runtime.Capabilities
-	CSRF   string
+	// Updates is what the update check found, by image reference; Scan
+	// is nil without update checks.
+	Updates map[string]updates.Image
+	Scan    *updates.State
+	Err     string
+	Flash   *flash
+	Caps    runtime.Capabilities
+	CSRF    string
 }
 
 type pullsView struct {
@@ -637,7 +652,36 @@ func (s *Server) loadImages(r *http.Request, f *flash) imagesView {
 		v.Err = userError(err)
 	}
 	v.Images = imgs
+	if s.updates != nil {
+		st := s.updates.State()
+		v.Scan = &st
+		v.Updates = map[string]updates.Image{}
+		for _, img := range imgs {
+			if u, ok := s.updates.Image(img.Ref()); ok && img.Tag != "<none>" {
+				v.Updates[img.Ref()] = u
+			}
+		}
+	}
 	return v
+}
+
+// handleImageCheckUpdates starts checking all local images right away.
+func (s *Server) handleImageCheckUpdates(w http.ResponseWriter, r *http.Request) {
+	var f *flash
+	switch {
+	case s.updates == nil:
+		f = errFlash(runtime.ErrUnsupported)
+	case s.updates.CheckNow():
+		s.log.Info("image update check started", "user", sessionFrom(r).Username)
+	}
+	if !isHTMX(r) {
+		if f != nil {
+			sessionFrom(r).SetFlash(f.Msg)
+		}
+		http.Redirect(w, r, "/images", http.StatusSeeOther)
+		return
+	}
+	s.renderPartial(w, "images_table", s.loadImages(r, f))
 }
 
 func (s *Server) loadPulls() pullsView {
@@ -691,6 +735,9 @@ func (s *Server) handleImagePull(w http.ResponseWriter, r *http.Request) {
 			return errors.New(userError(err))
 		}
 		s.log.Info("image pulled", "ref", ref, "user", user)
+		if s.updates != nil {
+			s.updates.Refresh(ctx, ref)
+		}
 		return nil
 	})
 	if !isHTMX(r) {
@@ -751,6 +798,9 @@ func (s *Server) handleImageDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("image deleted", "ref", ref, "force", force, "user", sessionFrom(r).Username)
+	if s.updates != nil {
+		s.updates.Refresh(r.Context(), ref)
+	}
 	s.imageResult(w, r, okFlash("Deleted image %s.", ref))
 }
 

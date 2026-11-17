@@ -22,8 +22,8 @@ import (
 	"github.com/svenbeisiegel/containerui/internal/hostinfo"
 	"github.com/svenbeisiegel/containerui/internal/hostlog"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
-	"github.com/svenbeisiegel/containerui/internal/registry"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
+	"github.com/svenbeisiegel/containerui/internal/updates"
 )
 
 //go:embed templates static
@@ -55,9 +55,9 @@ type Options struct {
 	// Events are the host's error events for the Events page; nil hides
 	// the page.
 	Events *events.Store
-	// Updates checks registries for newer container images; nil hides the
-	// update check.
-	Updates registry.UpdateChecker
+	// Updates knows which local images have a newer version; nil hides
+	// image updates.
+	Updates *updates.Scanner
 }
 
 // favicon is the first of these files present in static/. None is shipped;
@@ -92,8 +92,8 @@ type Server struct {
 	installType string
 	hostlog     hostlog.Source // nil: no system log on this platform
 	hostinfo    func(context.Context) hostinfo.Info
-	events      *events.Store          // nil: no Events page
-	updates     registry.UpdateChecker // nil: no image update check
+	events      *events.Store    // nil: no Events page
+	updates     *updates.Scanner // nil: no image updates
 
 	terminals  atomic.Int32 // open terminal connections
 	logStreams atomic.Int32 // open live log streams
@@ -201,7 +201,6 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /containers/{id}/edit", s.handleContainerEdit)
 	authed.HandleFunc("POST /containers/{id}/edit", s.handleContainerEditSave)
 	authed.HandleFunc("POST /containers/{id}/update", s.handleContainerUpdate)
-	authed.HandleFunc("GET /partials/containers/{id}/update", s.handleContainerUpdatePartial)
 	authed.HandleFunc("GET /partials/containers/{id}/job", s.handleRecreateJobPartial)
 	authed.HandleFunc("GET /containers/{id}/terminal", s.handleTerminalPage)
 	authed.HandleFunc("GET /containers/{id}/terminal/check", s.handleTerminalCheck)
@@ -212,6 +211,7 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /images", s.handleImages)
 	authed.HandleFunc("GET /partials/images", s.handleImagesPartial)
 	authed.HandleFunc("POST /images/pull", s.handleImagePull)
+	authed.HandleFunc("POST /images/check-updates", s.handleImageCheckUpdates)
 	authed.HandleFunc("GET /partials/pulls", s.handlePullsPartial)
 	authed.HandleFunc("POST /images/tag", s.handleImageTag)
 	authed.HandleFunc("POST /images/delete", s.handleImageDelete)

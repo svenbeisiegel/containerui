@@ -147,10 +147,10 @@
   <div class="table-wrap"><table>
     <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Ports</th><th>Created</th><th class="right">Actions</th></tr></thead>
     <tbody>
-    {{$caps := .Caps}}{{$csrf := .CSRF}}
+    {{$caps := .Caps}}{{$csrf := .CSRF}}{{$upd := .Updates}}
     {{range .Containers}}
       <tr>
-        <td><a href="/containers/{{.ID}}">{{.Name}}</a><div class="id">{{shortID .ID}}</div>
+        <td><a href="/containers/{{.ID}}">{{.Name}}</a>{{if index $upd .ID}} <a class="badge warn update-tag" href="/containers/{{.ID}}#update" title="A newer image is available">update</a>{{end}}<div class="id">{{shortID .ID}}</div>
           {{with index .Labels "com.docker.compose.project"}}{{if $caps.Compose}}<a class="tag" href="/compose/{{.}}" title="Compose project">{{.}}</a>{{else}}<span class="tag" title="Compose project">{{.}}</span>{{end}}{{end}}</td>
         <td class="mono">{{.Image}}</td>
         <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
@@ -167,10 +167,19 @@
 
 {{/* ---------- images ---------- */}}
 {{define "images_table"}}
-<section id="images" class="panel" hx-get="/partials/images" hx-trigger="images-changed from:body" hx-swap="outerHTML">
+<section id="images" class="panel" hx-get="/partials/images" hx-trigger="images-changed from:body{{if and .Scan .Scan.Scanning}}, every 2s{{end}}" hx-swap="outerHTML">
   <div class="panel-head">
     <h2>Local Images</h2>
-    <button type="button" class="link" hx-get="/partials/images" hx-target="#images" hx-swap="outerHTML">Refresh</button>
+    <div class="actions">
+      {{with .Scan}}
+      <span class="muted small">{{if .Scanning}}Checking for updates…{{else if .Err}}Update check failed: {{.Err}}{{else if not .Last.IsZero}}Updates checked {{ago .Last}}{{end}}</span>
+      <form method="post" action="/images/check-updates" hx-post="/images/check-updates" hx-target="#images" hx-swap="outerHTML" hx-disabled-elt="find button">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}">
+        <button type="submit" class="small" {{if .Scanning}}disabled{{end}} title="Ask the registries of all local images for newer versions now (checked every {{.Interval}} anyway)">Check for updates</button>
+      </form>
+      {{end}}
+      <button type="button" class="link" hx-get="/partials/images" hx-target="#images" hx-swap="outerHTML">Refresh</button>
+    </div>
   </div>
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>
@@ -179,16 +188,21 @@
   <div class="table-wrap"><table>
     <thead><tr><th>Repository</th><th>Tag</th><th>ID</th><th>Size</th><th>Created</th><th class="right">Actions</th></tr></thead>
     <tbody>
-    {{$caps := .Caps}}{{$csrf := .CSRF}}
+    {{$caps := .Caps}}{{$csrf := .CSRF}}{{$upd := .Updates}}
     {{range .Images}}
+      {{$u := index $upd .Ref}}
       <tr>
         <td class="mono">{{.Repository}}{{if .Containers}}<span class="in-use" title="In use by {{.Containers}} container(s)">*</span>{{end}}</td>
-        <td class="mono">{{.Tag}}</td>
+        <td class="mono">{{.Tag}}{{if $u.Available}} <span class="badge warn update-tag" title="{{if $u.DigestChanged}}The registry has a newer image for this tag. {{end}}{{with $u.NewerTags}}Newer versions: {{range $i, $t := .}}{{if $i}}, {{end}}{{$t.Name}}{{end}}{{end}}">update</span>{{else if $u.Status.Err}} <span class="muted small" title="{{$u.Status.Err}}">not checked</span>{{end}}</td>
         <td class="id" title="{{.ID}}">{{shortID .ID}}</td>
         <td>{{.Size}}</td>
         <td title="{{datetime .Created}}">{{ago .Created}}</td>
         <td class="right">
           <div class="actions">
+            {{if and $u.Available $caps.Pull}}
+            {{if $u.DigestChanged}}{{template "image_update" (dict "Ref" $u.Ref "Label" "Update" "Title" (printf "Pull the newer image for %s" $u.Ref) "CSRF" $csrf)}}{{end}}
+            {{with $u.NewerTags}}{{$t := index . 0}}{{template "image_update" (dict "Ref" (printf "%s:%s" $u.Repo $t.Name) "Label" (printf "Pull %s" $t.Name) "Title" (printf "Pull %s:%s, the newest %s version" $u.Repo $t.Name $t.Kind) "CSRF" $csrf)}}{{end}}
+            {{end}}
             <a class="button" href="/containers/new?image={{.Ref}}">Run…</a>
             {{if $caps.Tag}}
             <details class="inline">
@@ -218,6 +232,15 @@
 </section>
 {{end}}
 
+{{/* image_update expects dict: Ref (image to pull), Label, Title, CSRF. */}}
+{{define "image_update"}}
+<form method="post" action="/images/pull" hx-post="/images/pull" hx-target="#pulls" hx-swap="outerHTML" hx-disabled-elt="find button">
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <input type="hidden" name="ref" value="{{.Ref}}">
+  <button type="submit" class="primary" title="{{.Title}}">{{.Label}}</button>
+</form>
+{{end}}
+
 {{define "pulls_panel"}}
 <div id="pulls" {{if .AnyRunning}}hx-get="/partials/pulls" hx-trigger="every 1s" hx-swap="outerHTML"{{end}}>
   {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
@@ -239,53 +262,22 @@
 {{/* ---------- container recreate (edit / image update) ---------- */}}
 {{define "container_update"}}
 <section class="panel update-panel" id="update">
-  <div class="panel-head">
-    <h2>Image updates</h2>
-    {{if .Name}}<button type="button" class="small" hx-get="/partials/containers/{{.ID}}/update?refresh=1" hx-target="#update" hx-swap="outerHTML" hx-disabled-elt="this">Check again</button>{{end}}
-  </div>
-  {{$v := .}}
-  {{with .Status}}
-  {{if .Err}}<p class="muted">Could not check {{with $v.Ref}}<code>{{.}}</code>{{else}}the image{{end}}: {{.Err}}</p>
-  {{else if .Pinned}}<p class="muted"><code>{{$v.Ref}}</code> is pinned to a digest and does not change.</p>
-  {{else}}
-    {{if .DigestChanged}}
-    <p><span class="badge warn">update</span> The registry has a newer image for <code>{{$v.Ref}}</code>.</p>
-    {{if $v.CanRecreate}}{{template "update_form" (dict "V" $v "Image" $v.Ref "Label" (printf "Update to the new %s" $v.Ref))}}{{end}}
-    {{else if .DigestUnknown}}
-    <p class="muted">The local image of <code>{{$v.Ref}}</code> has no registry digest (it was built or loaded locally), so a rebuilt tag cannot be detected.</p>
-    {{else}}
-    <p><span class="badge ok">up to date</span> <code>{{$v.Ref}}</code> matches the registry.</p>
-    {{end}}
-    {{if $v.Tags}}
-    <p>Newer versions: {{range $i, $t := $v.Tags}}{{if $i}}, {{end}}<code>{{$t.Name}}</code> <span class="muted small">({{$t.Kind}})</span>{{end}}</p>
-    {{if and $v.CanRecreate (not $v.Project)}}
-    <form method="post" action="/containers/{{$v.ID}}/update" hx-post="/containers/{{$v.ID}}/update" hx-swap="none" class="inline-form update-form"
-          hx-confirm="Recreate container {{$v.Name}} with the selected image? It is stopped and replaced with the same settings; volumes are kept.{{if $v.AutoRemove}} It was started with --rm, so it cannot be restored if this fails.{{end}}" hx-disabled-elt="find button">
-      <input type="hidden" name="csrf" value="{{$v.CSRF}}">
-      <select name="image" aria-label="Version">
-        {{range $v.Tags}}<option value="{{.Ref}}">{{.Name}} ({{.Kind}})</option>{{end}}
-      </select>
-      <button type="submit" class="primary">Update to selected version</button>
-    </form>
-    {{end}}
-    {{end}}
-  {{end}}
-  {{if $v.Project}}<p class="muted small">This container belongs to compose project <a href="/compose/{{$v.Project}}">{{$v.Project}}</a>: change the image in its compose file, then pull and deploy the project.</p>{{end}}
-  {{if not .CheckedAt.IsZero}}<p class="muted small">Checked {{ago .CheckedAt}}.</p>{{end}}
+  <h2>Image update</h2>
+  <p><span class="badge warn">update</span> A newer image is available for <code>{{.Ref}}</code>.</p>
+  {{if .Project}}
+  <p class="muted small">This container belongs to compose project <a href="/compose/{{.Project}}">{{.Project}}</a>: change the image in its compose file, then pull and deploy the project.</p>
+  {{else if .CanRecreate}}
+  <form method="post" action="/containers/{{.ID}}/update" hx-post="/containers/{{.ID}}/update" hx-swap="none" class="inline-form update-form"
+        hx-confirm="Recreate container {{.Name}} with the selected image? It is stopped and replaced with the same settings; volumes are kept.{{if .AutoRemove}} It was started with --rm, so it cannot be restored if this fails.{{end}}" hx-disabled-elt="find button">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <select name="image" aria-label="Image to update to">
+      {{range .Candidates}}<option value="{{.Ref}}">{{.Label}}</option>{{end}}
+    </select>
+    <button type="submit" class="primary">Update container</button>
+  </form>
+  <p class="muted small">The image is pulled if needed; the container is recreated with the same settings.</p>
   {{end}}
 </section>
-{{end}}
-
-{{/* update_form expects dict: V (containerUpdateView), Image, Label. */}}
-{{define "update_form"}}
-{{if not .V.Project}}
-<form method="post" action="/containers/{{.V.ID}}/update" hx-post="/containers/{{.V.ID}}/update" hx-swap="none"
-      hx-confirm="Recreate container {{.V.Name}} with {{.Image}}? It is stopped and replaced with the same settings; volumes are kept.{{if .V.AutoRemove}} It was started with --rm, so it cannot be restored if this fails.{{end}}" hx-disabled-elt="find button">
-  <input type="hidden" name="csrf" value="{{.V.CSRF}}">
-  <input type="hidden" name="image" value="{{.Image}}">
-  <button type="submit" class="primary">{{.Label}}</button>
-</form>
-{{end}}
 {{end}}
 
 {{/* recreate_job expects recreateJobView. */}}

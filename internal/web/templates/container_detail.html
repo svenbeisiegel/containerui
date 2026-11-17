@@ -1,7 +1,7 @@
 {{define "content"}}
 {{$v := .Data}}
 <div class="page-head">
-  <h1>{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}</h1>
+  <h1>{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}{{if $v.Update}} <a class="badge warn update-tag" href="#update" title="A newer image is available">update</a>{{end}}</h1>
   <div class="actions">
     {{if $v.CanEdit}}<a class="button" href="/containers/{{$v.Container.ID}}/edit">Edit</a>{{end}}
     {{if and $v.Container $v.Caps.Logs}}
@@ -29,12 +29,7 @@
   </dl>
   {{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF)}}
 </section>
-{{if $v.Updates}}
-<section class="panel update-panel" id="update" hx-get="/partials/containers/{{.ID}}/update" hx-trigger="load" hx-swap="outerHTML">
-  <h2>Image updates</h2>
-  <p class="muted">Checking the registry for a newer image…</p>
-</section>
-{{end}}
+{{with $v.Update}}{{template "container_update" .}}{{end}}
 {{end}}
 {{if $v.Inspect}}
 <section class="panel">

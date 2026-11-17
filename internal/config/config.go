@@ -98,12 +98,12 @@ type Events struct {
 	Dir string `yaml:"dir"`
 }
 
-// Registry configures the image update check on the container page.
+// Registry configures the background check of local images for updates.
 type Registry struct {
 	// CheckUpdates asks registries for newer images (nil = default, on).
-	CheckUpdates *bool         `yaml:"check_updates"`
-	CacheTTL     time.Duration `yaml:"cache_ttl"` // how long an answer is reused
-	Timeout      time.Duration `yaml:"timeout"`   // per registry request
+	CheckUpdates  *bool         `yaml:"check_updates"`
+	CheckInterval time.Duration `yaml:"check_interval"` // how often all local images are checked
+	Timeout       time.Duration `yaml:"timeout"`        // per registry request
 	// AuthFile is a docker config.json or podman auth.json with logins;
 	// empty = the runtime's usual files (relative to the config file).
 	AuthFile string `yaml:"auth_file"`
@@ -142,7 +142,7 @@ func Default() *Config {
 			ComposeDir:     "compose",
 		},
 		Events:   Events{Dir: "events"},
-		Registry: Registry{CheckUpdates: &on, CacheTTL: time.Hour, Timeout: 10 * time.Second, Insecure: []string{}},
+		Registry: Registry{CheckUpdates: &on, CheckInterval: 30 * time.Minute, Timeout: 10 * time.Second, Insecure: []string{}},
 	}
 }
 
@@ -310,7 +310,7 @@ func (c *Config) applyDefaults() {
 	if c.Registry.CheckUpdates == nil {
 		c.Registry.CheckUpdates = d.Registry.CheckUpdates
 	}
-	c.Registry.CacheTTL = cmp(c.Registry.CacheTTL, d.Registry.CacheTTL)
+	c.Registry.CheckInterval = cmp(c.Registry.CheckInterval, d.Registry.CheckInterval)
 	c.Registry.Timeout = cmp(c.Registry.Timeout, d.Registry.Timeout)
 	if c.Registry.Insecure == nil {
 		c.Registry.Insecure = []string{}
@@ -350,6 +350,9 @@ func (c *Config) validate() error {
 		if u.PasswordHash != "" && u.Password != "" {
 			errs = append(errs, fmt.Errorf("users[%d] (%s): set only one of password_hash and password", i, u.Username))
 		}
+	}
+	if c.Registry.CheckInterval < time.Minute {
+		errs = append(errs, fmt.Errorf("registry.check_interval %s: must be at least 1m", c.Registry.CheckInterval))
 	}
 	return errors.Join(errs...)
 }

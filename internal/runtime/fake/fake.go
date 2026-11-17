@@ -33,6 +33,7 @@ type Runtime struct {
 	networks   []runtime.Network
 	env        map[string][]string                    // container environment by ID
 	created    map[string]runtime.CreateContainerOpts // create options by container ID
+	imageIDs   map[string]string                      // ID of the image a container was created from, by container ID
 	netSpecs   map[string]*netSpec                    // by network name
 
 	// Err, if set, is returned by every call (to test error rendering).
@@ -58,7 +59,7 @@ type Runtime struct {
 var _ runtime.Runtime = (*Runtime)(nil)
 
 func New() *Runtime {
-	return &Runtime{containers: map[string]*runtime.Container{}, images: map[string]*runtime.Image{}, env: map[string][]string{}, created: map[string]runtime.CreateContainerOpts{}, netSpecs: map[string]*netSpec{}}
+	return &Runtime{containers: map[string]*runtime.Container{}, images: map[string]*runtime.Image{}, env: map[string][]string{}, created: map[string]runtime.CreateContainerOpts{}, imageIDs: map[string]string{}, netSpecs: map[string]*netSpec{}}
 }
 
 // NewSeeded returns a fake with a few images, containers, volumes and networks.
@@ -93,6 +94,9 @@ func (f *Runtime) AddContainer(c runtime.Container) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.containers[c.ID] = &c
+	if img, ok := f.images[c.Image]; ok {
+		f.imageIDs[c.ID] = img.ID
+	}
 }
 
 func (f *Runtime) record(format string, args ...any) error {
@@ -218,6 +222,9 @@ func (f *Runtime) CreateContainer(_ context.Context, opts runtime.CreateContaine
 		c.State, c.Status = runtime.StateRunning, "Up Less than a second"
 	}
 	f.containers[id] = c
+	if img, ok := f.images[opts.Image]; ok {
+		f.imageIDs[id] = img.ID
+	}
 	f.env[id] = opts.Env
 	f.created[id] = opts
 	c.Labels = map[string]string{}

@@ -43,17 +43,23 @@ Features:
     old one is renamed back and restarted. Settings the form cannot express
     (devices, tmpfs mounts, sysctls, security options, a custom health
     check, …) are listed on the form as *will be lost* before you save.
-  - **Image updates**: the container page asks the image's registry whether
-    the tag was rebuilt (its digest differs from the local image's) and
-    which higher version tags of the same shape exist (`1.27.3` → `1.27.4`,
-    `1.28.0`, `2.0.0`; `1.27-alpine` only sees `-alpine` tags; `latest` only
-    gets the digest check). *Update* pulls the new image and recreates the
-    container with the same settings, like *Edit*. Public registries work
-    anonymously; private ones with the logins in the runtime's auth file
-    (`docker login` / `podman login` as the account ContainerUI runs as, or
+  - **Image updates**: every 30 minutes (`registry.check_interval`), and
+    right away with *Check for updates* on the Images page, ContainerUI asks
+    the registry of every tagged local image whether the tag was rebuilt
+    (its digest differs from the local image's) and which higher version
+    tags of the same shape exist (`1.27.3` → `1.27.4`, `1.28.0`, `2.0.0`;
+    `1.27-alpine` only sees `-alpine` tags; `latest` only gets the digest
+    check). The Images page then marks those images with *update* and
+    offers *Update* (pull the rebuilt tag) or *Pull 1.28* (the newest
+    version) on the latest local version of the repository. A container
+    whose image has a newer version, also one already pulled, gets an
+    *update* tag after its name; its page offers *Update container*, which
+    pulls the chosen image if needed and recreates the container with the
+    same settings, like *Edit*. Public registries work anonymously; private
+    ones with the logins in the runtime's auth file (`docker login` /
+    `podman login` as the account ContainerUI runs as, or
     `registry.auth_file`). Credential helpers (`credsStore`, `credHelpers`)
-    are not supported. Answers are cached for `registry.cache_ttl`; *Check
-    again* asks right away.
+    are not supported.
   - Containers of a **compose project** cannot be edited or updated here:
     change the image or settings in the project's compose file and deploy
     it, so compose keeps track of them.
@@ -323,8 +329,8 @@ The default file is [internal/config/default.yaml](internal/config/default.yaml)
 | `runtime.compose_path` | — | A standalone compose binary (`docker-compose`, `podman-compose`); empty = detect, see [Compose](#compose) |
 | `runtime.compose_timeout` | `30m` | Timeout for compose up/down/pull/start/stop |
 | `runtime.compose_dir` | `compose` | Folder for the compose files deployed through the UI (relative to the config file) |
-| `registry.check_updates` | `true` | Check registries for newer container images, see *Image updates* above |
-| `registry.cache_ttl` | `1h` | How long a registry's answer is reused |
+| `registry.check_updates` | `true` | Check registries for newer images, see *Image updates* above |
+| `registry.check_interval` | `30m` | How often all local images are checked (at least `1m`) |
 | `registry.timeout` | `10s` | Timeout per registry request |
 | `registry.auth_file` | — | docker `config.json` or podman `auth.json` with registry logins (relative to the config file); empty = `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`, `~/.config/containers/auth.json`, `~/.docker/config.json` |
 | `registry.insecure_registries` | `[]` | Registries (`host:port`) reached over plain HTTP |
@@ -509,6 +515,7 @@ internal/auth          bcrypt users, Linux PAM sign-in, sessions, CSRF, login th
 internal/compose       compose file checks, stored files, grouping by labels, rebuilding a file
 internal/jobs          background jobs (image pulls, compose operations, recreates) with progress
 internal/registry      registry API client: digests, tags, auth-file logins, update check
+internal/updates       background update check of all local images and the containers using them
 internal/web           HTTP server, handlers, html/template + htmx (embedded)
 internal/tlsutil       self-signed certificate generation
 ```

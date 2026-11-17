@@ -7,11 +7,13 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/svenbeisiegel/containerui/internal/registry"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
+	"github.com/svenbeisiegel/containerui/internal/updates"
 )
 
 func (e *env) container(name string) *runtime.Container {
@@ -99,34 +101,82 @@ func TestEditComposeContainerRefused(t *testing.T) {
 	}
 }
 
+// stubChecker answers update checks from a table (by reference); other
+// references are up to date.
 type stubChecker struct {
-	status registry.Status
-	ref    string
-	force  bool
+	mu     sync.Mutex
+	status map[string]registry.Status
+	forced int
+}
+
+func (s *stubChecker) set(ref string, st registry.Status) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.status[ref] = st
+}
+
+func (s *stubChecker) forcedChecks() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.forced
 }
 
 func (s *stubChecker) Check(_ context.Context, ref string, _ []string, force bool) registry.Status {
-	s.ref, s.force = ref, force
-	st := s.status
-	st.Ref = ref
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if force {
+		s.forced++
+	}
+	st := s.status[ref]
+	st.Ref, st.CheckedAt = ref, time.Now()
 	return st
 }
 
-func TestImageUpdate(t *testing.T) {
-	stub := &stubChecker{status: registry.Status{DigestChanged: true, NewerTags: []registry.Tag{{Name: "1.28", Kind: "minor"}}, CheckedAt: time.Now()}}
-	e := newEnvWith(t, func(o *Options) { o.Updates = stub })
+func newUpdateEnv(t *testing.T) (*env, *stubChecker, *updates.Scanner) {
+	stub := &stubChecker{status: map[string]registry.Status{
+		"nginx:1.27":    {NewerTags: []registry.Tag{{Name: "1.28", Kind: "minor"}}},
+		"alpine:latest": {DigestChanged: true},
+	}}
+	var sc *updates.Scanner
+	e := newEnvWith(t, func(o *Options) {
+		sc = updates.New(o.Runtime, stub, time.Hour, o.Logger)
+		o.Updates = sc
+	})
 	e.login()
+	sc.Scan(context.Background(), false)
+	return e, stub, sc
+}
 
-	if !strings.Contains(e.do("GET", "/containers/web", nil).Body.String(), `hx-get="/partials/containers/c0ffee000001/update"`) {
-		t.Error("detail page does not load the update check")
+func TestImageUpdates(t *testing.T) {
+	e, stub, sc := newUpdateEnv(t)
+
+	// The container list marks outdated containers.
+	list := e.do("GET", "/partials/containers", nil, htmx).Body.String()
+	for _, id := range []string{"c0ffee000001", "c0ffee000002"} {
+		if !strings.Contains(list, `href="/containers/`+id+`#update"`) {
+			t.Errorf("container %s has no update tag", id)
+		}
 	}
-	body := e.do("GET", "/partials/containers/c0ffee000001/update?refresh=1", nil, htmx).Body.String()
-	if stub.ref != "nginx:1.27" || !stub.force {
-		t.Errorf("checked %q force=%v", stub.ref, stub.force)
+	// The images page offers to pull the newer images.
+	imgs := e.do("GET", "/partials/images", nil, htmx).Body.String()
+	for _, want := range []string{`name="ref" value="nginx:1.28"`, ">Pull 1.28<", `name="ref" value="alpine:latest"`, ">Update<", "Updates checked", "Check for updates"} {
+		if !strings.Contains(imgs, want) {
+			t.Errorf("images table misses %q", want)
+		}
 	}
-	for _, want := range []string{"newer image for <code>nginx:1.27</code>", `name="image" value="nginx:1.27"`, `<option value="nginx:1.28">1.28 (minor)</option>`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("update panel misses %q:\n%s", want, body)
+
+	// Pull the newer version: nginx:1.27 is no longer the latest local
+	// image, but the container still runs it.
+	e.post("/images/pull", url.Values{"ref": {"nginx:1.28"}}, htmx)
+	e.jobs.Wait()
+	imgs = e.do("GET", "/partials/images", nil, htmx).Body.String()
+	if strings.Contains(imgs, ">Pull 1.28<") {
+		t.Error("pull button still shown after pulling 1.28")
+	}
+	page := e.do("GET", "/containers/web", nil).Body.String()
+	for _, want := range []string{`href="#update"`, `<option value="nginx:1.28">1.28 (minor)</option>`, "Update container"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("detail page misses %q", want)
 		}
 	}
 
@@ -136,33 +186,61 @@ func TestImageUpdate(t *testing.T) {
 	}
 	e.jobs.Wait()
 	c := e.container("web")
-	if c == nil || c.Image != "nginx:1.28" || c.State != runtime.StateRunning {
+	if c == nil || c.Image != "nginx:1.28" || c.State != runtime.StateRunning || e.rt.LastCreate.Ports[0].HostPort != 8080 {
 		t.Fatalf("updated container = %+v", c)
 	}
-	if !slices.Contains(e.rt.Calls, "pull nginx:1.28") || e.rt.LastCreate.Ports[0].HostPort != 8080 {
-		t.Errorf("calls %q, create %+v", e.rt.Calls, e.rt.LastCreate)
+	pulls := 0
+	for _, call := range e.rt.Calls {
+		if call == "pull nginx:1.28" {
+			pulls++
+		}
+	}
+	if pulls != 1 {
+		t.Errorf("nginx:1.28 pulled %d times; the local image should be used", pulls)
+	}
+	if page := e.do("GET", "/containers/web", nil).Body.String(); strings.Contains(page, `id="update"`) {
+		t.Error("updated container still offers an update")
 	}
 
-	// Only tags of the container's own repository are accepted.
+	// Only images the check found are accepted.
 	e.post("/containers/"+c.ID+"/update", url.Values{"image": {"alpine:latest"}}, htmx)
-	if !strings.Contains(e.do("GET", "/containers/web", nil).Body.String(), "is not an image of nginx") {
-		t.Error("foreign image not refused")
+	if !strings.Contains(e.do("GET", "/containers/web", nil).Body.String(), "no newer image alpine:latest is known") {
+		t.Error("unknown image not refused")
 	}
 
-	stub.status = registry.Status{Err: "access denied"}
-	if body := e.do("GET", "/partials/containers/web/update", nil, htmx).Body.String(); !strings.Contains(body, "Could not check <code>nginx:1.28</code>: access denied") {
-		t.Errorf("error panel:\n%s", body)
+	// The tag was rebuilt: once the new image is pulled, the container
+	// still runs the old one and is updated without pulling again.
+	stub.set("alpine:latest", registry.Status{})
+	e.post("/images/pull", url.Values{"ref": {"alpine:latest"}}, htmx)
+	e.jobs.Wait()
+	if page := e.do("GET", "/containers/job", nil).Body.String(); !strings.Contains(page, `<option value="alpine:latest">latest (newer image already pulled)</option>`) {
+		t.Errorf("job container: no update to the pulled image:\n%s", page)
+	}
+
+	// Check now asks every registry again.
+	before := stub.forcedChecks()
+	if body := e.post("/images/check-updates", nil, htmx).Body.String(); !strings.Contains(body, "Checking for updates") && !strings.Contains(body, "Updates checked") {
+		t.Errorf("check-updates response:\n%s", body)
+	}
+	sc.Wait()
+	if stub.forcedChecks() <= before {
+		t.Error("check now did not force registry checks")
 	}
 }
 
 func TestImageUpdateDisabled(t *testing.T) {
 	e := newEnv(t)
 	e.login()
-	if strings.Contains(e.do("GET", "/containers/web", nil).Body.String(), "/update\"") {
-		t.Error("update check shown without a checker")
+	if strings.Contains(e.do("GET", "/partials/containers", nil, htmx).Body.String(), "update-tag") {
+		t.Error("update tag shown without update checks")
 	}
-	if w := e.do("GET", "/partials/containers/web/update", nil, htmx); w.Code != http.StatusNoContent {
-		t.Errorf("partial = %d", w.Code)
+	if strings.Contains(e.do("GET", "/partials/images", nil, htmx).Body.String(), "Check for updates") {
+		t.Error("check button shown without update checks")
+	}
+	e.post("/containers/c0ffee000001/update", url.Values{"image": {"nginx:1.28"}}, htmx)
+	e.jobs.Wait()
+	if slices.ContainsFunc(e.rt.Calls, func(c string) bool { return strings.HasPrefix(c, "create") }) {
+		t.Error("container updated without update checks")
 	}
 }
 

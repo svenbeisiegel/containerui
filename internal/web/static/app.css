@@ -621,7 +621,11 @@ details.event.unread .event-message, details.event.unread .event-component { fon
 .flash.notice .lost-title { margin: .6rem 0 .2rem; }
 .flash.notice ul.lost { margin: 0; padding-left: 1.2rem; }
 .update-panel p { margin: .35rem 0; }
-.update-panel .panel-head button { margin-left: auto; }
+.update-tag { font-size: .68rem; padding: .02rem .45rem; vertical-align: middle; text-decoration: none; }
+h1 .update-tag { font-size: .8rem; }
+a.update-tag:hover { text-decoration: none; filter: brightness(.95); }
+.panel-head .actions { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; justify-content: flex-end; }
+.panel-head .actions form { margin: 0; }
 .update-panel form { margin: .5rem 0; }
 .update-form select { flex: 0 1 16rem; }
 @media (max-width: 720px) { .update-form { flex-wrap: wrap; } }
