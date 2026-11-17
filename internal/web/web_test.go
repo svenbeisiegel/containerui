@@ -273,7 +273,7 @@ func TestPagesRender(t *testing.T) {
 func TestRuntimeErrorShown(t *testing.T) {
 	e := newEnv(t)
 	e.login()
-	e.rt.Err = &runtime.CommandError{Op: "container list", Code: "WSLC_E_SERVICE_UNAVAILABLE", Output: "service down"}
+	e.rt.SetErr(&runtime.CommandError{Op: "container list", Code: "WSLC_E_SERVICE_UNAVAILABLE", Output: "service down"})
 	w := e.do("GET", "/", nil)
 	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "service down [WSLC_E_SERVICE_UNAVAILABLE]") {
 		t.Errorf("dashboard with runtime error = %d\n%s", w.Code, w.Body.String())

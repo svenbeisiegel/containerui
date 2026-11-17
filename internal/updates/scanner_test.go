@@ -86,7 +86,7 @@ func TestCheckNow(t *testing.T) {
 		t.Error("second check not started after the first finished")
 	}
 	s.Wait()
-	rt.Err = runtime.ErrUnsupported
+	rt.SetErr(runtime.ErrUnsupported)
 	s.CheckNow()
 	s.Wait()
 	if st := s.State(); st.Err == "" || len(s.images) == 0 {

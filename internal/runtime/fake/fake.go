@@ -37,6 +37,8 @@ type Runtime struct {
 	netSpecs   map[string]*netSpec                    // by network name
 
 	// Err, if set, is returned by every call (to test error rendering).
+	// Set it with SetErr once the runtime is in use: background samplers
+	// read it concurrently.
 	Err error
 	// PullDelay slows down PullImage per progress line.
 	PullDelay time.Duration
@@ -97,6 +99,14 @@ func (f *Runtime) AddContainer(c runtime.Container) {
 	if img, ok := f.images[c.Image]; ok {
 		f.imageIDs[c.ID] = img.ID
 	}
+}
+
+// SetErr makes every following call return err (nil clears it). Unlike
+// assigning Err, it is safe while other goroutines use the runtime.
+func (f *Runtime) SetErr(err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Err = err
 }
 
 func (f *Runtime) record(format string, args ...any) error {
