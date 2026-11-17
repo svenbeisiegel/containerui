@@ -61,3 +61,60 @@ document.addEventListener("submit", function (e) {
     fetch("/login/warm", { credentials: "same-origin", cache: "no-store" }).catch(function () {});
   }, 15000);
 })();
+
+// Forms marked data-file-load: "Open file…" (data-file-open) or dropping a
+// file onto data-file-drop loads its text into the data-file-target textarea.
+(function () {
+  var maxSize = 2 * 1024 * 1024;
+
+  function load(form, file) {
+    if (!file) return;
+    if (file.size > maxSize) {
+      window.alert(file.name + " is larger than 2 MiB.");
+      return;
+    }
+    var target = form.querySelector("[data-file-target]");
+    var reader = new FileReader();
+    reader.onload = function () {
+      target.value = String(reader.result).replace(/\r\n/g, "\n");
+      target.focus();
+    };
+    reader.readAsText(file);
+  }
+
+  document.querySelectorAll("form[data-file-load]").forEach(function (form) {
+    var input = form.querySelector("[data-file-input]");
+    var open = form.querySelector("[data-file-open]");
+    var drop = form.querySelector("[data-file-drop]");
+    if (open && input) {
+      open.addEventListener("click", function () { input.click(); });
+      input.addEventListener("change", function () {
+        load(form, input.files[0]);
+        input.value = "";
+      });
+    }
+    if (!drop) return;
+    var depth = 0; // dragenter/dragleave also fire for child elements
+    drop.addEventListener("dragenter", function (e) {
+      e.preventDefault();
+      depth++;
+      drop.classList.add("dragging");
+    });
+    drop.addEventListener("dragover", function (e) {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "copy";
+    });
+    drop.addEventListener("dragleave", function () {
+      if (--depth <= 0) {
+        depth = 0;
+        drop.classList.remove("dragging");
+      }
+    });
+    drop.addEventListener("drop", function (e) {
+      e.preventDefault();
+      depth = 0;
+      drop.classList.remove("dragging");
+      if (e.dataTransfer.files.length > 0) load(form, e.dataTransfer.files[0]);
+    });
+  });
+})();

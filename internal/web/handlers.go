@@ -329,6 +329,12 @@ type containerNewView struct {
 	Images   []runtime.Image
 	Networks []runtime.Network
 	Edit     *containerEdit // nil: create a new container
+
+	// Import from inspect output (create only): the container the form was
+	// filled from, or the rejected paste and why.
+	Import     *containerImport
+	ImportText string
+	ImportErr  string
 }
 
 func (s *Server) newContainerView(ctx context.Context, f containerForm, err string) containerNewView {
@@ -340,8 +346,14 @@ func (s *Server) newContainerView(ctx context.Context, f containerForm, err stri
 	return v
 }
 
+// defaultContainerForm is the empty create form.
+func defaultContainerForm() containerForm {
+	return containerForm{Pull: string(runtime.PullMissing), Start: true, TTY: true, Interactive: true}
+}
+
 func (s *Server) handleContainerNew(w http.ResponseWriter, r *http.Request) {
-	f := containerForm{Image: r.URL.Query().Get("image"), Pull: string(runtime.PullMissing), Start: true, TTY: true, Interactive: true}
+	f := defaultContainerForm()
+	f.Image = r.URL.Query().Get("image")
 	s.render(w, "container_new", s.newPage(r, "Create container", "containers", s.newContainerView(r.Context(), f, "")))
 }
 

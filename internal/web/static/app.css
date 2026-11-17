@@ -620,6 +620,15 @@ details.event.unread .event-message, details.event.unread .event-component { fon
 /* ---------- container edit / image update ---------- */
 .flash.notice .lost-title { margin: .6rem 0 .2rem; }
 .flash.notice ul.lost { margin: 0; padding-left: 1.2rem; }
+
+/* "Import from docker inspect" above the create form */
+details.import-inspect { margin-bottom: 1rem; }
+.import-form { display: flex; flex-direction: column; gap: .6rem; padding-top: 1rem; }
+.import-form > .flash, .import-form > .hint { margin: 0; }
+.import-form .compose-toolbar { margin: 0; }
+.import-form .dropzone textarea.code { min-height: 12rem; }
+.import-actions { display: flex; justify-content: flex-end; }
+.flash.notice > ul.lost:first-of-type { margin-top: .4rem; }
 .update-panel p { margin: .35rem 0; }
 .update-tag { font-size: .68rem; padding: .02rem .45rem; vertical-align: middle; text-decoration: none; }
 h1 .update-tag { font-size: .8rem; }

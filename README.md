@@ -43,6 +43,18 @@ Features:
     old one is renamed back and restarted. Settings the form cannot express
     (devices, tmpfs mounts, sysctls, security options, a custom health
     check, …) are listed on the form as *will be lost* before you save.
+  - **Import from docker inspect**: on the create page, paste the output of
+    `docker inspect <container>` (or `podman inspect`, or open / drop a
+    saved `.json` file) to fill the form from an existing container, also
+    one from another host. The input must be the inspect output of exactly
+    one container; image, volume and network inspect output is rejected.
+    It is meant to turn e.g. a compose service into a standalone container,
+    not to clone it exactly: compose's labels are dropped and the container
+    is named after its compose service. Values inherited from the image are
+    left out when the image is available locally. Notes on the form point
+    out compose-owned networks and volumes and settings that cannot be
+    carried over; nothing is created until you submit the form. Stop or
+    remove the original first if the name or published ports are the same.
   - **Image updates**: every 30 minutes (`registry.check_interval`), and
     right away with *Check for updates* on the Images page, ContainerUI asks
     the registry of every tagged local image whether the tag was rebuilt

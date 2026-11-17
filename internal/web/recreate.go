@@ -35,24 +35,43 @@ func (s *Server) recreateSource(ctx context.Context, id string) (runtime.Recreat
 	if err != nil {
 		return runtime.RecreateSource{}, err
 	}
-	var c runtime.ContainerInspect
-	if err := json.Unmarshal(raw, &c); err != nil {
-		return runtime.RecreateSource{}, fmt.Errorf("decode container inspect: %w", err)
+	imgRaw, err := s.containerImageInspect(ctx, raw)
+	if err != nil {
+		return runtime.RecreateSource{}, err
 	}
-	// The image the container runs (by ID), not what its tag points to now.
-	img := c.Image
-	if runtime.ValidateImageRef(img) != nil {
-		img = c.Config.Image
-	}
-	imgRaw, _ := s.rt.InspectImage(ctx, img)
 	src, err := runtime.OptsFromInspect(raw, imgRaw)
 	if err != nil {
 		return src, err
 	}
+	s.dropUnsupported(&src)
+	return src, nil
+}
+
+// containerImageInspect returns the inspect output of the image of the
+// container inspected in raw, nil if the runtime does not have it.
+func (s *Server) containerImageInspect(ctx context.Context, raw json.RawMessage) (json.RawMessage, error) {
+	var c runtime.ContainerInspect
+	if err := json.Unmarshal(raw, &c); err != nil {
+		return nil, fmt.Errorf("decode container inspect: %w", err)
+	}
+	// The image the container runs (by ID), not what its tag points to now.
+	for _, ref := range []string{c.Image, c.Config.Image} {
+		if runtime.ValidateImageRef(ref) != nil {
+			continue
+		}
+		if img, err := s.rt.InspectImage(ctx, ref); err == nil && len(img) > 0 {
+			return img, nil
+		}
+	}
+	return nil, nil
+}
+
+// dropUnsupported clears the options the runtime cannot set and adds them
+// to src.Lost.
+func (s *Server) dropUnsupported(src *runtime.RecreateSource) {
 	for _, d := range src.Opts.DropUnsupported(s.caps()) {
 		src.Lost = append(src.Lost, fmt.Sprintf("%s (not supported by %s)", d, s.rt.Name()))
 	}
-	return src, nil
 }
 
 // recreateJob returns the running or recently finished recreate job of

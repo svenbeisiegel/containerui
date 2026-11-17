@@ -196,6 +196,7 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /partials/containers", s.handleContainersPartial)
 	authed.HandleFunc("GET /containers/new", s.handleContainerNew)
 	authed.HandleFunc("POST /containers", s.handleContainerCreate)
+	authed.HandleFunc("POST /containers/new/import", s.handleContainerImport)
 	authed.HandleFunc("GET /containers/{id}", s.handleContainerDetail)
 	authed.HandleFunc("POST /containers/{id}/{action}", s.handleContainerAction)
 	authed.HandleFunc("GET /containers/{id}/edit", s.handleContainerEdit)
