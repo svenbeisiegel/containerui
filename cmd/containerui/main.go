@@ -32,6 +32,7 @@ import (
 	"github.com/svenbeisiegel/containerui/internal/events"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
 	"github.com/svenbeisiegel/containerui/internal/logfile"
+	"github.com/svenbeisiegel/containerui/internal/registry"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 	"github.com/svenbeisiegel/containerui/internal/runtime/cli"
 	_ "github.com/svenbeisiegel/containerui/internal/runtime/fake"
@@ -229,6 +230,16 @@ func run(o serveOptions, stop <-chan struct{}) error {
 
 	evStore := openEvents(ctx, cfg, log)
 
+	var updates registry.UpdateChecker
+	if rc := cfg.Registry; rc.CheckUpdatesOn() {
+		authFile := ""
+		if rc.AuthFile != "" {
+			authFile = cfg.Resolve(rc.AuthFile)
+		}
+		client := registry.NewClient(rc.Timeout, registry.FileCredentials(registry.DefaultAuthFiles(authFile)), rc.Insecure)
+		updates = registry.NewChecker(client, rc.CacheTTL)
+	}
+
 	s, err := web.New(web.Options{
 		Runtime:  rt,
 		Users:    users,
@@ -239,6 +250,7 @@ func run(o serveOptions, stop <-chan struct{}) error {
 
 		ComposeDir: cfg.Resolve(cfg.Runtime.ComposeDir),
 		Events:     evStore,
+		Updates:    updates,
 
 		Version:     version,
 		InstallType: installType(stop != nil),

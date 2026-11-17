@@ -1,14 +1,26 @@
 {{define "content"}}
 {{$f := .Data.Form}}
+{{$e := .Data.Edit}}
+{{$opt := .Caps.CreateOptions}}
 <div class="page-head">
   <div>
-    <a class="back" href="/containers">← Containers</a>
-    <h1>Create Container</h1>
+    {{if $e}}<a class="back" href="/containers/{{$e.ID}}">← {{$e.Name}}</a>{{else}}<a class="back" href="/containers">← Containers</a>{{end}}
+    <h1>{{if $e}}Edit Container {{$e.Name}}{{else}}Create Container{{end}}</h1>
   </div>
 </div>
-<form method="post" action="/containers" class="create-form">
+<form method="post" action="{{if $e}}/containers/{{$e.ID}}/edit{{else}}/containers{{end}}" class="create-form"
+      {{if $e}}data-confirm="Recreate container {{$e.Name}} with these settings? It is stopped and replaced; volumes are kept.{{if $e.AutoRemove}} It was started with --rm, so it cannot be restored if this fails.{{end}}"{{end}}>
   <input type="hidden" name="csrf" value="{{.CSRF}}">
   {{if .Data.Err}}<div class="flash error" role="alert">{{.Data.Err}}</div>{{end}}
+  {{if $e}}
+  <div class="flash notice">
+    Saving recreates the container: it is renamed and stopped, a new container is created from these settings and started{{if not $e.Running}} if you choose so below{{end}}, and the old one is removed. Volumes, including anonymous ones, are re-attached. If the new container cannot be created, the old one is restored.
+    {{if $e.Lost}}
+    <p class="lost-title"><strong>These settings of the container cannot be carried over and will be lost:</strong></p>
+    <ul class="lost">{{range $e.Lost}}<li>{{.}}</li>{{end}}</ul>
+    {{end}}
+  </div>
+  {{end}}
 
   <fieldset class="section">
     <legend>Image</legend>
@@ -50,6 +62,25 @@
         <textarea name="ports" rows="3" placeholder="8080:80&#10;127.0.0.1:5432:5432" spellcheck="false">{{$f.Ports}}</textarea>
         <small class="hint">One per line: <code>[hostIP:]hostPort:containerPort[/udp]</code></small>
       </label>
+      {{if and .Caps.Networks (index $opt "network-alias")}}
+      <label class="field">
+        <span class="field-label">Aliases <span class="opt flag">--network-alias</span></span>
+        <input name="network_aliases" value="{{$f.NetworkAliases}}" placeholder="api, db" class="mono-input" autocomplete="off" spellcheck="false">
+        <small class="hint">Extra DNS names in the network above (not the default network).</small>
+      </label>
+      <label class="field">
+        <span class="field-label">IP address <span class="opt flag">--ip</span></span>
+        <input name="network_ip" value="{{$f.NetworkIP}}" placeholder="172.30.0.10" class="mono-input" autocomplete="off" spellcheck="false">
+        <small class="hint">Fixed IPv4 address in the network above; it needs a subnet.</small>
+      </label>
+      {{end}}
+      {{if and .Caps.Networks (index $opt "multi-network")}}
+      <label class="field span-2">
+        <span class="field-label">Additional networks</span>
+        <textarea name="extra_networks" rows="2" placeholder="backend alias=api,cache ip=172.30.0.5&#10;monitoring" spellcheck="false">{{$f.ExtraNetworks}}</textarea>
+        <small class="hint">One per line: <code>network [alias=a,b] [ip=x.x.x.x]</code>. Connected before the container starts; choose the first network above.</small>
+      </label>
+      {{end}}
     </div>
   </fieldset>
 
@@ -66,6 +97,13 @@
         <textarea name="volumes" rows="4" placeholder="data:/var/lib/data&#10;C:\config:/etc/app:ro" spellcheck="false">{{$f.Volumes}}</textarea>
         <small class="hint">One per line: <code>volume-or-host-path:/container/path[:ro]</code></small>
       </label>
+      {{if index $opt "label"}}
+      <label class="field span-2">
+        <span class="field-label">Labels <span class="opt flag">--label</span></span>
+        <textarea name="labels" rows="2" placeholder="team=platform&#10;traefik.enable=true" spellcheck="false">{{$f.Labels}}</textarea>
+        <small class="hint">One per line: <code>key=value</code></small>
+      </label>
+      {{end}}
     </div>
   </fieldset>
 
@@ -81,8 +119,17 @@
         </select>
         <small class="hint">When to fetch the image from its registry.</small>
       </label>
+      {{if index $opt "restart"}}
+      <label class="field">
+        <span class="field-label">Restart policy <span class="opt flag">--restart</span></span>
+        <select name="restart">
+          {{range $f.RestartPolicies}}<option value="{{.}}" {{if or (eq . $f.Restart) (and (eq . "no") (eq $f.Restart ""))}}selected{{end}}>{{.}}</option>{{end}}
+        </select>
+        <small class="hint">When the runtime restarts the container; <code>on-failure</code> on a non-zero exit.</small>
+      </label>
+      {{end}}
       <div class="field">
-        <span class="field-label">After creating</span>
+        <span class="field-label">{{if $e}}After recreating{{else}}After creating{{end}}</span>
         <label class="switch">
           <input type="checkbox" name="start" {{if $f.Start}}checked{{end}}>
           <span class="track" aria-hidden="true"></span>
@@ -96,7 +143,7 @@
   <details class="section advanced"{{if $f.AdvancedChanged}} open{{end}}>
     <summary>
       <span class="summary-title">Advanced Options</span>
-      <span class="summary-sub">Terminal, cleanup, health check, resources, identity, DNS and ulimits</span>
+      <span class="summary-sub">Process, resources, identity, security, DNS and ulimits</span>
     </summary>
     <div class="advanced-body">
       <h3 class="subhead">Process</h3>
@@ -122,6 +169,24 @@
           <span>Disable health check <code>--no-healthcheck</code></span>
         </label>
       </div>
+      {{if or (index $opt "entrypoint") (index $opt "workdir")}}
+      <div class="fields">
+        {{if index $opt "entrypoint"}}
+        <label class="field">
+          <span class="field-label">Entrypoint <span class="opt flag">--entrypoint</span></span>
+          <input name="entrypoint" value="{{$f.Entrypoint}}" placeholder="/docker-entrypoint.sh" class="mono-input" autocomplete="off" spellcheck="false">
+          <small class="hint">Overrides the image's entrypoint; empty keeps it.</small>
+        </label>
+        {{end}}
+        {{if index $opt "workdir"}}
+        <label class="field">
+          <span class="field-label">Working directory <span class="opt flag">--workdir</span></span>
+          <input name="workdir" value="{{$f.WorkDir}}" placeholder="/app" class="mono-input" autocomplete="off" spellcheck="false">
+          <small class="hint">Absolute path inside the container.</small>
+        </label>
+        {{end}}
+      </div>
+      {{end}}
 
       <h3 class="subhead">Resources</h3>
       <div class="fields">
@@ -151,6 +216,35 @@
         </label>
       </div>
 
+      {{if or (index $opt "privileged") (index $opt "cap-add") (index $opt "cap-drop")}}
+      <h3 class="subhead">Security</h3>
+      {{if index $opt "privileged"}}
+      <div class="switches">
+        <label class="switch">
+          <input type="checkbox" name="privileged" {{if $f.Privileged}}checked{{end}}>
+          <span class="track" aria-hidden="true"></span>
+          <span>Privileged mode: full access to the host's devices <code>--privileged</code></span>
+        </label>
+      </div>
+      {{end}}
+      <div class="fields">
+        {{if index $opt "cap-add"}}
+        <label class="field">
+          <span class="field-label">Add capabilities <span class="opt flag">--cap-add</span></span>
+          <input name="cap_add" value="{{$f.CapAdd}}" placeholder="NET_ADMIN, SYS_TIME" class="mono-input" autocomplete="off" spellcheck="false">
+          <small class="hint">Linux capabilities, e.g. <code>NET_ADMIN</code>.</small>
+        </label>
+        {{end}}
+        {{if index $opt "cap-drop"}}
+        <label class="field">
+          <span class="field-label">Drop capabilities <span class="opt flag">--cap-drop</span></span>
+          <input name="cap_drop" value="{{$f.CapDrop}}" placeholder="ALL" class="mono-input" autocomplete="off" spellcheck="false">
+          <small class="hint"><code>ALL</code> drops every capability.</small>
+        </label>
+        {{end}}
+      </div>
+      {{end}}
+
       <h3 class="subhead">DNS</h3>
       <div class="fields three">
         <label class="field">
@@ -168,6 +262,13 @@
           <input name="dns_option" value="{{$f.DNSOptions}}" placeholder="ndots:2 timeout:3" class="mono-input" autocomplete="off" spellcheck="false">
           <small class="hint">e.g. <code>ndots:2</code>, <code>rotate</code>.</small>
         </label>
+        {{if index $opt "add-host"}}
+        <label class="field">
+          <span class="field-label">Extra hosts <span class="opt flag">--add-host</span></span>
+          <input name="add_host" value="{{$f.ExtraHosts}}" placeholder="db:10.0.0.5" class="mono-input" autocomplete="off" spellcheck="false">
+          <small class="hint"><code>host:ip</code> entries for <code>/etc/hosts</code>.</small>
+        </label>
+        {{end}}
       </div>
       <p class="hint group-hint">Multiple values: separate them with commas or spaces.</p>
 
@@ -183,8 +284,13 @@
   </details>
 
   <div class="form-actions">
+    {{if $e}}
+    <a class="button" href="/containers/{{$e.ID}}">Cancel</a>
+    <button type="submit" class="primary">Recreate container</button>
+    {{else}}
     <a class="button" href="/containers">Cancel</a>
     <button type="submit" class="primary">Create container</button>
+    {{end}}
   </div>
 </form>
 {{end}}

@@ -248,15 +248,15 @@ func TestCreateContainerArgs(t *testing.T) {
 	r := &fakeRunner{stdout: "ee71a64f0869\n"}
 	d := NewWithRunner(r, WSLC, config.Runtime{})
 	id, err := d.CreateContainer(context.Background(), runtime.CreateContainerOpts{
-		Image:   "alpine:latest",
-		Name:    "web",
-		Cmd:     []string{"echo", "-n", "hi"},
-		Env:     []string{"A=1"},
-		Ports:   []runtime.PortMapping{{HostIP: "127.0.0.1", HostPort: 8080, ContainerPort: 80}},
-		Volumes: []runtime.VolumeMount{{Source: "data", Target: "/data", ReadOnly: true}},
-		Network: "bridge",
-		Pull:    runtime.PullMissing,
-		Start:   true,
+		Image:    "alpine:latest",
+		Name:     "web",
+		Cmd:      []string{"echo", "-n", "hi"},
+		Env:      []string{"A=1"},
+		Ports:    []runtime.PortMapping{{HostIP: "127.0.0.1", HostPort: 8080, ContainerPort: 80}},
+		Volumes:  []runtime.VolumeMount{{Source: "data", Target: "/data", ReadOnly: true}},
+		Networks: []runtime.NetworkAttachment{{Name: "bridge"}},
+		Pull:     runtime.PullMissing,
+		Start:    true,
 	})
 	if err != nil || id != "ee71a64f0869" {
 		t.Fatalf("create = %q, %v", id, err)
@@ -304,6 +304,7 @@ func TestMiscArgs(t *testing.T) {
 		{func() error { return d.RestartContainer(ctx, "web", &timeout) }, "container restart -t 5 web"},
 		{func() error { return d.StopContainer(ctx, "web", nil) }, "container stop web"},
 		{func() error { return d.RemoveContainer(ctx, "web", true) }, "container remove --force web"},
+		{func() error { return d.RenameContainer(ctx, "web", "web-old-1a2b3c") }, "container rename web web-old-1a2b3c"},
 		{func() error { return d.RemoveImage(ctx, "ghcr.io/a/b:1", true) }, "image remove --force ghcr.io/a/b:1"},
 		{func() error { return d.TagImage(ctx, "alpine:latest", "alpine:test") }, "image tag alpine:latest alpine:test"},
 		{func() error { return d.RemoveVolume(ctx, "data", false) }, "volume remove data"},
@@ -412,6 +413,59 @@ func TestCreateContainerAdvancedArgs(t *testing.T) {
 		" alpine sleep 300"
 	if got := strings.Join(r.calls[0], " "); got != want {
 		t.Errorf("create args =\n %q\nwant\n %q", got, want)
+	}
+}
+
+func TestCreateContainerRecreateArgs(t *testing.T) {
+	r := &fakeRunner{stdout: "ee71a64f0869\n"}
+	d := NewWithRunner(r, Docker, config.Runtime{})
+	_, err := d.CreateContainer(context.Background(), runtime.CreateContainerOpts{
+		Image: "nginx:1.27", Name: "web", Cmd: []string{"nginx", "-g", "daemon off;"}, Start: true,
+		Networks: []runtime.NetworkAttachment{
+			{Name: "front", Aliases: []string{"www"}, IP: "172.30.0.5"},
+			{Name: "back", Aliases: []string{"api"}},
+		},
+		RestartPolicy: "unless-stopped", Labels: []string{"team=web"}, Entrypoint: []string{"/docker-entrypoint.sh", "--quiet"},
+		WorkDir: "/srv", ExtraHosts: []string{"db:10.0.0.5"}, CapAdd: []string{"NET_ADMIN"}, CapDrop: []string{"MKNOD"}, Privileged: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"container create --name web --network front --network-alias www --ip 172.30.0.5 --privileged --restart unless-stopped --workdir /srv" +
+			" --label team=web --add-host db:10.0.0.5 --cap-add NET_ADMIN --cap-drop MKNOD --entrypoint /docker-entrypoint.sh" +
+			" nginx:1.27 --quiet nginx -g daemon off;",
+		"network connect --alias api back ee71a64f0869",
+		"container start ee71a64f0869",
+	}
+	if len(r.calls) != len(want) {
+		t.Fatalf("calls = %q", r.calls)
+	}
+	for i, w := range want {
+		if got := strings.Join(r.calls[i], " "); got != w {
+			t.Errorf("call %d =\n %q\nwant\n %q", i, got, w)
+		}
+	}
+
+	// "no" is the default restart policy; an empty entrypoint clears it.
+	r.calls = nil
+	if _, err := d.CreateContainer(context.Background(), runtime.CreateContainerOpts{Image: "alpine", RestartPolicy: "no", Entrypoint: []string{}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(r.calls[0], " "); got != "container create --entrypoint  alpine" {
+		t.Errorf("args = %q", got)
+	}
+}
+
+func TestCreateContainerUnsupportedOptions(t *testing.T) {
+	r := &fakeRunner{}
+	d := NewWithRunner(r, WSLC, config.Runtime{})
+	_, err := d.CreateContainer(context.Background(), runtime.CreateContainerOpts{Image: "alpine", RestartPolicy: "always"})
+	if !errors.Is(err, runtime.ErrUnsupported) || !strings.Contains(err.Error(), "restart policy") {
+		t.Errorf("err = %v; want ErrUnsupported naming the restart policy", err)
+	}
+	if len(r.calls) != 0 {
+		t.Errorf("runner was called: %v", r.calls)
 	}
 }
 

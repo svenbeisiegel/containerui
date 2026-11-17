@@ -27,6 +27,8 @@ type Runtime interface {
 	StopContainer(ctx context.Context, id string, timeout *time.Duration) error
 	RestartContainer(ctx context.Context, id string, timeout *time.Duration) error
 	RemoveContainer(ctx context.Context, id string, force bool) error
+	// RenameContainer gives a container a new name; it may be running.
+	RenameContainer(ctx context.Context, id, newName string) error
 
 	// CheckTerminal reports whether an interactive shell can be opened in
 	// a running container and returns the shell to use.
@@ -100,10 +102,34 @@ type Capabilities struct {
 	// NetworkIPv6: CreateNetwork can create IPv6 (dual-stack) networks.
 	NetworkIPv6 bool
 
+	// CreateOptions holds the optional create options (Opt* constants)
+	// CreateContainer accepts.
+	CreateOptions map[string]bool
+
 	// Compose: the driver implements Composer and a compose tool was found.
 	Compose bool
 	// ComposeVersion describes the compose tool, e.g. "docker compose 2.29.1".
 	ComposeVersion string
+}
+
+// Unsupported returns the options in opts the runtime cannot apply.
+func (c Capabilities) Unsupported(opts []string) []string {
+	var out []string
+	for _, o := range opts {
+		if !c.CreateOptions[o] {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+// AllOptions marks every optional create option as supported.
+func AllOptions() map[string]bool {
+	m := map[string]bool{}
+	for _, o := range AllCreateOptions {
+		m[o] = true
+	}
+	return m
 }
 
 // LogsOpts selects which part of a container's output ContainerLogs writes.

@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -16,100 +15,6 @@ import (
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 )
 
-// The parts of docker/podman inspect output Generate uses.
-type containerInspect struct {
-	ID     string `json:"Id"`
-	Name   string
-	Config struct {
-		Image       string
-		Cmd         strSlice
-		Entrypoint  strSlice
-		Env         []string
-		Labels      map[string]string
-		User        string
-		WorkingDir  string
-		Hostname    string
-		Tty         bool
-		OpenStdin   bool
-		StopSignal  string
-		Healthcheck *healthcheck
-	}
-	HostConfig struct {
-		PortBindings  map[string][]portBinding
-		RestartPolicy struct {
-			Name              string
-			MaximumRetryCount int
-		}
-		NetworkMode string
-		Privileged  bool
-		CapAdd      []string
-		CapDrop     []string
-		Dns         []string
-		ExtraHosts  []string
-		Memory      int64
-		NanoCpus    int64
-	}
-	Mounts []struct {
-		Type        string
-		Name        string
-		Source      string
-		Destination string
-		RW          *bool
-		ReadWrite   *bool // wslc
-	}
-	NetworkSettings struct {
-		Networks map[string]json.RawMessage
-	}
-}
-
-type imageInspect struct {
-	Config struct {
-		Cmd         strSlice
-		Entrypoint  strSlice
-		Env         []string
-		Labels      map[string]string
-		User        string
-		WorkingDir  string
-		Healthcheck *healthcheck
-	}
-}
-
-type healthcheck struct {
-	Test        []string
-	Interval    int64 // nanoseconds
-	Timeout     int64
-	StartPeriod int64
-	Retries     int
-}
-
-type portBinding struct {
-	HostIP   string `json:"HostIp"`
-	HostPort string
-}
-
-// strSlice accepts a JSON string or array of strings.
-type strSlice []string
-
-func (s *strSlice) UnmarshalJSON(b []byte) error {
-	if string(b) == "null" {
-		*s = nil
-		return nil
-	}
-	var one string
-	if err := json.Unmarshal(b, &one); err == nil {
-		*s = strSlice{one}
-		return nil
-	}
-	var many []string
-	if err := json.Unmarshal(b, &many); err != nil {
-		return err
-	}
-	*s = many
-	return nil
-}
-
-var anonymousVolumeRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
-
 // Generate rebuilds a compose file for a project from the inspect output of
 // its containers. images maps an image reference (Config.Image) to its
 // inspect output; values the container only inherits from its image are
@@ -117,12 +22,12 @@ var anonymousVolumeRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 // does not record (build contexts, env_file, profiles, variables) is lost.
 func Generate(project string, containers []json.RawMessage, images map[string]json.RawMessage) ([]byte, error) {
 	type replica struct {
-		c   containerInspect
+		c   runtime.ContainerInspect
 		num int
 	}
 	services := map[string][]replica{}
 	for _, raw := range containers {
-		var c containerInspect
+		var c runtime.ContainerInspect
 		if err := json.Unmarshal(raw, &c); err != nil {
 			return nil, fmt.Errorf("decode container inspect: %w", err)
 		}
@@ -143,10 +48,10 @@ func Generate(project string, containers []json.RawMessage, images map[string]js
 
 	g := &generator{project: project, volumes: map[string]bool{}, extVolumes: map[string]bool{}, networks: map[string]bool{}, extNetworks: map[string]bool{}}
 	svcNodes := mapping()
-	for _, name := range sortedKeys(services) {
+	for _, name := range runtime.SortedKeys(services) {
 		reps := services[name]
 		sort.Slice(reps, func(i, j int) bool { return reps[i].num < reps[j].num })
-		var img imageInspect
+		var img runtime.ImageInspect
 		if raw, ok := images[reps[0].c.Config.Image]; ok {
 			_ = json.Unmarshal(raw, &img)
 		}
@@ -161,7 +66,7 @@ func Generate(project string, containers []json.RawMessage, images map[string]js
 	addPair(root, "services", svcNodes)
 	if len(g.networks)+len(g.extNetworks) > 0 {
 		nets := mapping()
-		for _, n := range sortedKeys(union(g.networks, g.extNetworks)) {
+		for _, n := range runtime.SortedKeys(union(g.networks, g.extNetworks)) {
 			if g.extNetworks[n] {
 				addPair(nets, n, external())
 			} else {
@@ -172,7 +77,7 @@ func Generate(project string, containers []json.RawMessage, images map[string]js
 	}
 	if len(g.volumes)+len(g.extVolumes) > 0 {
 		vols := mapping()
-		for _, v := range sortedKeys(union(g.volumes, g.extVolumes)) {
+		for _, v := range runtime.SortedKeys(union(g.volumes, g.extVolumes)) {
 			if g.extVolumes[v] {
 				addPair(vols, v, external())
 			} else {
@@ -200,7 +105,7 @@ type generator struct {
 	networks, extNetworks map[string]bool
 }
 
-func (g *generator) service(name string, c containerInspect, num, replicas int, img imageInspect) *yaml.Node {
+func (g *generator) service(name string, c runtime.ContainerInspect, num, replicas int, img runtime.ImageInspect) *yaml.Node {
 	s := mapping()
 	addPair(s, "image", scalar(c.Config.Image))
 
@@ -224,7 +129,7 @@ func (g *generator) service(name string, c containerInspect, num, replicas int, 
 		addPair(s, "hostname", scalar(h))
 	}
 
-	if env := without(c.Config.Env, img.Config.Env); len(env) > 0 {
+	if env := runtime.Without(c.Config.Env, img.Config.Env); len(env) > 0 {
 		m := mapping()
 		for _, kv := range env {
 			k, v, _ := strings.Cut(kv, "=")
@@ -232,7 +137,7 @@ func (g *generator) service(name string, c containerInspect, num, replicas int, 
 		}
 		addPair(s, "environment", m)
 	}
-	if ports := portList(c.HostConfig.PortBindings); len(ports) > 0 {
+	if ports := runtime.PortSpecs(c.HostConfig.PortBindings); len(ports) > 0 {
 		addPair(s, "ports", list(ports, true))
 	}
 	if vols := g.mounts(c); len(vols) > 0 {
@@ -256,7 +161,7 @@ func (g *generator) service(name string, c containerInspect, num, replicas int, 
 		}
 		addPair(s, "restart", scalar(policy))
 	}
-	if h := c.Config.Healthcheck; h != nil && len(h.Test) > 0 && !healthEqual(h, img.Config.Healthcheck) {
+	if h := c.Config.Healthcheck; h != nil && len(h.Test) > 0 && !h.Equal(img.Config.Healthcheck) {
 		addPair(s, "healthcheck", healthNode(h))
 	}
 	if c.Config.Tty {
@@ -286,9 +191,9 @@ func (g *generator) service(name string, c containerInspect, num, replicas int, 
 	if c.HostConfig.NanoCpus > 0 {
 		addPair(s, "cpus", scalar(strconv.FormatFloat(float64(c.HostConfig.NanoCpus)/1e9, 'f', -1, 64)))
 	}
-	if labels := ownLabels(c.Config.Labels, img.Config.Labels); len(labels) > 0 {
+	if labels := runtime.OwnLabels(c.Config.Labels, img.Config.Labels); len(labels) > 0 {
 		m := mapping()
-		for _, k := range sortedKeys(labels) {
+		for _, k := range runtime.SortedKeys(labels) {
 			addPair(m, k, quoted(labels[k]))
 		}
 		addPair(s, "labels", m)
@@ -303,10 +208,10 @@ func (g *generator) service(name string, c containerInspect, num, replicas int, 
 
 // mounts returns the service's volumes in short syntax and records the
 // named volumes it uses.
-func (g *generator) mounts(c containerInspect) []string {
+func (g *generator) mounts(c runtime.ContainerInspect) []string {
 	var out []string
-	for _, m := range c.Mounts {
-		ro := (m.RW != nil && !*m.RW) || (m.ReadWrite != nil && !*m.ReadWrite)
+	for i, m := range c.Mounts {
+		ro := c.ReadOnly(i)
 		suffix := ""
 		if ro {
 			suffix = ":ro"
@@ -314,7 +219,7 @@ func (g *generator) mounts(c containerInspect) []string {
 		switch m.Type {
 		case "volume":
 			switch {
-			case m.Name == "" || anonymousVolumeRe.MatchString(m.Name):
+			case m.Name == "" || runtime.AnonymousVolumeRe.MatchString(m.Name):
 				out = append(out, m.Destination)
 				continue
 			case strings.HasPrefix(m.Name, g.project+"_"):
@@ -334,9 +239,9 @@ func (g *generator) mounts(c containerInspect) []string {
 
 // serviceNetworks returns the networks the container is attached to and
 // records them. Only the project's default network means "no networks:".
-func (g *generator) serviceNetworks(c containerInspect) []string {
+func (g *generator) serviceNetworks(c runtime.ContainerInspect) []string {
 	var out []string
-	for _, n := range sortedKeys(c.NetworkSettings.Networks) {
+	for _, n := range runtime.SortedKeys(c.NetworkSettings.Networks) {
 		switch {
 		case n == g.project+"_default":
 			out = append(out, "default")
@@ -353,41 +258,6 @@ func (g *generator) serviceNetworks(c containerInspect) []string {
 	}
 	if len(out) == 1 && out[0] == "default" {
 		return nil
-	}
-	return out
-}
-
-// portList formats PortBindings as "[ip:]host:container[/udp]", skipping
-// the IPv6 duplicate of each IPv4 binding.
-func portList(b map[string][]portBinding) []string {
-	var out []string
-	seen := map[string]bool{}
-	for _, cport := range sortedKeys(b) {
-		port, proto, _ := strings.Cut(cport, "/")
-		if proto == "udp" || proto == "sctp" {
-			port += "/" + proto
-		}
-		bindings := b[cport]
-		if len(bindings) == 0 {
-			continue
-		}
-		for _, h := range bindings {
-			var spec string
-			switch {
-			case h.HostPort == "":
-				spec = port
-			case h.HostIP == "" || h.HostIP == "0.0.0.0" || h.HostIP == "::":
-				spec = h.HostPort + ":" + port
-			case strings.Contains(h.HostIP, ":"):
-				spec = "[" + h.HostIP + "]:" + h.HostPort + ":" + port
-			default:
-				spec = h.HostIP + ":" + h.HostPort + ":" + port
-			}
-			if !seen[spec] {
-				seen[spec] = true
-				out = append(out, spec)
-			}
-		}
 	}
 	return out
 }
@@ -433,15 +303,7 @@ func dependsOn(label string) *yaml.Node {
 	return m
 }
 
-func healthEqual(a, b *healthcheck) bool {
-	if b == nil {
-		return false
-	}
-	return slices.Equal(a.Test, b.Test) && a.Interval == b.Interval && a.Timeout == b.Timeout &&
-		a.StartPeriod == b.StartPeriod && a.Retries == b.Retries
-}
-
-func healthNode(h *healthcheck) *yaml.Node {
+func healthNode(h *runtime.Healthcheck) *yaml.Node {
 	m := mapping()
 	addPair(m, "test", flowList(h.Test))
 	for _, d := range []struct {
@@ -458,32 +320,6 @@ func healthNode(h *healthcheck) *yaml.Node {
 	return m
 }
 
-// without returns the entries of a that are not in b.
-func without(a, b []string) []string {
-	var out []string
-	for _, s := range a {
-		if !slices.Contains(b, s) {
-			out = append(out, s)
-		}
-	}
-	return out
-}
-
-// ownLabels drops compose's own labels and labels inherited from the image.
-func ownLabels(labels, image map[string]string) map[string]string {
-	out := map[string]string{}
-	for k, v := range labels {
-		if strings.HasPrefix(k, runtime.LabelPrefix) || strings.HasPrefix(k, "io.podman.compose.") || strings.HasPrefix(k, "com.microsoft.wsl.") {
-			continue
-		}
-		if iv, ok := image[k]; ok && iv == v {
-			continue
-		}
-		out[k] = v
-	}
-	return out
-}
-
 func union(a, b map[string]bool) map[string]bool {
 	out := map[string]bool{}
 	for k := range a {
@@ -493,15 +329,6 @@ func union(a, b map[string]bool) map[string]bool {
 		out[k] = true
 	}
 	return out
-}
-
-func sortedKeys[V any](m map[string]V) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // yaml.Node helpers.

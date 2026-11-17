@@ -35,6 +35,10 @@ type Flavor struct {
 	// aliasFlag is the network connect option for a container alias.
 	aliasFlag string
 
+	// createOptions are the optional create options (runtime.Opt*) the
+	// CLI's "container create" accepts.
+	createOptions map[string]bool
+
 	// stats: "container stats" and "system df" print JSON (not wslc).
 	stats bool
 
@@ -53,6 +57,10 @@ var (
 		pruneAnonymous: true,
 		networkDrivers: []string{"bridge"},
 		aliasFlag:      "--network-alias",
+		// TODO: verify the other create flags with "wslc container create
+		// --help" and enable the ones wslc accepts. Additional networks
+		// only need "network connect".
+		createOptions: map[string]bool{runtime.OptMultiNetwork: true},
 	}
 	Docker = &Flavor{
 		Name:   "docker",
@@ -66,6 +74,7 @@ var (
 		networkDrivers: []string{"bridge", "macvlan", "ipvlan", "overlay"},
 		networkIPv6:    true,
 		aliasFlag:      "--alias",
+		createOptions:  runtime.AllOptions(),
 		stats:          true,
 		compose:        []composeCandidate{{plugin: true}, {binary: "docker-compose"}},
 	}
@@ -81,6 +90,7 @@ var (
 		networkDrivers: []string{"bridge", "macvlan", "ipvlan"},
 		networkIPv6:    true,
 		aliasFlag:      "--alias",
+		createOptions:  runtime.AllOptions(),
 		stats:          true,
 		compose:        []composeCandidate{{plugin: true}, {binary: "podman-compose"}},
 	}

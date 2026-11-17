@@ -318,7 +318,7 @@ func TestCreateContainer(t *testing.T) {
 	e.login()
 	form := url.Values{
 		"image": {"alpine:latest"}, "name": {"new1"}, "cmd": {`sh -c "echo hi"`},
-		"ports": {"8081:80, 127.0.0.1:9000:9000/udp"}, "env": {"A=1\nB=2"},
+		"ports": {"8091:80, 127.0.0.1:9000:9000/udp"}, "env": {"A=1\nB=2"},
 		"volumes": {"data:/data"}, "network": {"bridge"}, "pull": {"missing"}, "start": {"on"},
 	}
 	w := e.post("/containers", form)

@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +37,8 @@ func TestDefaultYAMLMatchesDefaults(t *testing.T) {
 	}
 	d := Default()
 	if cfg.Server.Listen != d.Server.Listen || cfg.Runtime != d.Runtime ||
-		cfg.Server.SessionIdleTimeout != d.Server.SessionIdleTimeout || !cfg.Server.TLS.IsSelfSigned() {
+		cfg.Server.SessionIdleTimeout != d.Server.SessionIdleTimeout || !cfg.Server.TLS.IsSelfSigned() ||
+		!reflect.DeepEqual(cfg.Registry, d.Registry) {
 		t.Errorf("default.yaml = %+v, Default() = %+v", cfg, d)
 	}
 }

@@ -9,6 +9,13 @@ document.addEventListener("htmx:afterRequest", function (e) {
   }
 });
 
+// Ask before submitting forms marked data-confirm="question" (plain form
+// posts; htmx forms use hx-confirm).
+document.addEventListener("submit", function (e) {
+  var msg = e.target.getAttribute && e.target.getAttribute("data-confirm");
+  if (msg && !window.confirm(msg)) e.preventDefault();
+});
+
 // Light/dark toggle. theme.js applied any stored choice already; a click
 // flips the effective theme and remembers it.
 (function () {

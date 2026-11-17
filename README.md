@@ -21,12 +21,42 @@ Features:
   (`system df`) is measured once a minute. On podman the per-container pie
   shows the writable layers only, as podman reports no volume sizes there.
   wslc shows no metrics yet.
-- **Containers**: create (image, name, command, ports, env, volumes, network, pull policy), start, stop, restart, delete / force delete, inspect
+- **Containers**: create (image, name, command, ports, env, volumes, labels,
+  networks with aliases and fixed IPs, restart policy, pull policy), start,
+  stop, restart, delete / force delete, inspect
   - A collapsible **Advanced options** section on the create form adds
     `--tty` and `--interactive` (on by default), `--rm`, `--no-healthcheck`,
-    `--cpus`, `--memory`, `--hostname`, `--user`, `--dns`, `--dns-search`,
-    `--dns-option` and `--ulimit`. Empty fields are not passed; every value is
-    validated server-side before it reaches the runtime.
+    `--entrypoint`, `--workdir`, `--cpus`, `--memory`, `--hostname`,
+    `--user`, `--privileged`, `--cap-add`, `--cap-drop`, `--dns`,
+    `--dns-search`, `--dns-option`, `--add-host` and `--ulimit`. Empty fields
+    are not passed; every value is validated server-side before it reaches
+    the runtime. Options a runtime cannot set are hidden (wslc: restart
+    policy, labels, entrypoint, working directory, security options, extra
+    hosts and network aliases, until verified).
+  - **Edit**: the container page's *Edit* button opens the create form
+    filled with the container's settings (read back from `inspect`; values
+    the container only inherits from its image are left out). Saving
+    **recreates** the container: it is renamed and stopped, the new one is
+    created (and started, if it was running) and the old one is removed.
+    Volumes, also anonymous ones, are re-attached, so their data stays. If
+    the new container cannot be created or started, it is removed and the
+    old one is renamed back and restarted. Settings the form cannot express
+    (devices, tmpfs mounts, sysctls, security options, a custom health
+    check, …) are listed on the form as *will be lost* before you save.
+  - **Image updates**: the container page asks the image's registry whether
+    the tag was rebuilt (its digest differs from the local image's) and
+    which higher version tags of the same shape exist (`1.27.3` → `1.27.4`,
+    `1.28.0`, `2.0.0`; `1.27-alpine` only sees `-alpine` tags; `latest` only
+    gets the digest check). *Update* pulls the new image and recreates the
+    container with the same settings, like *Edit*. Public registries work
+    anonymously; private ones with the logins in the runtime's auth file
+    (`docker login` / `podman login` as the account ContainerUI runs as, or
+    `registry.auth_file`). Credential helpers (`credsStore`, `credHelpers`)
+    are not supported. Answers are cached for `registry.cache_ttl`; *Check
+    again* asks right away.
+  - Containers of a **compose project** cannot be edited or updated here:
+    change the image or settings in the project's compose file and deploy
+    it, so compose keeps track of them.
 - **Terminal**: the detail page has a *Connect* button next to the log
   buttons that opens an interactive shell (`<cli> container exec -it`) in a
   new tab. It checks first that the container runs and has a shell (bash,
@@ -293,6 +323,11 @@ The default file is [internal/config/default.yaml](internal/config/default.yaml)
 | `runtime.compose_path` | — | A standalone compose binary (`docker-compose`, `podman-compose`); empty = detect, see [Compose](#compose) |
 | `runtime.compose_timeout` | `30m` | Timeout for compose up/down/pull/start/stop |
 | `runtime.compose_dir` | `compose` | Folder for the compose files deployed through the UI (relative to the config file) |
+| `registry.check_updates` | `true` | Check registries for newer container images, see *Image updates* above |
+| `registry.cache_ttl` | `1h` | How long a registry's answer is reused |
+| `registry.timeout` | `10s` | Timeout per registry request |
+| `registry.auth_file` | — | docker `config.json` or podman `auth.json` with registry logins (relative to the config file); empty = `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`, `~/.config/containers/auth.json`, `~/.docker/config.json` |
+| `registry.insecure_registries` | `[]` | Registries (`host:port`) reached over plain HTTP |
 | `events.dir` | `events` | Linux: folder for the journal's error events and their read state (relative to the config file), see [Events](#events) |
 | `users[]` | — | Windows: additional accounts, `username` plus `password_hash` (bcrypt) or `password` (plaintext, warns). Ignored on Linux |
 
@@ -466,12 +501,14 @@ into `internal/web/static/` as `favicon.svg`, `favicon.png` or `favicon.ico`
 ```
 cmd/containerui        entry point: serve, hash-password, first-start user setup
 internal/config        defaults, embedded default.yaml, loading, validation, AddUser
-internal/runtime       Runtime interface, domain types, validation, driver registry, Composer
+internal/runtime       Runtime interface, domain types, validation, driver registry, Composer,
+                       inspect → create options and recreating a container
   cli/                 driver for wslc, docker and podman (--format json), auto-detection
   fake/                in-memory driver for tests and demos
 internal/auth          bcrypt users, Linux PAM sign-in, sessions, CSRF, login throttling
 internal/compose       compose file checks, stored files, grouping by labels, rebuilding a file
-internal/jobs          background jobs (image pulls, compose operations) with progress
+internal/jobs          background jobs (image pulls, compose operations, recreates) with progress
+internal/registry      registry API client: digests, tags, auth-file logins, update check
 internal/web           HTTP server, handlers, html/template + htmx (embedded)
 internal/tlsutil       self-signed certificate generation
 ```

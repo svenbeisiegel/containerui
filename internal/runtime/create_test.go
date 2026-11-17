@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"errors"
+	"slices"
 	"testing"
 )
 
@@ -55,10 +56,14 @@ func TestParseVolumeSpec(t *testing.T) {
 func TestCreateValidate(t *testing.T) {
 	ok := CreateContainerOpts{
 		Image: "docker.io/library/alpine:latest", Name: "web-1",
-		Env:     []string{"A=1", "B_2="},
-		Ports:   []PortMapping{{HostPort: 8080, ContainerPort: 80, Protocol: "tcp"}},
-		Volumes: []VolumeMount{{Source: "data", Target: "/data"}},
-		Network: "bridge", Pull: PullMissing,
+		Env:           []string{"A=1", "B_2="},
+		Ports:         []PortMapping{{HostPort: 8080, ContainerPort: 80, Protocol: "tcp"}},
+		Volumes:       []VolumeMount{{Source: "data", Target: "/data"}},
+		Networks:      []NetworkAttachment{{Name: "backend", Aliases: []string{"api"}, IP: "172.30.0.5"}, {Name: "front"}},
+		Pull:          PullMissing,
+		RestartPolicy: "on-failure:3", Labels: []string{"team=platform", "traefik.http.routers.web.rule=Host(`x`)"},
+		Entrypoint: []string{"/bin/sh", "-c"}, WorkDir: "/srv", ExtraHosts: []string{"db:10.0.0.5", "gw:host-gateway", "v6:::1"},
+		CapAdd: []string{"NET_ADMIN"}, CapDrop: []string{"ALL"}, Privileged: true,
 	}
 	if err := ok.Validate(); err != nil {
 		t.Fatalf("valid opts rejected: %v", err)
@@ -71,7 +76,18 @@ func TestCreateValidate(t *testing.T) {
 		{Image: "alpine", Env: []string{"NOEQUALS"}},
 		{Image: "alpine", Ports: []PortMapping{{ContainerPort: 80, Protocol: "sctp"}}},
 		{Image: "alpine", Volumes: []VolumeMount{{Source: "-v", Target: "/x"}}},
-		{Image: "alpine", Network: "--net=host"},
+		{Image: "alpine", Networks: []NetworkAttachment{{Name: "--net=host"}}},
+		{Image: "alpine", Networks: []NetworkAttachment{{Name: "host"}, {Name: "backend"}}},
+		{Image: "alpine", Networks: []NetworkAttachment{{Name: "a"}, {Name: "a"}}},
+		{Image: "alpine", Networks: []NetworkAttachment{{Name: "a", IP: "fe80::1"}}},
+		{Image: "alpine", Networks: []NetworkAttachment{{Name: "a", Aliases: []string{"-x"}}}},
+		{Image: "alpine", RestartPolicy: "sometimes"},
+		{Image: "alpine", Labels: []string{"noequals"}},
+		{Image: "alpine", Entrypoint: []string{"--privileged"}},
+		{Image: "alpine", WorkDir: "relative"},
+		{Image: "alpine", ExtraHosts: []string{"db=10.0.0.5"}},
+		{Image: "alpine", ExtraHosts: []string{"db:nope"}},
+		{Image: "alpine", CapAdd: []string{"--all"}},
 		{Image: "alpine", Pull: "sometimes"},
 		{Image: "alpine:"},
 		{Image: "a//b"},
@@ -195,5 +211,17 @@ func TestCreateVolumeValidate(t *testing.T) {
 	}
 	if err := ValidateVolumeName("--all"); !errors.Is(err, ErrInvalid) {
 		t.Errorf("ValidateVolumeName(--all) = %v", err)
+	}
+}
+
+func TestUsedOptions(t *testing.T) {
+	o := CreateContainerOpts{Image: "a", RestartPolicy: "no", Entrypoint: []string{}, Networks: []NetworkAttachment{{Name: "a", IP: "10.0.0.2"}, {Name: "b"}}, Privileged: true}
+	got := o.UsedOptions()
+	want := []string{OptEntrypoint, OptPrivileged, OptNetworkAlias, OptMultiNetwork}
+	if !slices.Equal(got, want) {
+		t.Errorf("UsedOptions = %v; want %v", got, want)
+	}
+	if (&CreateContainerOpts{}).UsedOptions() != nil {
+		t.Error("empty opts use options")
 	}
 }

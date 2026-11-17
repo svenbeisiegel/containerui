@@ -12,6 +12,7 @@ import (
 	"regexp"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -30,8 +31,9 @@ type Runtime struct {
 	images     map[string]*runtime.Image     // by Ref()
 	volumes    []runtime.Volume
 	networks   []runtime.Network
-	env        map[string][]string // container environment by ID
-	netSpecs   map[string]*netSpec // by network name
+	env        map[string][]string                    // container environment by ID
+	created    map[string]runtime.CreateContainerOpts // create options by container ID
+	netSpecs   map[string]*netSpec                    // by network name
 
 	// Err, if set, is returned by every call (to test error rendering).
 	Err error
@@ -56,7 +58,7 @@ type Runtime struct {
 var _ runtime.Runtime = (*Runtime)(nil)
 
 func New() *Runtime {
-	return &Runtime{containers: map[string]*runtime.Container{}, images: map[string]*runtime.Image{}, env: map[string][]string{}, netSpecs: map[string]*netSpec{}}
+	return &Runtime{containers: map[string]*runtime.Container{}, images: map[string]*runtime.Image{}, env: map[string][]string{}, created: map[string]runtime.CreateContainerOpts{}, netSpecs: map[string]*netSpec{}}
 }
 
 // NewSeeded returns a fake with a few images, containers, volumes and networks.
@@ -102,7 +104,8 @@ func (f *Runtime) Name() string { return "fake" }
 
 func (f *Runtime) Capabilities() runtime.Capabilities {
 	c := runtime.Capabilities{Restart: true, Inspect: true, Pull: true, Tag: true, Volumes: true, Networks: true, Terminal: true, Logs: true,
-		VolumeDrivers: volumeDrivers, PruneAnonymous: true, NetworkDrivers: networkDrivers, NetworkIPv6: true, Stats: !f.NoStats}
+		VolumeDrivers: volumeDrivers, PruneAnonymous: true, NetworkDrivers: networkDrivers, NetworkIPv6: true, Stats: !f.NoStats,
+		CreateOptions: runtime.AllOptions()}
 	if f.NoNetworks {
 		c.Networks = false
 	}
@@ -187,8 +190,26 @@ func (f *Runtime) CreateContainer(_ context.Context, opts runtime.CreateContaine
 	}
 	c := &runtime.Container{ID: id, Name: name, Image: opts.Image, Command: strings.Join(opts.Cmd, " "), State: runtime.StateCreated,
 		Status: "Created", Ports: strings.Join(ports, ", "), Created: time.Now(), Networks: []string{"bridge"}}
-	if opts.Network != "" {
-		c.Networks = []string{opts.Network}
+	if len(opts.Networks) > 0 {
+		c.Networks = nil
+		for _, n := range opts.Networks {
+			if !slices.ContainsFunc(f.networks, func(x runtime.Network) bool { return x.Name == n.Name }) {
+				return "", notFoundNetwork("container create", n.Name)
+			}
+			c.Networks = append(c.Networks, n.Name)
+			s := f.spec(n.Name)
+			s.Aliases[id] = n.Aliases
+			if n.IP != "" {
+				s.IPs[id] = n.IP
+			}
+		}
+	}
+	for _, p := range opts.Ports {
+		for _, other := range f.containers {
+			if other.State.IsRunning() && opts.Start && p.HostPort != 0 && strings.Contains(other.Ports, ":"+strconv.Itoa(int(p.HostPort))+"->") {
+				return "", &runtime.CommandError{Op: "container create", Output: "port is already allocated", Kind: runtime.ErrConflict}
+			}
+		}
 	}
 	for _, v := range opts.Volumes {
 		c.Mounts = append(c.Mounts, v.Source)
@@ -198,6 +219,12 @@ func (f *Runtime) CreateContainer(_ context.Context, opts runtime.CreateContaine
 	}
 	f.containers[id] = c
 	f.env[id] = opts.Env
+	f.created[id] = opts
+	c.Labels = map[string]string{}
+	for _, l := range opts.Labels {
+		k, v, _ := strings.Cut(l, "=")
+		c.Labels[k] = v
+	}
 	return id, nil
 }
 
@@ -241,6 +268,27 @@ func (f *Runtime) RemoveContainer(_ context.Context, id string, force bool) erro
 		return &runtime.CommandError{Op: "container remove", Output: "container is running", Kind: runtime.ErrConflict}
 	}
 	delete(f.containers, c.ID)
+	delete(f.created, c.ID)
+	return nil
+}
+
+func (f *Runtime) RenameContainer(_ context.Context, id, newName string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.record("rename %s %s", id, newName); err != nil {
+		return err
+	}
+	if err := runtime.ValidateContainerName(newName); err != nil {
+		return err
+	}
+	c, err := f.find(id)
+	if err != nil {
+		return err
+	}
+	if other, err := f.find(newName); err == nil && other != c {
+		return &runtime.CommandError{Op: "container rename", Output: "name " + newName + " already in use", Kind: runtime.ErrConflict}
+	}
+	c.Name = newName
 	return nil
 }
 

@@ -22,6 +22,7 @@ import (
 	"github.com/svenbeisiegel/containerui/internal/hostinfo"
 	"github.com/svenbeisiegel/containerui/internal/hostlog"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
+	"github.com/svenbeisiegel/containerui/internal/registry"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 )
 
@@ -54,6 +55,9 @@ type Options struct {
 	// Events are the host's error events for the Events page; nil hides
 	// the page.
 	Events *events.Store
+	// Updates checks registries for newer container images; nil hides the
+	// update check.
+	Updates registry.UpdateChecker
 }
 
 // favicon is the first of these files present in static/. None is shipped;
@@ -88,7 +92,8 @@ type Server struct {
 	installType string
 	hostlog     hostlog.Source // nil: no system log on this platform
 	hostinfo    func(context.Context) hostinfo.Info
-	events      *events.Store // nil: no Events page
+	events      *events.Store          // nil: no Events page
+	updates     registry.UpdateChecker // nil: no image update check
 
 	terminals  atomic.Int32 // open terminal connections
 	logStreams atomic.Int32 // open live log streams
@@ -100,7 +105,7 @@ func New(o Options) (*Server, error) {
 		throttle: auth.NewThrottle(), secure: o.Secure, log: o.Logger, store: compose.Store{Dir: o.ComposeDir},
 		pages:   map[string]*template.Template{},
 		version: o.Version, installType: o.InstallType,
-		hostlog: o.HostLog, hostinfo: o.HostInfo, events: o.Events,
+		hostlog: o.HostLog, hostinfo: o.HostInfo, events: o.Events, updates: o.Updates,
 	}
 	if s.hostlog == nil {
 		s.hostlog = hostlog.New()
@@ -193,6 +198,11 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("POST /containers", s.handleContainerCreate)
 	authed.HandleFunc("GET /containers/{id}", s.handleContainerDetail)
 	authed.HandleFunc("POST /containers/{id}/{action}", s.handleContainerAction)
+	authed.HandleFunc("GET /containers/{id}/edit", s.handleContainerEdit)
+	authed.HandleFunc("POST /containers/{id}/edit", s.handleContainerEditSave)
+	authed.HandleFunc("POST /containers/{id}/update", s.handleContainerUpdate)
+	authed.HandleFunc("GET /partials/containers/{id}/update", s.handleContainerUpdatePartial)
+	authed.HandleFunc("GET /partials/containers/{id}/job", s.handleRecreateJobPartial)
 	authed.HandleFunc("GET /containers/{id}/terminal", s.handleTerminalPage)
 	authed.HandleFunc("GET /containers/{id}/terminal/check", s.handleTerminalCheck)
 	authed.HandleFunc("GET /containers/{id}/terminal/ws", s.handleTerminalWS)

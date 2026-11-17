@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -106,7 +107,8 @@ func (d *Driver) Path() string { return d.path }
 func (d *Driver) Capabilities() runtime.Capabilities {
 	c := runtime.Capabilities{Restart: true, Inspect: true, Pull: true, Tag: true, Volumes: true, Networks: true, Terminal: true, Logs: true,
 		VolumeDrivers: d.flavor.volumeDrivers, PruneAnonymous: d.flavor.pruneAnonymous,
-		NetworkDrivers: d.flavor.networkDrivers, NetworkIPv6: d.flavor.networkIPv6, Stats: d.flavor.stats}
+		NetworkDrivers: d.flavor.networkDrivers, NetworkIPv6: d.flavor.networkIPv6, Stats: d.flavor.stats,
+		CreateOptions: d.flavor.createOptions}
 	if d.compose != nil {
 		c.Compose, c.ComposeVersion = true, d.compose.name+" "+d.compose.version
 	}
@@ -188,6 +190,13 @@ func (d *Driver) CreateContainer(ctx context.Context, opts runtime.CreateContain
 	if err := opts.Validate(); err != nil {
 		return "", err
 	}
+	if un := d.Capabilities().Unsupported(opts.UsedOptions()); len(un) > 0 {
+		names := make([]string, len(un))
+		for i, o := range un {
+			names[i] = runtime.OptionLabels[o]
+		}
+		return "", fmt.Errorf("%w: %s cannot set %s", runtime.ErrUnsupported, d.flavor.Name, strings.Join(names, ", "))
+	}
 	args := []string{"container", "create"}
 	if opts.Name != "" {
 		args = append(args, "--name", opts.Name)
@@ -201,27 +210,38 @@ func (d *Driver) CreateContainer(ctx context.Context, opts runtime.CreateContain
 	for _, v := range opts.Volumes {
 		args = append(args, "-v", v.String())
 	}
-	if opts.Network != "" {
-		args = append(args, "--network", opts.Network)
+	if len(opts.Networks) > 0 {
+		n := opts.Networks[0]
+		args = append(args, "--network", n.Name)
+		for _, a := range n.Aliases {
+			args = append(args, "--network-alias", a)
+		}
+		if n.IP != "" {
+			args = append(args, "--ip", n.IP)
+		}
 	}
 	if opts.Pull != "" {
 		args = append(args, "--pull", string(opts.Pull))
 	}
 	// Long flag forms only: wslc uses -h for --hostname, not for help.
-	if opts.TTY {
-		args = append(args, "--tty")
+	for _, b := range []struct {
+		flag string
+		on   bool
+	}{
+		{"--tty", opts.TTY}, {"--interactive", opts.Interactive}, {"--rm", opts.AutoRemove},
+		{"--no-healthcheck", opts.NoHealthcheck}, {"--privileged", opts.Privileged},
+	} {
+		if b.on {
+			args = append(args, b.flag)
+		}
 	}
-	if opts.Interactive {
-		args = append(args, "--interactive")
-	}
-	if opts.AutoRemove {
-		args = append(args, "--rm")
-	}
-	if opts.NoHealthcheck {
-		args = append(args, "--no-healthcheck")
+	restart := opts.RestartPolicy
+	if restart == "no" {
+		restart = ""
 	}
 	for _, kv := range []struct{ flag, val string }{
 		{"--cpus", opts.CPUs}, {"--memory", opts.Memory}, {"--hostname", opts.Hostname}, {"--user", opts.User},
+		{"--restart", restart}, {"--workdir", opts.WorkDir},
 	} {
 		if kv.val != "" {
 			args = append(args, kv.flag, kv.val)
@@ -232,14 +252,27 @@ func (d *Driver) CreateContainer(ctx context.Context, opts runtime.CreateContain
 		vals []string
 	}{
 		{"--dns", opts.DNS}, {"--dns-search", opts.DNSSearch}, {"--dns-option", opts.DNSOptions}, {"--ulimit", opts.Ulimits},
+		{"--label", opts.Labels}, {"--add-host", opts.ExtraHosts}, {"--cap-add", opts.CapAdd}, {"--cap-drop", opts.CapDrop},
 	} {
 		for _, v := range multi.vals {
 			args = append(args, multi.flag, v)
 		}
 	}
+	// --entrypoint takes a single executable; the rest of an exec-form
+	// entrypoint goes in front of the command. An empty entrypoint
+	// clears the image's.
+	cmd := opts.Cmd
+	if opts.Entrypoint != nil {
+		ep := ""
+		if len(opts.Entrypoint) > 0 {
+			ep = opts.Entrypoint[0]
+			cmd = append(slices.Clone(opts.Entrypoint[1:]), cmd...)
+		}
+		args = append(args, "--entrypoint", ep)
+	}
 	// Everything after the image is passed to the container verbatim.
 	args = append(args, opts.Image)
-	args = append(args, opts.Cmd...)
+	args = append(args, cmd...)
 
 	// Creating may implicitly pull the image, so allow the pull timeout.
 	ctx, cancel := context.WithTimeout(ctx, d.pullTimeout)
@@ -254,6 +287,11 @@ func (d *Driver) CreateContainer(ctx context.Context, opts runtime.CreateContain
 	id := lastLine(stdout)
 	if id == "" {
 		id = opts.Name
+	}
+	for _, n := range opts.Networks[min(1, len(opts.Networks)):] {
+		if err := d.ConnectNetwork(ctx, n.Name, id, runtime.ConnectNetworkOpts{Aliases: n.Aliases, IP: n.IP}); err != nil {
+			return id, fmt.Errorf("container created but not connected to network %s: %w", n.Name, err)
+		}
 	}
 	if opts.Start {
 		if err := d.StartContainer(ctx, id); err != nil {
@@ -286,6 +324,14 @@ func (d *Driver) RemoveContainer(ctx context.Context, id string, force bool) err
 		flags = append(flags, "--force")
 	}
 	return d.containerOp(ctx, "remove", id, flags...)
+}
+
+func (d *Driver) RenameContainer(ctx context.Context, id, newName string) error {
+	if err := errors.Join(runtime.ValidateContainerID(id), runtime.ValidateContainerName(newName)); err != nil {
+		return err
+	}
+	_, err := d.run(ctx, "container rename", "container", "rename", id, newName)
+	return err
 }
 
 func timeoutArgs(t *time.Duration) []string {

@@ -236,6 +236,78 @@
 </div>
 {{end}}
 
+{{/* ---------- container recreate (edit / image update) ---------- */}}
+{{define "container_update"}}
+<section class="panel update-panel" id="update">
+  <div class="panel-head">
+    <h2>Image updates</h2>
+    {{if .Name}}<button type="button" class="small" hx-get="/partials/containers/{{.ID}}/update?refresh=1" hx-target="#update" hx-swap="outerHTML" hx-disabled-elt="this">Check again</button>{{end}}
+  </div>
+  {{$v := .}}
+  {{with .Status}}
+  {{if .Err}}<p class="muted">Could not check {{with $v.Ref}}<code>{{.}}</code>{{else}}the image{{end}}: {{.Err}}</p>
+  {{else if .Pinned}}<p class="muted"><code>{{$v.Ref}}</code> is pinned to a digest and does not change.</p>
+  {{else}}
+    {{if .DigestChanged}}
+    <p><span class="badge warn">update</span> The registry has a newer image for <code>{{$v.Ref}}</code>.</p>
+    {{if $v.CanRecreate}}{{template "update_form" (dict "V" $v "Image" $v.Ref "Label" (printf "Update to the new %s" $v.Ref))}}{{end}}
+    {{else if .DigestUnknown}}
+    <p class="muted">The local image of <code>{{$v.Ref}}</code> has no registry digest (it was built or loaded locally), so a rebuilt tag cannot be detected.</p>
+    {{else}}
+    <p><span class="badge ok">up to date</span> <code>{{$v.Ref}}</code> matches the registry.</p>
+    {{end}}
+    {{if $v.Tags}}
+    <p>Newer versions: {{range $i, $t := $v.Tags}}{{if $i}}, {{end}}<code>{{$t.Name}}</code> <span class="muted small">({{$t.Kind}})</span>{{end}}</p>
+    {{if and $v.CanRecreate (not $v.Project)}}
+    <form method="post" action="/containers/{{$v.ID}}/update" hx-post="/containers/{{$v.ID}}/update" hx-swap="none" class="inline-form update-form"
+          hx-confirm="Recreate container {{$v.Name}} with the selected image? It is stopped and replaced with the same settings; volumes are kept.{{if $v.AutoRemove}} It was started with --rm, so it cannot be restored if this fails.{{end}}" hx-disabled-elt="find button">
+      <input type="hidden" name="csrf" value="{{$v.CSRF}}">
+      <select name="image" aria-label="Version">
+        {{range $v.Tags}}<option value="{{.Ref}}">{{.Name}} ({{.Kind}})</option>{{end}}
+      </select>
+      <button type="submit" class="primary">Update to selected version</button>
+    </form>
+    {{end}}
+    {{end}}
+  {{end}}
+  {{if $v.Project}}<p class="muted small">This container belongs to compose project <a href="/compose/{{$v.Project}}">{{$v.Project}}</a>: change the image in its compose file, then pull and deploy the project.</p>{{end}}
+  {{if not .CheckedAt.IsZero}}<p class="muted small">Checked {{ago .CheckedAt}}.</p>{{end}}
+  {{end}}
+</section>
+{{end}}
+
+{{/* update_form expects dict: V (containerUpdateView), Image, Label. */}}
+{{define "update_form"}}
+{{if not .V.Project}}
+<form method="post" action="/containers/{{.V.ID}}/update" hx-post="/containers/{{.V.ID}}/update" hx-swap="none"
+      hx-confirm="Recreate container {{.V.Name}} with {{.Image}}? It is stopped and replaced with the same settings; volumes are kept.{{if .V.AutoRemove}} It was started with --rm, so it cannot be restored if this fails.{{end}}" hx-disabled-elt="find button">
+  <input type="hidden" name="csrf" value="{{.V.CSRF}}">
+  <input type="hidden" name="image" value="{{.Image}}">
+  <button type="submit" class="primary">{{.Label}}</button>
+</form>
+{{end}}
+{{end}}
+
+{{/* recreate_job expects recreateJobView. */}}
+{{define "recreate_job"}}
+<div id="recreate-job" {{if and .Job (not .Job.Done)}}hx-get="/partials/containers/{{.Name}}/job?poll=1" hx-trigger="every 1s" hx-swap="outerHTML"{{end}}>
+  {{with .Job}}
+  <section class="panel">
+    <details class="job {{.Status}}" {{if not .Done}}open{{end}}>
+      <summary>
+        <span class="badge {{if eq .Status "running"}}warn{{else if eq .Status "succeeded"}}ok{{else}}bad{{end}}">{{if eq .Status "running"}}recreating{{else}}{{.Status}}{{end}}</span>
+        <span>Recreate <span class="mono">{{.Target}}</span></span>
+        <span class="muted small">started {{ago .Started}} by {{.Owner}}</span>
+      </summary>
+      {{if .Error}}<div class="flash error">{{.Error}}</div>{{end}}
+      {{if .Lines}}<pre class="log">{{range .Lines}}{{.}}
+{{end}}</pre>{{end}}
+    </details>
+  </section>
+  {{end}}
+</div>
+{{end}}
+
 {{/* ---------- volumes ---------- */}}
 {{define "volume_users"}}{{range $i, $c := .}}{{if $i}}, {{end}}<a href="/containers/{{$c}}">{{$c}}</a>{{else}}<span class="muted">–</span>{{end}}{{end}}
 

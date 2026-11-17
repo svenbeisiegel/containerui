@@ -47,6 +47,17 @@ runtime:
 events:
   dir: events
 
+# The container page asks the image's registry whether a newer image is
+# available: the same tag rebuilt, or higher version tags (1.27 -> 1.28).
+# Logins come from the runtime's auth file (docker login / podman login of
+# the account ContainerUI runs as); credential helpers are not supported.
+registry:
+  check_updates: true
+  cache_ttl: 1h           # how long a registry's answer is reused
+  timeout: 10s            # per registry request
+  auth_file: ""           # empty = podman auth.json, then ~/.docker/config.json
+  insecure_registries: [] # host:port of registries reached over plain HTTP
+
 # Windows: additional sign-in accounts. When the list is empty and
 # system_accounts is false, ContainerUI asks for a username and password on
 # its first start and adds the account here.

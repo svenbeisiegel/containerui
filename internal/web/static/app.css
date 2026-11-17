@@ -616,3 +616,12 @@ details.event.unread .event-message, details.event.unread .event-component { fon
   details.event > summary { grid-template-columns: max-content max-content minmax(0, 1fr); }
   .event-message { grid-column: 1 / -1; }
 }
+
+/* ---------- container edit / image update ---------- */
+.flash.notice .lost-title { margin: .6rem 0 .2rem; }
+.flash.notice ul.lost { margin: 0; padding-left: 1.2rem; }
+.update-panel p { margin: .35rem 0; }
+.update-panel .panel-head button { margin-left: auto; }
+.update-panel form { margin: .5rem 0; }
+.update-form select { flex: 0 1 16rem; }
+@media (max-width: 720px) { .update-form { flex-wrap: wrap; } }

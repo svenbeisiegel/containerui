@@ -52,32 +52,69 @@ func (f *Runtime) inspectDoc(c *runtime.Container) map[string]any {
 			bindings[m[3]+"/"+m[4]] = []map[string]string{{"HostIp": m[1], "HostPort": m[2]}}
 		}
 	}
+	opts, created := f.created[c.ID]
 	var mounts []map[string]any
-	for _, m := range c.Mounts {
-		mounts = append(mounts, map[string]any{"Type": "volume", "Name": m, "Destination": "/data/" + m, "RW": true})
+	if created {
+		for _, v := range opts.Volumes {
+			typ := "volume"
+			if strings.ContainsAny(v.Source, `/\`) {
+				typ = "bind"
+			}
+			mounts = append(mounts, map[string]any{"Type": typ, "Name": v.Source, "Source": v.Source, "Destination": v.Target, "RW": !v.ReadOnly})
+		}
+	} else {
+		for _, m := range c.Mounts {
+			mounts = append(mounts, map[string]any{"Type": "volume", "Name": m, "Destination": "/data/" + m, "RW": true})
+		}
 	}
 	nets := map[string]any{}
 	for _, n := range c.Networks {
-		nets[n] = map[string]any{}
+		ep := map[string]any{"Aliases": append(slices.Clone(f.spec(n).Aliases[c.ID]), c.ID[:min(12, len(c.ID))])}
+		if ip := f.spec(n).IPs[c.ID]; ip != "" {
+			ep["IPAMConfig"] = map[string]any{"IPv4Address": ip}
+		}
+		nets[n] = ep
 	}
 	var cmd []string
 	if c.Command != "" {
 		cmd = strings.Fields(c.Command)
 	}
+	if created {
+		cmd = opts.Cmd
+	}
 	mode := "bridge"
 	if len(c.Networks) > 0 {
 		mode = c.Networks[0]
+	}
+	restart := opts.RestartPolicy
+	if restart == "" {
+		restart = "no"
+	}
+	name, retries, _ := strings.Cut(restart, ":")
+	maxRetries, _ := strconv.Atoi(retries)
+	hostname := c.ID[:min(12, len(c.ID))]
+	if opts.Hostname != "" {
+		hostname = opts.Hostname
+	}
+	var nanoCPUs float64
+	if opts.CPUs != "" {
+		nanoCPUs, _ = strconv.ParseFloat(opts.CPUs, 64)
 	}
 	return map[string]any{
 		"Id":   c.ID,
 		"Name": "/" + c.Name,
 		"Config": map[string]any{
-			"Image": c.Image, "Cmd": cmd, "Env": append(slices.Clone(f.env[c.ID]), imageEnv...), "Labels": c.Labels, "Hostname": c.ID,
+			"Image": c.Image, "Cmd": cmd, "Env": append(slices.Clone(f.env[c.ID]), imageEnv...), "Labels": c.Labels, "Hostname": hostname,
+			"Entrypoint": opts.Entrypoint, "WorkingDir": opts.WorkDir, "User": opts.User, "Tty": opts.TTY, "OpenStdin": opts.Interactive,
 		},
-		"HostConfig":      map[string]any{"PortBindings": bindings, "NetworkMode": mode, "RestartPolicy": map[string]any{"Name": "no"}},
+		"HostConfig": map[string]any{"PortBindings": bindings, "NetworkMode": mode,
+			"RestartPolicy": map[string]any{"Name": name, "MaximumRetryCount": maxRetries},
+			"AutoRemove":    opts.AutoRemove, "Privileged": opts.Privileged, "CapAdd": opts.CapAdd, "CapDrop": opts.CapDrop,
+			"ExtraHosts": opts.ExtraHosts, "Dns": opts.DNS, "DnsSearch": opts.DNSSearch, "DnsOptions": opts.DNSOptions,
+			"NanoCpus": int64(nanoCPUs * 1e9)},
 		"Mounts":          mounts,
 		"NetworkSettings": map[string]any{"Networks": nets},
-		"State":           map[string]any{"Status": c.State},
+		"State":           map[string]any{"Status": c.State, "Running": c.State.IsRunning()},
 	}
 }
 

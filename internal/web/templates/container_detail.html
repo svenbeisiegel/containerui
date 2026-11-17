@@ -3,6 +3,7 @@
 <div class="page-head">
   <h1>{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}</h1>
   <div class="actions">
+    {{if $v.CanEdit}}<a class="button" href="/containers/{{$v.Container.ID}}/edit">Edit</a>{{end}}
     {{if and $v.Container $v.Caps.Logs}}
     <a class="button" href="/containers/{{$v.Container.ID}}/logs/download" download>Download logs</a>
     {{if $v.Container.State.IsRunning}}<a class="button" href="/containers/{{$v.Container.ID}}/logs/watch" target="_blank" rel="noopener">Watch logs</a>{{end}}
@@ -12,6 +13,7 @@
   </div>
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
+{{with $v.Job}}{{template "recreate_job" .}}{{end}}
 {{with $v.Container}}
 <section class="panel">
   <dl class="props">
@@ -22,10 +24,17 @@
     {{if .Ports}}<dt>Ports</dt><dd class="mono">{{.Ports}}</dd>{{end}}
     {{if .Networks}}<dt>Networks</dt><dd>{{if $v.Caps.Networks}}{{range $i, $n := .Networks}}{{if $i}}, {{end}}<a href="/networks/{{$n}}">{{$n}}</a>{{end}}{{else}}{{join .Networks ", "}}{{end}}</dd>{{end}}
     {{if .Mounts}}<dt>Mounts</dt><dd>{{join .Mounts ", "}}</dd>{{end}}
+    {{if $v.Project}}<dt>Compose project</dt><dd><a href="/compose/{{$v.Project}}">{{$v.Project}}</a> <span class="muted">— edit and update it through the project</span></dd>{{end}}
     <dt>Created</dt><dd>{{datetime .Created}} ({{ago .Created}})</dd>
   </dl>
   {{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF)}}
 </section>
+{{if $v.Updates}}
+<section class="panel update-panel" id="update" hx-get="/partials/containers/{{.ID}}/update" hx-trigger="load" hx-swap="outerHTML">
+  <h2>Image updates</h2>
+  <p class="muted">Checking the registry for a newer image…</p>
+</section>
+{{end}}
 {{end}}
 {{if $v.Inspect}}
 <section class="panel">

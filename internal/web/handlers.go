@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -143,6 +144,14 @@ type containerDetailView struct {
 	Caps      runtime.Capabilities
 	CSRF      string
 	Terminal  *terminalView // nil if the runtime has no terminal support
+	// Project is the compose project managing the container ("" if none).
+	Project string
+	// CanEdit: the container can be edited (recreated).
+	CanEdit bool
+	// Updates: show the image update check.
+	Updates bool
+	// Job is the running or recent recreate job of the container.
+	Job *recreateJobView
 }
 
 func (s *Server) handleContainerDetail(w http.ResponseWriter, r *http.Request) {
@@ -163,15 +172,30 @@ func (s *Server) handleContainerDetail(w http.ResponseWriter, r *http.Request) {
 			v.Inspect = prettyJSON(raw)
 		}
 	}
+	name := id
+	if v.Container != nil {
+		name = v.Container.Name
+	}
+	if j := s.recreateJob(name); j != nil {
+		v.Job = &recreateJobView{Name: name, Job: j}
+	}
 	if v.Container == nil && v.Inspect == "" {
-		w.WriteHeader(http.StatusNotFound)
-		if v.Err == "" {
-			v.Err = "Container " + id + " not found."
+		if v.Job != nil {
+			// Between removing the old and creating the new container.
+			v.Err = ""
+		} else {
+			w.WriteHeader(http.StatusNotFound)
+			if v.Err == "" {
+				v.Err = "Container " + id + " not found."
+			}
 		}
 	}
 	title := id
 	if v.Container != nil {
 		title = v.Container.Name
+		v.Project = v.Container.Labels[runtime.LabelProject]
+		v.CanEdit = v.Caps.Inspect && v.Project == ""
+		v.Updates = s.updates != nil
 		if v.Caps.Terminal {
 			// Running containers load the shell check asynchronously.
 			v.Terminal = &terminalView{ID: v.Container.ID, Name: v.Container.Name, State: "stopped", CSRF: v.CSRF}
@@ -250,18 +274,42 @@ func (s *Server) handleContainerAction(w http.ResponseWriter, r *http.Request) {
 type containerForm struct {
 	Image, Name, Cmd, Env, Ports, Volumes, Network, Pull string
 	Start                                                bool
+	// Aliases and IP of the first network; more networks, one per line:
+	// "name [alias=a,b] [ip=x.x.x.x]".
+	NetworkAliases, NetworkIP, ExtraNetworks string
 
 	// Advanced options; the raw text is kept for re-rendering.
-	TTY, Interactive, AutoRemove, NoHealthcheck                       bool
+	TTY, Interactive, AutoRemove, NoHealthcheck, Privileged           bool
 	CPUs, Memory, Hostname, User, DNS, DNSSearch, DNSOptions, Ulimits string
+	Restart, Entrypoint, WorkDir, Labels, ExtraHosts, CapAdd, CapDrop string
 }
 
 // AdvancedChanged reports whether any advanced option differs from its
 // default, in which case the collapsed section is rendered open.
 func (f containerForm) AdvancedChanged() bool {
-	return !f.TTY || !f.Interactive || f.AutoRemove || f.NoHealthcheck ||
+	return !f.TTY || !f.Interactive || f.AutoRemove || f.NoHealthcheck || f.Privileged ||
 		f.CPUs != "" || f.Memory != "" || f.Hostname != "" || f.User != "" ||
-		f.DNS != "" || f.DNSSearch != "" || f.DNSOptions != "" || f.Ulimits != ""
+		f.DNS != "" || f.DNSSearch != "" || f.DNSOptions != "" || f.Ulimits != "" ||
+		f.Entrypoint != "" || f.WorkDir != "" || f.ExtraHosts != "" || f.CapAdd != "" || f.CapDrop != ""
+}
+
+// RestartPolicies are the choices of the restart policy select; a value
+// such as on-failure:3 is added by the template.
+var RestartPolicies = []string{"no", "always", "unless-stopped", "on-failure"}
+
+func (f containerForm) RestartPolicies() []string {
+	if f.Restart != "" && !slices.Contains(RestartPolicies, f.Restart) {
+		return append(slices.Clone(RestartPolicies), f.Restart)
+	}
+	return RestartPolicies
+}
+
+// containerEdit describes the container an edit form recreates.
+type containerEdit struct {
+	ID, Name   string
+	Running    bool
+	AutoRemove bool
+	Lost       []string // settings that cannot be carried over
 }
 
 type containerNewView struct {
@@ -269,6 +317,7 @@ type containerNewView struct {
 	Err      string
 	Images   []runtime.Image
 	Networks []runtime.Network
+	Edit     *containerEdit // nil: create a new container
 }
 
 func (s *Server) newContainerView(ctx context.Context, f containerForm, err string) containerNewView {
@@ -285,31 +334,49 @@ func (s *Server) handleContainerNew(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "container_new", s.newPage(r, "Create container", "containers", s.newContainerView(r.Context(), f, "")))
 }
 
-func (s *Server) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
-	f := containerForm{
-		Image:   strings.TrimSpace(r.PostFormValue("image")),
-		Name:    strings.TrimSpace(r.PostFormValue("name")),
-		Cmd:     r.PostFormValue("cmd"),
-		Env:     r.PostFormValue("env"),
-		Ports:   r.PostFormValue("ports"),
-		Volumes: r.PostFormValue("volumes"),
-		Network: r.PostFormValue("network"),
-		Pull:    r.PostFormValue("pull"),
-		Start:   r.PostFormValue("start") == "on",
+// parseContainerForm reads the create / edit form.
+func parseContainerForm(r *http.Request) containerForm {
+	v := func(name string) string { return strings.TrimSpace(r.PostFormValue(name)) }
+	on := func(name string) bool { return r.PostFormValue(name) == "on" }
+	return containerForm{
+		Image:          v("image"),
+		Name:           v("name"),
+		Cmd:            r.PostFormValue("cmd"),
+		Env:            r.PostFormValue("env"),
+		Ports:          r.PostFormValue("ports"),
+		Volumes:        r.PostFormValue("volumes"),
+		Network:        r.PostFormValue("network"),
+		NetworkAliases: v("network_aliases"),
+		NetworkIP:      v("network_ip"),
+		ExtraNetworks:  r.PostFormValue("extra_networks"),
+		Pull:           r.PostFormValue("pull"),
+		Start:          on("start"),
 
-		TTY:           r.PostFormValue("tty") == "on",
-		Interactive:   r.PostFormValue("interactive") == "on",
-		AutoRemove:    r.PostFormValue("rm") == "on",
-		NoHealthcheck: r.PostFormValue("no_healthcheck") == "on",
-		CPUs:          strings.TrimSpace(r.PostFormValue("cpus")),
-		Memory:        strings.TrimSpace(r.PostFormValue("memory")),
-		Hostname:      strings.TrimSpace(r.PostFormValue("hostname")),
-		User:          strings.TrimSpace(r.PostFormValue("user")),
-		DNS:           strings.TrimSpace(r.PostFormValue("dns")),
-		DNSSearch:     strings.TrimSpace(r.PostFormValue("dns_search")),
-		DNSOptions:    strings.TrimSpace(r.PostFormValue("dns_option")),
-		Ulimits:       strings.TrimSpace(r.PostFormValue("ulimit")),
+		TTY:           on("tty"),
+		Interactive:   on("interactive"),
+		AutoRemove:    on("rm"),
+		NoHealthcheck: on("no_healthcheck"),
+		Privileged:    on("privileged"),
+		CPUs:          v("cpus"),
+		Memory:        v("memory"),
+		Hostname:      v("hostname"),
+		User:          v("user"),
+		DNS:           v("dns"),
+		DNSSearch:     v("dns_search"),
+		DNSOptions:    v("dns_option"),
+		Ulimits:       v("ulimit"),
+		Restart:       v("restart"),
+		Entrypoint:    r.PostFormValue("entrypoint"),
+		WorkDir:       v("workdir"),
+		Labels:        r.PostFormValue("labels"),
+		ExtraHosts:    v("add_host"),
+		CapAdd:        v("cap_add"),
+		CapDrop:       v("cap_drop"),
 	}
+}
+
+func (s *Server) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
+	f := parseContainerForm(r)
 	opts, err := f.toOpts()
 	if err == nil {
 		var id string
@@ -342,11 +409,16 @@ func (s *Server) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 
 func (f containerForm) toOpts() (runtime.CreateContainerOpts, error) {
 	opts := runtime.CreateContainerOpts{
-		Image: f.Image, Name: f.Name, Network: f.Network,
+		Image: f.Image, Name: f.Name,
 		Pull: runtime.PullPolicy(f.Pull), Start: f.Start,
 		TTY: f.TTY, Interactive: f.Interactive, AutoRemove: f.AutoRemove, NoHealthcheck: f.NoHealthcheck,
 		CPUs: f.CPUs, Memory: f.Memory, Hostname: f.Hostname, User: f.User,
 		DNS: fields(f.DNS), DNSSearch: fields(f.DNSSearch), DNSOptions: fields(f.DNSOptions), Ulimits: fields(f.Ulimits),
+		RestartPolicy: f.Restart, WorkDir: f.WorkDir, Labels: lines(f.Labels),
+		ExtraHosts: fields(f.ExtraHosts), CapAdd: fields(f.CapAdd), CapDrop: fields(f.CapDrop), Privileged: f.Privileged,
+	}
+	if opts.RestartPolicy == "no" {
+		opts.RestartPolicy = ""
 	}
 	var errs []error
 	cmd, err := splitArgs(f.Cmd)
@@ -354,6 +426,28 @@ func (f containerForm) toOpts() (runtime.CreateContainerOpts, error) {
 		errs = append(errs, err)
 	}
 	opts.Cmd = cmd
+	if strings.TrimSpace(f.Entrypoint) != "" {
+		if opts.Entrypoint, err = splitArgs(f.Entrypoint); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if f.Network != "" {
+		opts.Networks = []runtime.NetworkAttachment{{Name: f.Network, Aliases: fields(f.NetworkAliases), IP: f.NetworkIP}}
+	} else if f.NetworkAliases != "" || f.NetworkIP != "" {
+		errs = append(errs, fmt.Errorf("%w: network aliases and IP address need a network other than the default", runtime.ErrInvalid))
+	}
+	for _, l := range lines(f.ExtraNetworks) {
+		n, err := parseNetworkLine(l)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if len(opts.Networks) == 0 {
+			errs = append(errs, fmt.Errorf("%w: choose the first network before adding more networks", runtime.ErrInvalid))
+			break
+		}
+		opts.Networks = append(opts.Networks, n)
+	}
 	opts.Env = lines(f.Env)
 	for _, spec := range fields(f.Ports) {
 		p, err := runtime.ParsePortSpec(spec)
@@ -377,6 +471,78 @@ func (f containerForm) toOpts() (runtime.CreateContainerOpts, error) {
 	return opts, opts.Validate()
 }
 
+// parseNetworkLine parses "name [alias=a,b] [ip=x.x.x.x]".
+func parseNetworkLine(l string) (runtime.NetworkAttachment, error) {
+	parts := strings.Fields(l)
+	n := runtime.NetworkAttachment{Name: parts[0]}
+	for _, p := range parts[1:] {
+		k, v, _ := strings.Cut(p, "=")
+		switch k {
+		case "alias", "aliases":
+			n.Aliases = append(n.Aliases, fields(v)...)
+		case "ip":
+			n.IP = v
+		default:
+			return n, fmt.Errorf("%w: network line %q: use name [alias=a,b] [ip=x.x.x.x]", runtime.ErrInvalid, l)
+		}
+	}
+	return n, nil
+}
+
+// formFromOpts fills the form from create options (the edit form).
+func formFromOpts(o runtime.CreateContainerOpts) containerForm {
+	f := containerForm{
+		Image: o.Image, Name: o.Name, Cmd: joinArgs(o.Cmd), Env: strings.Join(o.Env, "\n"),
+		Pull: string(o.Pull), Start: o.Start,
+		TTY: o.TTY, Interactive: o.Interactive, AutoRemove: o.AutoRemove, NoHealthcheck: o.NoHealthcheck, Privileged: o.Privileged,
+		CPUs: o.CPUs, Memory: o.Memory, Hostname: o.Hostname, User: o.User,
+		DNS: strings.Join(o.DNS, ", "), DNSSearch: strings.Join(o.DNSSearch, ", "), DNSOptions: strings.Join(o.DNSOptions, " "),
+		Ulimits: strings.Join(o.Ulimits, "\n"), Restart: o.RestartPolicy, Entrypoint: joinArgs(o.Entrypoint), WorkDir: o.WorkDir,
+		Labels: strings.Join(o.Labels, "\n"), ExtraHosts: strings.Join(o.ExtraHosts, ", "),
+		CapAdd: strings.Join(o.CapAdd, ", "), CapDrop: strings.Join(o.CapDrop, ", "),
+	}
+	if f.Pull == "" {
+		f.Pull = string(runtime.PullMissing)
+	}
+	var ports, vols, nets []string
+	for _, p := range o.Ports {
+		ports = append(ports, p.PortSpec())
+	}
+	for _, v := range o.Volumes {
+		vols = append(vols, v.String())
+	}
+	f.Ports, f.Volumes = strings.Join(ports, "\n"), strings.Join(vols, "\n")
+	for i, n := range o.Networks {
+		if i == 0 {
+			f.Network, f.NetworkAliases, f.NetworkIP = n.Name, strings.Join(n.Aliases, ", "), n.IP
+			continue
+		}
+		l := n.Name
+		if len(n.Aliases) > 0 {
+			l += " alias=" + strings.Join(n.Aliases, ",")
+		}
+		if n.IP != "" {
+			l += " ip=" + n.IP
+		}
+		nets = append(nets, l)
+	}
+	f.ExtraNetworks = strings.Join(nets, "\n")
+	return f
+}
+
+// joinArgs renders arguments as splitArgs reads them.
+func joinArgs(args []string) string {
+	out := make([]string, len(args))
+	for i, a := range args {
+		if a != "" && !strings.ContainsAny(a, " \t\n\r\"'\\") {
+			out[i] = a
+			continue
+		}
+		out[i] = `"` + strings.NewReplacer(`\`, `\\`, `"`, `\"`).Replace(a) + `"`
+	}
+	return strings.Join(out, " ")
+}
+
 // lines splits a textarea into trimmed, non-empty lines.
 func lines(s string) []string {
 	var out []string
@@ -390,7 +556,11 @@ func lines(s string) []string {
 
 // fields splits on newlines, commas and spaces.
 func fields(s string) []string {
-	return strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' || r == ' ' || r == '\t' })
+	out := strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == '\n' || r == '\r' || r == ' ' || r == '\t' })
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 // splitArgs splits a command line into arguments, honoring single and double

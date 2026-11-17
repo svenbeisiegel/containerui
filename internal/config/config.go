@@ -26,10 +26,11 @@ const FileName = "config.yaml"
 
 // Config is the root configuration document.
 type Config struct {
-	Server  Server  `yaml:"server"`
-	Runtime Runtime `yaml:"runtime"`
-	Events  Events  `yaml:"events"`
-	Users   []User  `yaml:"users"`
+	Server   Server   `yaml:"server"`
+	Runtime  Runtime  `yaml:"runtime"`
+	Events   Events   `yaml:"events"`
+	Registry Registry `yaml:"registry"`
+	Users    []User   `yaml:"users"`
 
 	// Dir is the directory the config file was loaded from. Relative paths
 	// (TLS files) are resolved against it.
@@ -97,6 +98,22 @@ type Events struct {
 	Dir string `yaml:"dir"`
 }
 
+// Registry configures the image update check on the container page.
+type Registry struct {
+	// CheckUpdates asks registries for newer images (nil = default, on).
+	CheckUpdates *bool         `yaml:"check_updates"`
+	CacheTTL     time.Duration `yaml:"cache_ttl"` // how long an answer is reused
+	Timeout      time.Duration `yaml:"timeout"`   // per registry request
+	// AuthFile is a docker config.json or podman auth.json with logins;
+	// empty = the runtime's usual files (relative to the config file).
+	AuthFile string `yaml:"auth_file"`
+	// Insecure lists registries (host[:port]) reached over plain HTTP.
+	Insecure []string `yaml:"insecure_registries"`
+}
+
+// CheckUpdatesOn reports whether update checks are enabled.
+func (r Registry) CheckUpdatesOn() bool { return r.CheckUpdates == nil || *r.CheckUpdates }
+
 // User is a login account. Either PasswordHash (bcrypt, preferred) or
 // Password (plaintext) must be set.
 type User struct {
@@ -124,7 +141,8 @@ func Default() *Config {
 			ComposeTimeout: 30 * time.Minute,
 			ComposeDir:     "compose",
 		},
-		Events: Events{Dir: "events"},
+		Events:   Events{Dir: "events"},
+		Registry: Registry{CheckUpdates: &on, CacheTTL: time.Hour, Timeout: 10 * time.Second, Insecure: []string{}},
 	}
 }
 
@@ -289,6 +307,14 @@ func (c *Config) applyDefaults() {
 	c.Runtime.ComposeTimeout = cmp(c.Runtime.ComposeTimeout, d.Runtime.ComposeTimeout)
 	c.Runtime.ComposeDir = cmp(c.Runtime.ComposeDir, d.Runtime.ComposeDir)
 	c.Events.Dir = cmp(c.Events.Dir, d.Events.Dir)
+	if c.Registry.CheckUpdates == nil {
+		c.Registry.CheckUpdates = d.Registry.CheckUpdates
+	}
+	c.Registry.CacheTTL = cmp(c.Registry.CacheTTL, d.Registry.CacheTTL)
+	c.Registry.Timeout = cmp(c.Registry.Timeout, d.Registry.Timeout)
+	if c.Registry.Insecure == nil {
+		c.Registry.Insecure = []string{}
+	}
 }
 
 // cmp returns v, or def if v is the zero value.

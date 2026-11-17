@@ -41,9 +41,12 @@ type CreateContainerOpts struct {
 	Env     []string // KEY=VALUE
 	Ports   []PortMapping
 	Volumes []VolumeMount
-	Network string // optional
-	Pull    PullPolicy
-	Start   bool // start the container right after creating it
+	// Networks the container joins; the first one at creation (host and
+	// none only alone), the others are connected before it starts. Empty
+	// means the runtime's default network.
+	Networks []NetworkAttachment
+	Pull     PullPolicy
+	Start    bool // start the container right after creating it
 
 	// Advanced options. Zero values mean "not passed to the runtime".
 	TTY           bool // allocate a pseudo-TTY
@@ -59,6 +62,77 @@ type CreateContainerOpts struct {
 	DNSSearch  []string // DNS search domains
 	DNSOptions []string // resolver options, e.g. ndots:2
 	Ulimits    []string // name=soft[:hard], -1 = unlimited
+
+	// Options not every runtime supports (see Capabilities.CreateOptions
+	// and UsedOptions).
+	RestartPolicy string   // no | always | unless-stopped | on-failure[:N]
+	Labels        []string // key=value
+	Entrypoint    []string // nil = the image's; empty = none
+	WorkDir       string   // absolute working directory
+	ExtraHosts    []string // host:ip entries for /etc/hosts
+	CapAdd        []string // Linux capabilities to add, e.g. NET_ADMIN
+	CapDrop       []string // Linux capabilities to drop
+	Privileged    bool
+}
+
+// NetworkAttachment is a network a new container joins.
+type NetworkAttachment struct {
+	Name    string
+	Aliases []string // extra DNS names in this network
+	IP      string   // fixed IPv4 address
+}
+
+// Optional create options, keys of Capabilities.CreateOptions.
+const (
+	OptRestart      = "restart"
+	OptLabel        = "label"
+	OptEntrypoint   = "entrypoint"
+	OptWorkDir      = "workdir"
+	OptAddHost      = "add-host"
+	OptCapAdd       = "cap-add"
+	OptCapDrop      = "cap-drop"
+	OptPrivileged   = "privileged"
+	OptNetworkAlias = "network-alias" // aliases or IP on the first network
+	OptMultiNetwork = "multi-network" // more than one network
+)
+
+// AllCreateOptions lists every optional create option.
+var AllCreateOptions = []string{OptRestart, OptLabel, OptEntrypoint, OptWorkDir, OptAddHost, OptCapAdd, OptCapDrop, OptPrivileged, OptNetworkAlias, OptMultiNetwork}
+
+// OptionLabels names the optional create options for messages.
+var OptionLabels = map[string]string{
+	OptRestart: "restart policy", OptLabel: "labels", OptEntrypoint: "entrypoint", OptWorkDir: "working directory",
+	OptAddHost: "extra hosts", OptCapAdd: "added capabilities", OptCapDrop: "dropped capabilities",
+	OptPrivileged: "privileged mode", OptNetworkAlias: "network aliases and fixed IPs", OptMultiNetwork: "additional networks",
+}
+
+// UsedOptions returns the optional create options o sets.
+func (o *CreateContainerOpts) UsedOptions() []string {
+	var out []string
+	add := func(used bool, opt string) {
+		if used {
+			out = append(out, opt)
+		}
+	}
+	add(o.RestartPolicy != "" && o.RestartPolicy != "no", OptRestart)
+	add(len(o.Labels) > 0, OptLabel)
+	add(o.Entrypoint != nil, OptEntrypoint)
+	add(o.WorkDir != "", OptWorkDir)
+	add(len(o.ExtraHosts) > 0, OptAddHost)
+	add(len(o.CapAdd) > 0, OptCapAdd)
+	add(len(o.CapDrop) > 0, OptCapDrop)
+	add(o.Privileged, OptPrivileged)
+	add(len(o.Networks) > 0 && (len(o.Networks[0].Aliases) > 0 || o.Networks[0].IP != ""), OptNetworkAlias)
+	add(len(o.Networks) > 1, OptMultiNetwork)
+	return out
+}
+
+// Network returns the name of the first network, or "".
+func (o *CreateContainerOpts) Network() string {
+	if len(o.Networks) == 0 {
+		return ""
+	}
+	return o.Networks[0].Name
 }
 
 var (
@@ -81,6 +155,8 @@ var (
 	userRe      = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,31}(:[A-Za-z0-9_][A-Za-z0-9_.-]{0,31})?$`)
 	dnsOptionRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*(:[0-9]+)?$`)
 	ulimitRe    = regexp.MustCompile(`^([a-z]+)=(-1|[0-9]+)(?::(-1|[0-9]+))?$`)
+	restartRe   = regexp.MustCompile(`^(no|always|unless-stopped|on-failure(:[0-9]+)?)$`)
+	capRe       = regexp.MustCompile(`^[A-Za-z][A-Za-z_]*$`)
 )
 
 // knownUlimits are the resource names accepted by --ulimit.
@@ -218,8 +294,41 @@ func (o *CreateContainerOpts) Validate() error {
 			errs = append(errs, fmt.Errorf("%w: volume target %q must be an absolute container path", ErrInvalid, v.Target))
 		}
 	}
-	if o.Network != "" && !netNameRe.MatchString(o.Network) {
-		errs = append(errs, fmt.Errorf("%w: invalid network name %q", ErrInvalid, o.Network))
+	for i, n := range o.Networks {
+		if !netNameRe.MatchString(n.Name) {
+			errs = append(errs, fmt.Errorf("%w: invalid network name %q", ErrInvalid, n.Name))
+		}
+		if (n.Name == "host" || n.Name == "none") && len(o.Networks) > 1 {
+			errs = append(errs, fmt.Errorf("%w: network %s cannot be combined with other networks", ErrInvalid, n.Name))
+		}
+		if slices.ContainsFunc(o.Networks[:i], func(m NetworkAttachment) bool { return m.Name == n.Name }) {
+			errs = append(errs, fmt.Errorf("%w: network %s is listed twice", ErrInvalid, n.Name))
+		}
+		ep := ConnectNetworkOpts{Aliases: n.Aliases, IP: n.IP}
+		if err := ep.Validate(); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	if o.RestartPolicy != "" && !restartRe.MatchString(o.RestartPolicy) {
+		errs = append(errs, fmt.Errorf("%w: restart policy %q must be no, always, unless-stopped or on-failure[:N]", ErrInvalid, o.RestartPolicy))
+	}
+	errs = append(errs, validateKeyValues("container", "label", o.Labels))
+	if len(o.Entrypoint) > 0 && (o.Entrypoint[0] == "" || strings.HasPrefix(o.Entrypoint[0], "-")) {
+		errs = append(errs, fmt.Errorf("%w: entrypoint %q is invalid", ErrInvalid, o.Entrypoint[0]))
+	}
+	if o.WorkDir != "" && !strings.HasPrefix(o.WorkDir, "/") {
+		errs = append(errs, fmt.Errorf("%w: working directory %q must be an absolute container path", ErrInvalid, o.WorkDir))
+	}
+	for _, h := range o.ExtraHosts {
+		host, ip, ok := strings.Cut(h, ":")
+		if !ok || !validDomain(host) || (ip != "host-gateway" && net.ParseIP(ip) == nil) {
+			errs = append(errs, fmt.Errorf("%w: extra host %q must be host:ip", ErrInvalid, h))
+		}
+	}
+	for _, c := range slices.Concat(o.CapAdd, o.CapDrop) {
+		if !capRe.MatchString(c) {
+			errs = append(errs, fmt.Errorf("%w: capability %q must be a name like NET_ADMIN or ALL", ErrInvalid, c))
+		}
 	}
 	switch o.Pull {
 	case "", PullMissing, PullAlways, PullNever:
