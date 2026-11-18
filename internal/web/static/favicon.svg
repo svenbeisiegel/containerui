@@ -15,11 +15,14 @@
       <stop offset="1" stop-color="#93afd2"/>
     </linearGradient>
     <clipPath id="inside"><circle cx="30" cy="30" r="24"/></clipPath>
+    <clipPath id="body"><circle cx="30" cy="30" r="24"/><rect x="30" y="0" width="30" height="60"/></clipPath>
+    <clipPath id="lefthalf"><rect x="0" y="0" width="30" height="60"/></clipPath>
   </defs>
   <circle cx="30" cy="30" r="24" fill="url(#disc)"/>
   <ellipse cx="25" cy="17" rx="14" ry="6" fill="#ffffff" opacity="0.12"/>
   <circle cx="30" cy="30" r="23.25" fill="none" stroke="#00a1e0" stroke-width="1.5"/>
   <ellipse cx="31.0" cy="47.0" rx="23" ry="2.4" fill="#04102a" opacity="0.3" clip-path="url(#inside)"/>
+  <g clip-path="url(#body)">
   <polygon points="6.87,22.84 36.32,14.50 36.32,45.50 6.87,40.45" fill="url(#side)"/>
   <polygon points="7.38,23.94 7.76,23.85 7.76,38.80 7.38,38.75" fill="#ffffff" opacity="0.7"/>
   <polygon points="7.76,23.85 8.15,23.75 8.15,38.85 7.76,38.80" fill="#7f9cc2" opacity="0.6"/>
@@ -60,4 +63,6 @@
   <polygon points="52.73,18.54 53.13,18.64 53.13,42.99 52.73,43.05" fill="#4e6f9b"/>
   <polygon points="6.87,22.84 36.32,14.50 53.13,18.64 53.13,42.99 36.32,45.50 6.87,40.45" fill="none" stroke="#0b2a5a" stroke-width="0.8" stroke-linejoin="round"/>
   <line x1="36.32" y1="14.50" x2="36.32" y2="45.50" stroke="#0b2a5a" stroke-width="0.6"/>
+  </g>
+  <circle cx="30" cy="30" r="23.25" fill="none" stroke="#00a1e0" stroke-width="1.5" clip-path="url(#lefthalf)"/>
 </svg>
