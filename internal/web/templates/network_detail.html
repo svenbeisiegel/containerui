@@ -1,3 +1,4 @@
+{{define "head"}}<script src="/static/drawer.js" defer></script>{{end}}
 {{define "content"}}
 {{$v := .Data}}
 <div class="page-head">
@@ -89,4 +90,5 @@
   <pre class="log">{{$v.Inspect}}</pre>
 </section>
 {{end}}
+{{template "activity_drawer" $v.Activity}}
 {{end}}

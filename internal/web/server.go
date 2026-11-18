@@ -165,7 +165,7 @@ func (s *Server) Close() {
 }
 
 func (s *Server) parseTemplates() error {
-	pages := []string{"login", "dashboard", "containers", "container_new", "container_detail", "images", "volumes", "volume_detail", "compose", "compose_new", "compose_detail", "networks", "network_detail", "system", "events"}
+	pages := []string{"login", "dashboard", "containers", "container_new", "container_detail", "images", "image_pull", "volumes", "volume_new", "volume_detail", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events"}
 	for _, p := range pages {
 		t, err := template.New(p).Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/partials.html", "templates/"+p+".html")
 		if err != nil {
@@ -224,25 +224,29 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /containers/{id}/logs/stream", s.handleLogsStream)
 	authed.HandleFunc("GET /images", s.handleImages)
 	authed.HandleFunc("GET /partials/images", s.handleImagesPartial)
+	authed.HandleFunc("GET /images/pull", s.handleImagePullPage)
 	authed.HandleFunc("POST /images/pull", s.handleImagePull)
 	authed.HandleFunc("POST /images/check-updates", s.handleImageCheckUpdates)
-	authed.HandleFunc("GET /partials/pulls", s.handlePullsPartial)
 	authed.HandleFunc("POST /images/tag", s.handleImageTag)
 	authed.HandleFunc("POST /images/delete", s.handleImageDelete)
 	authed.HandleFunc("GET /volumes", s.handleVolumes)
 	authed.HandleFunc("GET /partials/volumes", s.handleVolumesPartial)
+	authed.HandleFunc("GET /volumes/new", s.handleVolumeNew)
 	authed.HandleFunc("POST /volumes", s.handleVolumeCreate)
 	authed.HandleFunc("GET /volumes/{name}", s.handleVolumeDetail)
 	authed.HandleFunc("POST /volumes/delete", s.handleVolumeDelete)
 	authed.HandleFunc("POST /volumes/prune", s.handleVolumePrune)
 	authed.HandleFunc("GET /networks", s.handleNetworks)
 	authed.HandleFunc("GET /partials/networks", s.handleNetworksPartial)
+	authed.HandleFunc("GET /networks/new", s.handleNetworkNew)
 	authed.HandleFunc("POST /networks", s.handleNetworkCreate)
 	authed.HandleFunc("GET /networks/{name}", s.handleNetworkDetail)
 	authed.HandleFunc("POST /networks/delete", s.handleNetworkDelete)
 	authed.HandleFunc("POST /networks/prune", s.handleNetworkPrune)
 	authed.HandleFunc("POST /networks/{name}/connect", s.handleNetworkConnect)
 	authed.HandleFunc("POST /networks/{name}/disconnect", s.handleNetworkDisconnect)
+	authed.HandleFunc("GET /partials/activity/{tab}", s.handleActivityPartial)
+	authed.HandleFunc("POST /activity/{tab}/clear", s.handleActivityClear)
 	authed.HandleFunc("GET /compose", s.handleCompose)
 	authed.HandleFunc("GET /partials/compose", s.handleComposePartial)
 	authed.HandleFunc("GET /partials/compose/jobs", s.handleComposeJobsPartial)

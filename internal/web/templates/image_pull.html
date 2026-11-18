@@ -1,0 +1,22 @@
+{{define "head"}}<script src="/static/drawer.js" defer></script>{{end}}
+{{define "content"}}
+<div class="page-head">
+  <div>
+    <a class="back" href="/images">← Images</a>
+    <h1>Pull Image</h1>
+  </div>
+</div>
+<section class="panel">
+  <form method="post" action="/images/pull" class="stack">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    {{if .Data.Err}}<div class="flash error" role="alert">{{.Data.Err}}</div>{{end}}
+    <label class="field">
+      <span class="field-label">Image reference <span class="req" aria-hidden="true">*</span></span>
+      <input name="ref" value="{{.Data.Ref}}" required placeholder="e.g. alpine:latest or ghcr.io/org/app:1.0" class="mono-input" autocomplete="off" spellcheck="false" autofocus>
+      <small class="hint">The pull runs in the background; follow it in the activity panel on the Images page.</small>
+    </label>
+    <div><button type="submit" class="primary">Pull image</button></div>
+  </form>
+</section>
+{{template "activity_drawer" .Data.Activity}}
+{{end}}

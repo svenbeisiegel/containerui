@@ -63,3 +63,22 @@ func TestLinesCapped(t *testing.T) {
 		t.Errorf("lines = %d", len(got.Lines))
 	}
 }
+
+func TestRecordAndListKinds(t *testing.T) {
+	m := NewManager(context.Background())
+	pull := m.Start("pull", "alpine", "admin", func(context.Context, func(string)) error { return nil })
+	m.Wait()
+	ok := m.Record("image", "tag alpine", "admin", []string{"done"}, nil)
+	bad := m.Record("image", "delete alpine", "admin", nil, errors.New("in use"))
+	m.Record("volume", "create data", "admin", nil, nil)
+	if ok.Status != Succeeded || ok.Finished.IsZero() || len(ok.Lines) != 1 {
+		t.Errorf("ok = %+v", ok)
+	}
+	if bad.Status != Failed || bad.Error != "in use" {
+		t.Errorf("bad = %+v", bad)
+	}
+	l := m.List("pull", "image")
+	if len(l) != 3 || l[0].ID != bad.ID || l[1].ID != ok.ID || l[2].ID != pull.ID {
+		t.Errorf("list = %+v", l)
+	}
+}

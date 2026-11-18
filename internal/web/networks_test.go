@@ -27,13 +27,15 @@ func TestNetworkPagesRender(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 	pages := map[string][]string{
-		"/networks":                {"Create a Network", "Prune networks", `href="/networks/backend"`, "built-in", "macvlan", "--ipv6", `href="/containers/shop-web-1"`},
-		"/partials/networks":       {`id="networks"`, "backend"},
-		"/networks/backend":        {"172.30.0.0/16", "172.30.0.1", "team", "platform", "Connect a Container", "No containers are connected.", "Inspect", `action="/networks/delete"`},
-		"/networks/bridge":         {"built-in", "web", "Disconnect", "Inspect"},
-		"/networks/shop_default":   {"shop-web-1", "shop-db-1"},
-		"/containers/c0ffee000001": {`<a href="/networks/bridge">bridge</a>`},
-		"/":                        {`href="/networks"`},
+		"/networks":                   {`href="/networks/new"`, "Prune networks", `href="/networks/backend"`, "built-in", `href="/containers/shop-web-1"`, `id="activity"`, "Network activity"},
+		"/networks/new":               {"Create Network", `action="/networks"`, "macvlan", "--ipv6", "Network activity"},
+		"/partials/activity/networks": {`id="activity-jobs"`, "No recent activity."},
+		"/partials/networks":          {`id="networks"`, "backend"},
+		"/networks/backend":           {"172.30.0.0/16", "172.30.0.1", "team", "platform", "Connect a Container", "No containers are connected.", "Inspect", `action="/networks/delete"`},
+		"/networks/bridge":            {"built-in", "web", "Disconnect", "Inspect"},
+		"/networks/shop_default":      {"shop-web-1", "shop-db-1"},
+		"/containers/c0ffee000001":    {`<a href="/networks/bridge">bridge</a>`},
+		"/":                           {`href="/networks"`},
 	}
 	for path, want := range pages {
 		w := e.do("GET", path, nil)
@@ -69,8 +71,11 @@ func TestNetworkCreate(t *testing.T) {
 		t.Fatalf("create = %d %s", w.Code, w.Header().Get("Location"))
 	}
 	body := e.do("GET", "/networks", nil).Body.String()
-	if !strings.Contains(body, "Network front created.") || !strings.Contains(body, `href="/networks/front"`) {
+	if !strings.Contains(body, "Network front created.") || !strings.Contains(body, `href="/networks/front"`) || !drawerOpen(body) {
 		t.Errorf("list after create:\n%s", body)
+	}
+	if drawerOpen(e.do("GET", "/networks", nil).Body.String()) {
+		t.Error("drawer still opens on the next visit")
 	}
 	if body := e.do("GET", "/networks/front", nil).Body.String(); !strings.Contains(body, "10.9.0.0/16") || !strings.Contains(body, "mtu") {
 		t.Errorf("detail after create:\n%s", body)
@@ -107,8 +112,8 @@ func TestNetworkDeleteAndPrune(t *testing.T) {
 	e.login()
 	// In use: the conflict hint, and the network stays.
 	w := e.post("/networks/delete", url.Values{"name": {"shop_default"}}, htmx)
-	if !strings.Contains(w.Body.String(), "disconnect them first") {
-		t.Errorf("delete in use: %s", w.Body.String())
+	if w.Header().Get("HX-Trigger") != "activity-changed" || !strings.Contains(e.activity("networks"), "disconnect them first") {
+		t.Errorf("delete in use: %v %s", w.Header(), e.activity("networks"))
 	}
 	w = e.post("/networks/delete", url.Values{"name": {"backend"}, "view": {"detail"}}, htmx)
 	if w.Header().Get("HX-Redirect") != "/networks" {
@@ -121,10 +126,14 @@ func TestNetworkDeleteAndPrune(t *testing.T) {
 		t.Fatal("create spare")
 	}
 	w = e.post("/networks/prune", nil, htmx)
-	if body := w.Body.String(); !strings.Contains(body, "Pruned unused networks. Deleted Networks: spare") || strings.Contains(body, `href="/networks/spare"`) {
+	if body := w.Body.String(); strings.Contains(body, `href="/networks/spare"`) || !strings.Contains(body, `id="networks"`) {
 		t.Errorf("prune: %s", body)
 	}
-	if !strings.Contains(e.post("/networks/prune", nil, htmx).Body.String(), "No unused networks to prune.") {
+	if a := e.activity("networks"); !strings.Contains(a, "Pruned unused networks.") || !strings.Contains(a, "Deleted Networks:") || !strings.Contains(a, "spare") {
+		t.Errorf("prune activity: %s", a)
+	}
+	e.post("/networks/prune", nil, htmx)
+	if !strings.Contains(e.activity("networks"), "No unused networks to prune.") {
 		t.Error("second prune")
 	}
 }
