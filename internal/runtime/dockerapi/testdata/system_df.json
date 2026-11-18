@@ -1,0 +1,442 @@
+{
+ "LayersSize": 5007489894,
+ "Images": [
+  {
+   "Containers": 2,
+   "Created": 0,
+   "Id": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+   "Labels": {},
+   "ParentId": "",
+   "Descriptor": {
+    "mediaType": "application/vnd.oci.image.index.v1+json",
+    "digest": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+    "size": 9218
+   },
+   "RepoDigests": [
+    "alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf"
+   ],
+   "RepoTags": [
+    "alpine:3.24"
+   ],
+   "SharedSize": 12942697,
+   "Size": 13030721
+  },
+  {
+   "Containers": 0,
+   "Created": 1794900542,
+   "Id": "sha256:87b7cc1163d637e4962e25a99d851bcae147f209095119b0092f6c4f66141a90",
+   "Labels": {},
+   "ParentId": "sha256:a736b05989e8f612a21238f07303ddad2b08e197e06a2ab8121685b7f2ed2e80",
+   "Descriptor": {
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "digest": "sha256:87b7cc1163d637e4962e25a99d851bcae147f209095119b0092f6c4f66141a90",
+    "size": 1409
+   },
+   "RepoDigests": [
+    "mockcla@sha256:87b7cc1163d637e4962e25a99d851bcae147f209095119b0092f6c4f66141a90"
+   ],
+   "RepoTags": [
+    "mockcla:test"
+   ],
+   "SharedSize": 113551278,
+   "Size": 141812814
+  },
+  {
+   "Containers": 0,
+   "Created": 1794899186,
+   "Id": "sha256:6169df5963c2c7765252194a3a20b3c56cd7f1144d7915ef42cd3f53acd9309c",
+   "Labels": {},
+   "ParentId": "sha256:3aec8ef52a60c2451c7ab5cac406f7229b099b5f2950ed5f29078235a3a2ee79",
+   "Descriptor": {
+    "mediaType": "application/vnd.oci.image.manifest.v1+json",
+    "digest": "sha256:6169df5963c2c7765252194a3a20b3c56cd7f1144d7915ef42cd3f53acd9309c",
+    "size": 1406
+   },
+   "RepoDigests": null,
+   "RepoTags": null,
+   "SharedSize": 113551278,
+   "Size": 127756558
+  }
+ ],
+ "Containers": [
+  {
+   "Id": "2f99a52f3283d3aaa49d3042f47e46d20dbf45e6650d4b75419425db850e9812",
+   "Names": [
+    "/cui-api-bind"
+   ],
+   "Image": "alpine:3.24",
+   "ImageID": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+   "Command": "sleep 600",
+   "Created": 1794984402,
+   "Ports": [],
+   "SizeRw": 12288,
+   "SizeRootFs": 9121792,
+   "Labels": {
+    "cui-bench": "1"
+   },
+   "State": "running",
+   "Status": "Up 5 seconds",
+   "HostConfig": {
+    "NetworkMode": "bridge"
+   },
+   "Health": {
+    "Status": "none",
+    "FailingStreak": 0
+   },
+   "Mounts": [
+    {
+     "Type": "bind",
+     "Source": "/srv/cuitest/config",
+     "Destination": "/cfg",
+     "Mode": "ro",
+     "RW": false,
+     "Propagation": "rprivate"
+    },
+    {
+     "Type": "volume",
+     "Name": "cui-api-data",
+     "Source": "/var/lib/docker/volumes/cui-api-data/_data",
+     "Destination": "/shared",
+     "Driver": "local",
+     "Mode": "z",
+     "RW": true,
+     "Propagation": ""
+    }
+   ]
+  },
+  {
+   "Id": "a0b1ed6e575b364a98ec184693e8a5db96285743ba083922b5cbe4c6abfe9474",
+   "Names": [
+    "/cui-api-busy"
+   ],
+   "Image": "alpine:3.24",
+   "ImageID": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+   "Command": "sh -c 'while true; do dd if=/dev/zero of=/data/x bs=1M count=8 2>/dev/null; sync; done'",
+   "Created": 1794984388,
+   "Ports": [],
+   "SizeRw": 8192,
+   "SizeRootFs": 9117696,
+   "Labels": {
+    "cui-bench": "1"
+   },
+   "State": "running",
+   "Status": "Up 19 seconds",
+   "HostConfig": {
+    "NetworkMode": "bridge"
+   },
+   "Health": {
+    "Status": "none",
+    "FailingStreak": 0
+   },
+   "Mounts": [
+    {
+     "Type": "volume",
+     "Name": "cui-api-data",
+     "Source": "/var/lib/docker/volumes/cui-api-data/_data",
+     "Destination": "/data",
+     "Driver": "local",
+     "Mode": "z",
+     "RW": true,
+     "Propagation": ""
+    }
+   ]
+  }
+ ],
+ "Volumes": [
+  {
+   "CreatedAt": "2026-11-18T07:46:28+01:00",
+   "Driver": "local",
+   "Labels": null,
+   "Mountpoint": "/var/lib/docker/volumes/cui-api-data/_data",
+   "Name": "cui-api-data",
+   "Options": null,
+   "Scope": "local",
+   "UsageData": {
+    "RefCount": 2,
+    "Size": 8388608
+   }
+  },
+  {
+   "CreatedAt": "2026-11-12T07:39:38+01:00",
+   "Driver": "local",
+   "Labels": {
+    "com.docker.volume.anonymous": ""
+   },
+   "Mountpoint": "/var/lib/docker/volumes/876224c74a52f7833b091aab7727f1448869c6ff99ca23b0edb88a8226e12881/_data",
+   "Name": "876224c74a52f7833b091aab7727f1448869c6ff99ca23b0edb88a8226e12881",
+   "Options": null,
+   "Scope": "local",
+   "UsageData": {
+    "RefCount": 0,
+    "Size": 488797
+   }
+  },
+  {
+   "CreatedAt": "2026-11-12T07:39:47+01:00",
+   "Driver": "local",
+   "Labels": {
+    "com.docker.volume.anonymous": ""
+   },
+   "Mountpoint": "/var/lib/docker/volumes/a773256cc8fc8260ad8907bb8759de0dfeb793888ffe7781af34c552c957f8f7/_data",
+   "Name": "a773256cc8fc8260ad8907bb8759de0dfeb793888ffe7781af34c552c957f8f7",
+   "Options": null,
+   "Scope": "local",
+   "UsageData": {
+    "RefCount": 0,
+    "Size": 7092387
+   }
+  }
+ ],
+ "BuildCache": [
+  {
+   "ID": "abc1",
+   "Type": "regular",
+   "Size": 4096000,
+   "Shared": false,
+   "InUse": false
+  },
+  {
+   "ID": "abc2",
+   "Type": "regular",
+   "Size": 1000,
+   "Shared": true,
+   "InUse": false
+  },
+  {
+   "ID": "abc3",
+   "Type": "regular",
+   "Size": 2000,
+   "Shared": false,
+   "InUse": true
+  }
+ ],
+ "ImageUsage": {
+  "ActiveCount": 1,
+  "Items": [
+   {
+    "Containers": 2,
+    "Created": 0,
+    "Id": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+    "Labels": {},
+    "ParentId": "",
+    "Descriptor": {
+     "mediaType": "application/vnd.oci.image.index.v1+json",
+     "digest": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+     "size": 9218
+    },
+    "RepoDigests": [
+     "alpine@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf"
+    ],
+    "RepoTags": [
+     "alpine:3.24"
+    ],
+    "SharedSize": 12942697,
+    "Size": 13030721
+   },
+   {
+    "Containers": 0,
+    "Created": 1794900542,
+    "Id": "sha256:87b7cc1163d637e4962e25a99d851bcae147f209095119b0092f6c4f66141a90",
+    "Labels": {},
+    "ParentId": "sha256:a736b05989e8f612a21238f07303ddad2b08e197e06a2ab8121685b7f2ed2e80",
+    "Descriptor": {
+     "mediaType": "application/vnd.oci.image.manifest.v1+json",
+     "digest": "sha256:87b7cc1163d637e4962e25a99d851bcae147f209095119b0092f6c4f66141a90",
+     "size": 1409
+    },
+    "RepoDigests": [
+     "mockcla@sha256:87b7cc1163d637e4962e25a99d851bcae147f209095119b0092f6c4f66141a90"
+    ],
+    "RepoTags": [
+     "mockcla:test"
+    ],
+    "SharedSize": 113551278,
+    "Size": 141812814
+   },
+   {
+    "Containers": 0,
+    "Created": 1794899186,
+    "Id": "sha256:6169df5963c2c7765252194a3a20b3c56cd7f1144d7915ef42cd3f53acd9309c",
+    "Labels": {},
+    "ParentId": "sha256:3aec8ef52a60c2451c7ab5cac406f7229b099b5f2950ed5f29078235a3a2ee79",
+    "Descriptor": {
+     "mediaType": "application/vnd.oci.image.manifest.v1+json",
+     "digest": "sha256:6169df5963c2c7765252194a3a20b3c56cd7f1144d7915ef42cd3f53acd9309c",
+     "size": 1406
+    },
+    "RepoDigests": null,
+    "RepoTags": null,
+    "SharedSize": 113551278,
+    "Size": 127756558
+   }
+  ],
+  "TotalCount": 3,
+  "TotalSize": 5007489894,
+  "Reclaimable": 4406418136
+ },
+ "ContainerUsage": {
+  "ActiveCount": 2,
+  "Items": [
+   {
+    "Id": "2f99a52f3283d3aaa49d3042f47e46d20dbf45e6650d4b75419425db850e9812",
+    "Names": [
+     "/cui-api-bind"
+    ],
+    "Image": "alpine:3.24",
+    "ImageID": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+    "Command": "sleep 600",
+    "Created": 1794984402,
+    "Ports": [],
+    "SizeRw": 12288,
+    "SizeRootFs": 9121792,
+    "Labels": {
+     "cui-bench": "1"
+    },
+    "State": "running",
+    "Status": "Up 5 seconds",
+    "HostConfig": {
+     "NetworkMode": "bridge"
+    },
+    "Health": {
+     "Status": "none",
+     "FailingStreak": 0
+    },
+    "Mounts": [
+     {
+      "Type": "bind",
+      "Source": "/srv/cuitest/config",
+      "Destination": "/cfg",
+      "Mode": "ro",
+      "RW": false,
+      "Propagation": "rprivate"
+     },
+     {
+      "Type": "volume",
+      "Name": "cui-api-data",
+      "Source": "/var/lib/docker/volumes/cui-api-data/_data",
+      "Destination": "/shared",
+      "Driver": "local",
+      "Mode": "z",
+      "RW": true,
+      "Propagation": ""
+     }
+    ]
+   },
+   {
+    "Id": "a0b1ed6e575b364a98ec184693e8a5db96285743ba083922b5cbe4c6abfe9474",
+    "Names": [
+     "/cui-api-busy"
+    ],
+    "Image": "alpine:3.24",
+    "ImageID": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+    "Command": "sh -c 'while true; do dd if=/dev/zero of=/data/x bs=1M count=8 2>/dev/null; sync; done'",
+    "Created": 1794984388,
+    "Ports": [],
+    "SizeRw": 8192,
+    "SizeRootFs": 9117696,
+    "Labels": {
+     "cui-bench": "1"
+    },
+    "State": "running",
+    "Status": "Up 19 seconds",
+    "HostConfig": {
+     "NetworkMode": "bridge"
+    },
+    "Health": {
+     "Status": "none",
+     "FailingStreak": 0
+    },
+    "Mounts": [
+     {
+      "Type": "volume",
+      "Name": "cui-api-data",
+      "Source": "/var/lib/docker/volumes/cui-api-data/_data",
+      "Destination": "/data",
+      "Driver": "local",
+      "Mode": "z",
+      "RW": true,
+      "Propagation": ""
+     }
+    ]
+   }
+  ],
+  "TotalCount": 2,
+  "TotalSize": 20480
+ },
+ "VolumeUsage": {
+  "ActiveCount": 1,
+  "Items": [
+   {
+    "CreatedAt": "2026-11-18T07:46:28+01:00",
+    "Driver": "local",
+    "Labels": null,
+    "Mountpoint": "/var/lib/docker/volumes/cui-api-data/_data",
+    "Name": "cui-api-data",
+    "Options": null,
+    "Scope": "local",
+    "UsageData": {
+     "RefCount": 2,
+     "Size": 8388608
+    }
+   },
+   {
+    "CreatedAt": "2026-11-12T07:39:38+01:00",
+    "Driver": "local",
+    "Labels": {
+     "com.docker.volume.anonymous": ""
+    },
+    "Mountpoint": "/var/lib/docker/volumes/876224c74a52f7833b091aab7727f1448869c6ff99ca23b0edb88a8226e12881/_data",
+    "Name": "876224c74a52f7833b091aab7727f1448869c6ff99ca23b0edb88a8226e12881",
+    "Options": null,
+    "Scope": "local",
+    "UsageData": {
+     "RefCount": 0,
+     "Size": 488797
+    }
+   },
+   {
+    "CreatedAt": "2026-11-12T07:39:47+01:00",
+    "Driver": "local",
+    "Labels": {
+     "com.docker.volume.anonymous": ""
+    },
+    "Mountpoint": "/var/lib/docker/volumes/a773256cc8fc8260ad8907bb8759de0dfeb793888ffe7781af34c552c957f8f7/_data",
+    "Name": "a773256cc8fc8260ad8907bb8759de0dfeb793888ffe7781af34c552c957f8f7",
+    "Options": null,
+    "Scope": "local",
+    "UsageData": {
+     "RefCount": 0,
+     "Size": 7092387
+    }
+   }
+  ],
+  "TotalCount": 3,
+  "TotalSize": 15969792,
+  "Reclaimable": 7581184
+ },
+ "BuildCacheUsage": {
+  "Items": [
+   {
+    "ID": "abc1",
+    "Type": "regular",
+    "Size": 4096000,
+    "Shared": false,
+    "InUse": false
+   },
+   {
+    "ID": "abc2",
+    "Type": "regular",
+    "Size": 1000,
+    "Shared": true,
+    "InUse": false
+   },
+   {
+    "ID": "abc3",
+    "Type": "regular",
+    "Size": 2000,
+    "Shared": false,
+    "InUse": true
+   }
+  ]
+ }
+}

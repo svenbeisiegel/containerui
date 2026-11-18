@@ -32,6 +32,12 @@ runtime:
   driver: auto
   path: ""                # CLI binary; empty = wslc.exe / docker / podman on PATH
   session: ""             # wslc only; empty = the CLI's default session
+  # docker/podman: the daemon's Unix socket (/path or unix:///path). Empty =
+  # $DOCKER_HOST, then /var/run/docker.sock (rootful podman:
+  # /run/podman/podman.sock). The CLI, the resource monitoring (which reads
+  # the API through it, falling back to the CLI) and the Linux sign-in check
+  # use it.
+  socket: ""
   command_timeout: 30s    # list/start/stop/... calls
   pull_timeout: 30m       # image pulls and container create
   # Compose (docker/podman only; wslc has no compose). Empty = use the
@@ -58,6 +64,17 @@ registry:
   timeout: 10s            # per registry request
   auth_file: ""           # empty = podman auth.json, then ~/.docker/config.json
   insecure_registries: [] # host:port of registries reached over plain HTTP
+
+# Resource monitoring (docker/podman). CPU, RAM and disk I/O of the running
+# containers are sampled in the background, every dashboard_interval while
+# the dashboard is shown; the dashboard charts the last 15 minutes. Disk
+# usage (images, containers, volumes and the host folders containers
+# bind-mount) is measured every disk_interval and when the dashboard is
+# opened. Nothing is written to disk.
+metrics:
+  interval: 1m            # at least 10s
+  dashboard_interval: 10s # at least 2s, at most interval
+  disk_interval: 1h       # at least 5m
 
 # Windows: additional sign-in accounts. When the list is empty and
 # system_accounts is false, ContainerUI asks for a username and password on

@@ -35,6 +35,7 @@ import (
 	"github.com/svenbeisiegel/containerui/internal/registry"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 	"github.com/svenbeisiegel/containerui/internal/runtime/cli"
+	"github.com/svenbeisiegel/containerui/internal/runtime/dockerapi"
 	_ "github.com/svenbeisiegel/containerui/internal/runtime/fake"
 	"github.com/svenbeisiegel/containerui/internal/tlsutil"
 	"github.com/svenbeisiegel/containerui/internal/updates"
@@ -243,8 +244,21 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		go scanner.Run(ctx)
 	}
 
+	// Resource usage comes from the runtime API where its socket can be
+	// used, else from the CLI.
+	var stater runtime.Stater
+	if d, ok := rt.(*cli.Driver); ok && d.Capabilities().Stats {
+		if sock := d.APISocket(ctx); sock != "" {
+			stater = dockerapi.NewStater(sock, d, log)
+		} else {
+			log.Info("resource usage via the CLI: no runtime API socket found")
+		}
+	}
+
 	s, err := web.New(web.Options{
 		Runtime:  rt,
+		Stater:   stater,
+		Metrics:  cfg.Metrics,
 		Users:    users,
 		Sessions: auth.NewSessions(cfg.Server.SessionIdleTimeout, cfg.Server.SessionAbsoluteTimeout),
 		Jobs:     jm,

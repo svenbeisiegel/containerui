@@ -12,14 +12,25 @@ Features:
   their current CPU, RAM and disk I/O. On docker and podman it also shows
   **container metrics**: CPU usage, RAM usage and disk I/O (read + write) of
   the last 15 minutes as line charts, and two pie charts of the **disk
-  usage**, per container (its writable layer plus the volumes only it mounts;
-  volumes several containers share are one slice) and by category (images,
-  containers, volumes, build cache). The six busiest containers get their own
-  color, the rest are summed as *other*. Metrics are sampled every 5 s
-  (`container stats --no-stream`) only while a dashboard is open, and for
-  15 minutes after, and are kept in memory only; the disk usage
-  (`system df`) is measured once a minute. On podman the per-container pie
-  shows the writable layers only, as podman reports no volume sizes there.
+  usage**, per container (its writable layer plus the volumes and
+  bind-mounted host folders only it mounts; those several containers share
+  are one slice) and by category (images, containers, volumes, build cache,
+  bind mounts). The six busiest containers get their own color, the rest are
+  summed as *other*. The containers are monitored in the background from
+  the start, so opening the dashboard shows the last 15 minutes right away:
+  every minute, and every 10 s while a dashboard is open (`metrics.*`).
+  Samples are kept in memory only. The disk usage is measured every hour
+  and once more when the dashboard is opened; the page shows the last
+  result until the new one is done. Bind-mounted host folders are measured
+  like `du` (allocated space, hard links once, one file system); system
+  folders (`/`, `/etc`, `/home`, `/proc`, `/run`, `/var/lib/docker`, …) are
+  not measured, and the page lists such mounts. The usage is read from the
+  runtime's API socket (`runtime.socket`, else `$DOCKER_HOST`, the default
+  socket or the CLI's current context), which costs the daemon about half
+  of `container stats` and starts no process; when the socket cannot be
+  used, the CLI is used (`container stats --no-stream`, `system df`).
+  Without the API, podman's per-container pie shows the writable layers
+  only, as the podman CLI reports no volume sizes there.
   wslc shows no metrics yet.
 - **Containers**: create (image, name, command, ports, env, volumes, labels,
   networks with aliases and fixed IPs, restart policy, pull policy), start,
@@ -336,6 +347,7 @@ The default file is [internal/config/default.yaml](internal/config/default.yaml)
 | `runtime.driver` | `auto` | `auto`, `wslc`, `docker`, `podman` or `fake` |
 | `runtime.path` | — | Path to the CLI (empty = `wslc.exe` / `docker` / `podman` on `PATH`) |
 | `runtime.session` | — | wslc session to use (empty = default; wslc only) |
+| `runtime.socket` | — | docker/podman: the daemon's socket (`/path` or `unix:///path`; Windows: `npipe:////./pipe/name`). Used by the CLI (`DOCKER_HOST` / `CONTAINER_HOST`), the resource monitoring (API; Unix sockets only) and the Linux sign-in check. Empty = `$DOCKER_HOST`, then the runtime's default |
 | `runtime.command_timeout` | `30s` | Timeout for regular commands |
 | `runtime.pull_timeout` | `30m` | Timeout for pulls and container create |
 | `runtime.compose_path` | — | A standalone compose binary (`docker-compose`, `podman-compose`); empty = detect, see [Compose](#compose) |
@@ -346,6 +358,9 @@ The default file is [internal/config/default.yaml](internal/config/default.yaml)
 | `registry.timeout` | `10s` | Timeout per registry request |
 | `registry.auth_file` | — | docker `config.json` or podman `auth.json` with registry logins (relative to the config file); empty = `$REGISTRY_AUTH_FILE`, `$XDG_RUNTIME_DIR/containers/auth.json`, `~/.config/containers/auth.json`, `~/.docker/config.json` |
 | `registry.insecure_registries` | `[]` | Registries (`host:port`) reached over plain HTTP |
+| `metrics.interval` | `1m` | How often CPU, RAM and disk I/O are sampled in the background (at least `10s`) |
+| `metrics.dashboard_interval` | `10s` | Sampling interval while a dashboard is open (at least `2s`, at most `metrics.interval`) |
+| `metrics.disk_interval` | `1h` | How often the disk usage is measured (at least `5m`); opening the dashboard measures it once more |
 | `events.dir` | `events` | Linux: folder for the journal's error events and their read state (relative to the config file), see [Events](#events) |
 | `users[]` | — | Windows: additional accounts, `username` plus `password_hash` (bcrypt) or `password` (plaintext, warns). Ignored on Linux |
 
@@ -446,8 +461,9 @@ A sign-in succeeds when
 2. the account may use the container runtime, i.e. it could connect to the
    runtime's socket itself: it is root, owns the socket, or is in the
    socket's group with read/write permission (for docker usually the
-   `docker` group; the socket is `$DOCKER_HOST` or `/var/run/docker.sock`,
-   for rootful podman `/run/podman/podman.sock`). For a runtime without a
+   `docker` group; the socket is `runtime.socket` if set, else
+   `$DOCKER_HOST` or `/var/run/docker.sock`, for rootful podman
+   `/run/podman/podman.sock`). For a runtime without a
    socket (rootless podman) only root and the account ContainerUI runs as
    may sign in.
 

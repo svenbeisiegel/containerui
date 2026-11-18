@@ -63,14 +63,15 @@
   </section>
   <div class="grid2">
     <section class="panel">
-      <h2>Disk Usage per Container</h2>
-      <p class="muted small">Writable layer plus the volumes only this container mounts.</p>
+      <div class="panel-head"><h2>Disk Usage per Container</h2>{{template "disk_measured" .}}</div>
+      <p class="muted small">Writable layer plus the volumes and bind mounts only this container mounts.</p>
       {{template "donut_panel" dict "Chart" .DiskContainers "Err" .DiskErr "Loading" .DiskLoading}}
     </section>
     <section class="panel">
-      <h2>Disk Usage by Category</h2>
-      <p class="muted small">Everything the runtime stores.</p>
+      <div class="panel-head"><h2>Disk Usage by Category</h2>{{template "disk_measured" .}}</div>
+      <p class="muted small">Everything the runtime stores, plus the host folders containers bind-mount.</p>
       {{template "donut_panel" dict "Chart" .DiskCategories "Err" .DiskErr "Loading" .DiskLoading}}
+      {{with .Unmeasured}}<p class="muted small" title="{{join . "\n"}}">{{len .}} bind {{if eq (len .) 1}}mount is{{else}}mounts are{{end}} not counted in full (hover for the paths).</p>{{end}}
     </section>
   </div>
   {{end}}
@@ -92,6 +93,8 @@
   <div class="chart-x" aria-hidden="true">{{range .XTicks}}<span>{{.}}</span>{{end}}</div>
 </figure>
 {{end}}
+
+{{define "disk_measured"}}{{if not .DiskAt.IsZero}}<span class="muted small">measured {{.DiskAt.Format "15:04"}}{{if .DiskBusy}} · measuring again…{{end}}</span>{{end}}{{end}}
 
 {{define "donut_panel"}}
 {{if .Err}}<div class="flash error">{{.Err}}</div>

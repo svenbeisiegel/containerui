@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -51,8 +55,11 @@ func (d *Driver) DiskUsage(ctx context.Context) (runtime.DiskUsage, error) {
 		if err != nil {
 			return du, err
 		}
-		du.Containers, err = parsePodmanContainerSizes(out)
-		return du, err
+		if du.Containers, err = parsePodmanContainerSizes(out); err != nil {
+			return du, err
+		}
+		d.addBinds(ctx, du.Containers)
+		return du, nil
 	}
 	if du.Categories, err = parseDF(out); err != nil {
 		return du, err
@@ -61,8 +68,65 @@ func (d *Driver) DiskUsage(ctx context.Context) (runtime.DiskUsage, error) {
 	if err != nil {
 		return du, err
 	}
-	du.Containers, du.Volumes, err = parseDFVerbose(out)
-	return du, err
+	if du.Containers, du.Volumes, err = parseDFVerbose(out); err != nil {
+		return du, err
+	}
+	d.addBinds(ctx, du.Containers)
+	return du, nil
+}
+
+// addBinds fills the bind-mounted host paths of cs from one "container
+// inspect" of all of them. Without them the disk usage is still useful, so
+// a failure is only logged.
+func (d *Driver) addBinds(ctx context.Context, cs []runtime.ContainerDisk) {
+	if len(cs) == 0 {
+		return
+	}
+	args := []string{"container", "inspect"}
+	for _, c := range cs {
+		if runtime.ValidateContainerID(c.ID) == nil {
+			args = append(args, c.ID)
+		}
+	}
+	// A container removed meanwhile makes inspect exit non-zero but still
+	// print the others.
+	out, err := d.run(ctx, "container inspect", args...)
+	binds, perr := parseBinds(out)
+	if perr != nil {
+		slog.Debug("bind mounts unknown", "error", errors.Join(err, perr))
+		return
+	}
+	for i := range cs {
+		for id, paths := range binds {
+			if cs[i].ID != "" && strings.HasPrefix(id, cs[i].ID) {
+				cs[i].Binds = paths
+				break
+			}
+		}
+	}
+}
+
+// parseBinds maps full container IDs to their bind mount sources.
+func parseBinds(data []byte) (map[string][]string, error) {
+	var list []runtime.ContainerInspect
+	data = bytes.TrimSpace(normalize(data))
+	if len(data) == 0 {
+		return nil, errors.New("no inspect output")
+	}
+	if err := json.Unmarshal(data, &list); err != nil {
+		return nil, fmt.Errorf("decode CLI output: %w", err)
+	}
+	out := make(map[string][]string, len(list))
+	for _, c := range list {
+		var paths []string
+		for _, m := range c.Mounts {
+			if strings.EqualFold(m.Type, "bind") && m.Source != "" && !slices.Contains(paths, m.Source) {
+				paths = append(paths, m.Source)
+			}
+		}
+		out[c.ID] = paths
+	}
+	return out, nil
 }
 
 // ---- docker ----

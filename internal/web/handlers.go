@@ -37,8 +37,8 @@ type dashboardView struct {
 }
 
 // loadDashboard queries everything concurrently; a failing section only
-// shows its own error. Showing the dashboard keeps the metrics sampler
-// running (see metricsSampler).
+// shows its own error. Showing the dashboard makes the metrics sampler
+// sample at its dashboard interval (see metricsSampler).
 func (s *Server) loadDashboard(ctx context.Context) dashboardView {
 	v := dashboardView{Caps: s.caps(), Updated: time.Now()}
 	if s.metrics != nil && v.Caps.Stats {
@@ -101,7 +101,13 @@ func (s *Server) loadDashboard(ctx context.Context) dashboardView {
 	return v
 }
 
+// handleDashboard shows the dashboard with the history and disk usage
+// collected in the background, and measures the disk usage once more; the
+// partial the page polls shows the result when it is done.
 func (s *Server) handleDashboard(w http.ResponseWriter, r *http.Request) {
+	if s.metrics != nil && s.caps().Stats {
+		s.metrics.refreshDisk()
+	}
 	s.render(w, "dashboard", s.newPage(r, "Dashboard", "dashboard", s.loadDashboard(r.Context())))
 }
 

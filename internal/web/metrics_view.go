@@ -21,8 +21,13 @@ type metricsView struct {
 
 	DiskErr        string
 	DiskLoading    bool
+	DiskAt         time.Time // when the disk usage shown was measured
+	DiskBusy       bool      // it is being measured again
 	DiskContainers donutChart
 	DiskCategories donutChart
+	// Unmeasured lists the bind-mounted host paths without a (complete)
+	// size: "path (note)".
+	Unmeasured []string
 }
 
 // currentStats are a running container's latest values for the table.
@@ -87,7 +92,9 @@ func chooseSeries(series []metricSeries) (chosen, rest []metricSeries) {
 	var cpu, mem, io float64
 	for _, s := range series {
 		p := lastPoint(s)
-		cpu += p.CPU
+		if !math.IsNaN(p.CPU) {
+			cpu += p.CPU
+		}
 		mem += float64(p.Mem)
 		if r := ioRate(p); !math.IsNaN(r) {
 			io += r
@@ -113,9 +120,11 @@ func chooseSeries(series []metricSeries) (chosen, rest []metricSeries) {
 
 // buildMetricsView renders the snapshot's charts as of now.
 func (m *metricsSampler) buildMetricsView(snap metricsSnapshot, now time.Time) *metricsView {
-	v := &metricsView{Err: snap.Err, DiskErr: snap.DiskErr, DiskLoading: snap.Disk == nil && snap.DiskErr == ""}
+	v := &metricsView{Err: snap.Err, DiskErr: snap.DiskErr, DiskLoading: snap.Disk == nil && snap.DiskErr == "",
+		DiskAt: snap.DiskAt, DiskBusy: snap.DiskBusy}
 	if snap.Disk != nil {
 		v.DiskContainers, v.DiskCategories = diskCharts(*snap.Disk)
+		v.Unmeasured = unmeasured(*snap.Disk)
 	}
 	enough := false
 	for _, s := range snap.Series {
@@ -174,7 +183,7 @@ func ioTip(p metricPoint) string {
 func sumSeries(rest []metricSeries, name string) (cpu, mem, io chartSeries) {
 	type acc struct {
 		cpu, mem, read, write float64
-		ioKnown               bool
+		cpuKnown, ioKnown     bool
 	}
 	byT := map[int64]*acc{}
 	var times []time.Time
@@ -186,7 +195,9 @@ func sumSeries(rest []metricSeries, name string) (cpu, mem, io chartSeries) {
 				byT[p.T.UnixNano()] = a
 				times = append(times, p.T)
 			}
-			a.cpu += p.CPU
+			if !math.IsNaN(p.CPU) {
+				a.cpu, a.cpuKnown = a.cpu+p.CPU, true
+			}
 			a.mem += float64(p.Mem)
 			if p.Read >= 0 && p.Write >= 0 {
 				a.read, a.write, a.ioKnown = a.read+p.Read, a.write+p.Write, true
@@ -198,7 +209,11 @@ func sumSeries(rest []metricSeries, name string) (cpu, mem, io chartSeries) {
 	mem, io = cpu, cpu
 	for _, t := range times {
 		a := byT[t.UnixNano()]
-		cpu.T, cpu.V = append(cpu.T, t), append(cpu.V, a.cpu)
+		c := math.NaN()
+		if a.cpuKnown {
+			c = a.cpu
+		}
+		cpu.T, cpu.V = append(cpu.T, t), append(cpu.V, c)
 		mem.T, mem.V = append(mem.T, t), append(mem.V, a.mem)
 		p := metricPoint{Read: -1, Write: -1}
 		if a.ioKnown {
@@ -209,9 +224,10 @@ func sumSeries(rest []metricSeries, name string) (cpu, mem, io chartSeries) {
 	return cpu, mem, io
 }
 
-// diskCharts builds the per-container and per-category donuts. A container's
-// slice is its writable layer plus the volumes only it mounts; volumes that
-// several containers mount are one "shared volumes" slice.
+// diskCharts builds the per-container and per-category donuts. A
+// container's slice is its writable layer plus the volumes and bind-mounted
+// host paths only it mounts; those that several containers mount are one
+// "shared mounts" slice. The host paths are one more category.
 func diskCharts(du runtime.DiskUsage) (perContainer, byCategory donutChart) {
 	resolve := func(mount string) (string, bool) {
 		mount = strings.TrimSuffix(mount, "…")
@@ -229,36 +245,50 @@ func diskCharts(du runtime.DiskUsage) (perContainer, byCategory donutChart) {
 		}
 		return match, match != ""
 	}
+	// Volumes and binds by key ("v:"/"b:" keep a volume and a path of the
+	// same name apart) with their size and number of users.
+	size := map[string]uint64{}
 	users := map[string]int{}
 	mounts := make([][]string, len(du.Containers))
 	for i, c := range du.Containers {
 		seen := map[string]bool{}
+		add := func(key string, n uint64) {
+			if !seen[key] {
+				seen[key] = true
+				users[key]++
+				size[key] = n
+				mounts[i] = append(mounts[i], key)
+			}
+		}
 		for _, m := range c.Mounts {
-			if name, ok := resolve(m); ok && !seen[name] {
-				seen[name] = true
-				users[name]++
-				mounts[i] = append(mounts[i], name)
+			if name, ok := resolve(m); ok {
+				add("v:"+name, du.Volumes[name])
+			}
+		}
+		for _, b := range c.Binds {
+			if bs, ok := du.Binds[b]; ok {
+				add("b:"+b, bs.Size)
 			}
 		}
 	}
 	var slices []slice
 	shared := 0.0
-	for name, n := range users {
+	for key, n := range users {
 		if n > 1 {
-			shared += float64(du.Volumes[name])
+			shared += float64(size[key])
 		}
 	}
 	for i, c := range du.Containers {
-		size := float64(c.Size)
-		for _, name := range mounts[i] {
-			if users[name] == 1 {
-				size += float64(du.Volumes[name])
+		total := float64(c.Size)
+		for _, key := range mounts[i] {
+			if users[key] == 1 {
+				total += float64(size[key])
 			}
 		}
-		slices = append(slices, slice{Name: c.Name, Value: size})
+		slices = append(slices, slice{Name: c.Name, Value: total})
 	}
 	if shared > 0 {
-		slices = append(slices, slice{Name: "shared volumes", Value: shared})
+		slices = append(slices, slice{Name: "shared mounts", Value: shared})
 	}
 	perContainer = buildDonut("Disk usage per container", slices, formatBytes)
 
@@ -266,8 +296,28 @@ func diskCharts(du runtime.DiskUsage) (perContainer, byCategory donutChart) {
 	for _, c := range du.Categories {
 		cats = append(cats, slice{Name: c.Name, Value: float64(c.Size)})
 	}
+	var binds uint64
+	for _, b := range du.Binds {
+		binds += b.Size
+	}
+	if binds > 0 {
+		cats = append(cats, slice{Name: "Bind mounts", Value: float64(binds)})
+	}
 	byCategory = buildDonut("Disk usage by category", cats, formatBytes)
 	return perContainer, byCategory
+}
+
+// unmeasured lists the bind-mounted host paths of running or stopped
+// containers whose size is missing or incomplete, sorted.
+func unmeasured(du runtime.DiskUsage) []string {
+	var out []string
+	for path, b := range du.Binds {
+		if b.Note != "" {
+			out = append(out, path+" ("+b.Note+")")
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // currentFor maps the running containers to their latest sample. Stats IDs

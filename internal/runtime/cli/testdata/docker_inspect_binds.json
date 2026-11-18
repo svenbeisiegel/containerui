@@ -1,0 +1,17 @@
+[
+  {
+    "Id": "4b4141452e5fd908d97c443089a9bdede04f7ce6d7202225efa45dab62c20d30",
+    "Name": "/cuitest-busy",
+    "Mounts": [
+      {"Type": "volume", "Name": "cuitest-data", "Source": "/var/lib/docker/volumes/cuitest-data/_data", "Destination": "/data", "RW": true},
+      {"Type": "bind", "Source": "/srv/cuitest/config", "Destination": "/config", "RW": false},
+      {"Type": "bind", "Source": "/srv/cuitest/config", "Destination": "/config2", "RW": false},
+      {"Type": "tmpfs", "Source": "", "Destination": "/tmp"}
+    ]
+  },
+  {
+    "Id": "5fbf0b772772e43cc4c73d00cae1b316958df28a6176951ffefce673e0ca0d5f",
+    "Name": "/cuitest-web",
+    "Mounts": []
+  }
+]

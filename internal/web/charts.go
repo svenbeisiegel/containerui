@@ -262,6 +262,9 @@ func nicePercent(v float64) float64 {
 }
 
 func formatPercent(v float64) string {
+	if math.IsNaN(v) {
+		return "–"
+	}
 	if v >= 10 || v == 0 {
 		return strconv.FormatFloat(math.Round(v), 'f', -1, 64) + "%"
 	}

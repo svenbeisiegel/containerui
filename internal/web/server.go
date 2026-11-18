@@ -18,6 +18,7 @@ import (
 
 	"github.com/svenbeisiegel/containerui/internal/auth"
 	"github.com/svenbeisiegel/containerui/internal/compose"
+	"github.com/svenbeisiegel/containerui/internal/config"
 	"github.com/svenbeisiegel/containerui/internal/events"
 	"github.com/svenbeisiegel/containerui/internal/hostinfo"
 	"github.com/svenbeisiegel/containerui/internal/hostlog"
@@ -58,6 +59,11 @@ type Options struct {
 	// Updates knows which local images have a newer version; nil hides
 	// image updates.
 	Updates *updates.Scanner
+	// Stater reads the resource usage (e.g. through the runtime API); nil
+	// asks Runtime when it implements runtime.Stater.
+	Stater runtime.Stater
+	// Metrics sets the monitoring intervals; zero values are the defaults.
+	Metrics config.Metrics
 }
 
 // favicon is the first of these files present in static/. favicon.svg ships
@@ -121,8 +127,12 @@ func New(o Options) (*Server, error) {
 		interval = defaultWarmInterval
 	}
 	s.warm = &warmer{rt: s.rt, log: s.log, interval: interval}
-	if st, ok := s.rt.(runtime.Stater); ok && s.rt.Capabilities().Stats {
-		s.metrics = newMetricsSampler(st, s.log)
+	st := o.Stater
+	if st == nil {
+		st, _ = s.rt.(runtime.Stater)
+	}
+	if st != nil && s.rt.Capabilities().Stats {
+		s.metrics = newMetricsSampler(st, s.log, o.Metrics)
 	}
 	if s.jobs == nil {
 		s.jobs = jobs.NewManager(context.Background())
@@ -140,6 +150,9 @@ func New(o Options) (*Server, error) {
 			s.favicon, s.favType = "/static/"+c.name, c.ctype
 			break
 		}
+	}
+	if s.metrics != nil {
+		s.metrics.start()
 	}
 	return s, nil
 }

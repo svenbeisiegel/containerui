@@ -27,6 +27,7 @@ func (r execRunner) StartPTY(args []string, cols, rows uint16) (runtime.Terminal
 		return nil, fmt.Errorf("resize pseudo terminal: %w", err)
 	}
 	cmd := p.Command(r.path, args...)
+	cmd.Env = r.environ()
 	if err := cmd.Start(); err != nil {
 		_ = p.Close()
 		return nil, err

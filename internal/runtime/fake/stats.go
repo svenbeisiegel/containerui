@@ -76,6 +76,17 @@ func (f *Runtime) DiskUsage(context.Context) (runtime.DiskUsage, error) {
 		})
 	}
 	sort.Slice(du.Containers, func(i, j int) bool { return du.Containers[i].Name < du.Containers[j].Name })
+	// Demo bind mounts, sized here so no host path is measured: a data
+	// folder and the runtime socket, which is not measured.
+	du.Binds = map[string]runtime.BindSize{}
+	if len(du.Containers) > 0 {
+		du.Containers[0].Binds = []string{"/srv/demo/data"}
+		du.Binds["/srv/demo/data"] = runtime.BindSize{Size: 180 << 20}
+	}
+	if len(du.Containers) > 1 {
+		du.Containers[1].Binds = []string{"/var/run/docker.sock"}
+		du.Binds["/var/run/docker.sock"] = runtime.BindSize{Note: runtime.BindSkipped}
+	}
 	for _, v := range f.volumes {
 		size := uint64(seed(v.Name)*900) << 20
 		volumes += size

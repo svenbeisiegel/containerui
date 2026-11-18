@@ -38,7 +38,7 @@ func TestDefaultYAMLMatchesDefaults(t *testing.T) {
 	d := Default()
 	if cfg.Server.Listen != d.Server.Listen || cfg.Runtime != d.Runtime ||
 		cfg.Server.SessionIdleTimeout != d.Server.SessionIdleTimeout || !cfg.Server.TLS.IsSelfSigned() ||
-		!reflect.DeepEqual(cfg.Registry, d.Registry) {
+		!reflect.DeepEqual(cfg.Registry, d.Registry) || cfg.Metrics != d.Metrics {
 		t.Errorf("default.yaml = %+v, Default() = %+v", cfg, d)
 	}
 }
@@ -199,5 +199,51 @@ func TestTemplate(t *testing.T) {
 	same, err := Template("", "", "")
 	if err != nil || string(same) != string(DefaultYAML) {
 		t.Errorf("empty values changed the template: %v", err)
+	}
+}
+
+func TestRuntimeSocket(t *testing.T) {
+	for in, want := range map[string]string{
+		"":                              "",
+		"/run/docker.sock":              "/run/docker.sock",
+		"unix:///run/user/1000/d.sock":  "/run/user/1000/d.sock",
+		" unix:///var/run/docker.sock ": "/var/run/docker.sock",
+		"npipe:////./pipe/docker_x":     `\\.\pipe\docker_x`,
+	} {
+		cfg, err := Parse([]byte("runtime: { socket: \"" + in + "\" }"))
+		if err != nil {
+			t.Fatalf("%q: %v", in, err)
+		}
+		if cfg.Runtime.Socket != want {
+			t.Errorf("socket %q = %q, want %q", in, cfg.Runtime.Socket, want)
+		}
+	}
+	if _, err := Parse([]byte(`runtime: { socket: "tcp://10.0.0.1:2375" }`)); err == nil || !strings.Contains(err.Error(), "runtime.socket") {
+		t.Errorf("tcp socket accepted: %v", err)
+	}
+}
+
+func TestMetricsDefaultsAndLimits(t *testing.T) {
+	cfg, err := Parse(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := Default().Metrics; cfg.Metrics != want || want.Interval != time.Minute ||
+		want.DashboardInterval != 10*time.Second || want.DiskInterval != time.Hour {
+		t.Errorf("metrics = %+v", cfg.Metrics)
+	}
+	for doc, field := range map[string]string{
+		"metrics: { interval: 5s, dashboard_interval: 2s }":  "metrics.interval",
+		"metrics: { dashboard_interval: 1s }":                "metrics.dashboard_interval",
+		"metrics: { interval: 30s, dashboard_interval: 1m }": "must not exceed",
+		"metrics: { disk_interval: 1m }":                     "metrics.disk_interval",
+	} {
+		if _, err := Parse([]byte(doc)); err == nil || !strings.Contains(err.Error(), field) {
+			t.Errorf("%s: err = %v, want %s", doc, err, field)
+		}
+	}
+	cfg, err = Parse([]byte("metrics: { interval: 30s, dashboard_interval: 5s, disk_interval: 2h }"))
+	if err != nil || cfg.Metrics != (Metrics{Interval: 30 * time.Second, DashboardInterval: 5 * time.Second, DiskInterval: 2 * time.Hour}) {
+		t.Errorf("metrics = %+v, %v", cfg.Metrics, err)
 	}
 }

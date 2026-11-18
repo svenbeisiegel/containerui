@@ -39,6 +39,7 @@ type Driver struct {
 	runner         Runner
 	path           string // resolved executable, for logging
 	session        string
+	socket         string // runtime.socket; "" = the flavor's default
 	commandTimeout time.Duration
 	pullTimeout    time.Duration
 	composeTimeout time.Duration
@@ -54,14 +55,15 @@ func New(f *Flavor, cfg config.Runtime) (*Driver, error) {
 	if err != nil {
 		return nil, err
 	}
-	d := NewWithRunner(execRunner{path: path}, f, cfg)
+	env := socketEnv(f, cfg.Socket)
+	d := NewWithRunner(execRunner{path: path, env: env}, f, cfg)
 	d.path = path
-	d.compose = findCompose(f, cfg, execRunner{path: path}, func(bin string) (Runner, bool) {
+	d.compose = findCompose(f, cfg, execRunner{path: path, env: env}, func(bin string) (Runner, bool) {
 		p, err := exec.LookPath(bin)
 		if err != nil {
 			return nil, false
 		}
-		return execRunner{path: p}, true
+		return execRunner{path: p, env: env}, true
 	})
 	return d, nil
 }
@@ -86,6 +88,9 @@ func NewWithRunner(r Runner, f *Flavor, cfg config.Runtime) *Driver {
 	d := &Driver{flavor: f, runner: r, commandTimeout: cfg.CommandTimeout, pullTimeout: cfg.PullTimeout, composeTimeout: cfg.ComposeTimeout}
 	if f.session {
 		d.session = cfg.Session
+	}
+	if f == Docker || f == Podman {
+		d.socket = cfg.Socket
 	}
 	if d.commandTimeout == 0 {
 		d.commandTimeout = 30 * time.Second

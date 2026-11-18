@@ -30,6 +30,7 @@ type Config struct {
 	Runtime  Runtime  `yaml:"runtime"`
 	Events   Events   `yaml:"events"`
 	Registry Registry `yaml:"registry"`
+	Metrics  Metrics  `yaml:"metrics"`
 	Users    []User   `yaml:"users"`
 
 	// Dir is the directory the config file was loaded from. Relative paths
@@ -65,9 +66,14 @@ func (t TLS) On() bool { return t.Enabled != nil && *t.Enabled }
 func (t TLS) IsSelfSigned() bool { return t.SelfSigned != nil && *t.SelfSigned }
 
 type Runtime struct {
-	Driver         string        `yaml:"driver"`
-	Path           string        `yaml:"path"`    // CLI binary; empty = the driver's default
-	Session        string        `yaml:"session"` // wslc only
+	Driver  string `yaml:"driver"`
+	Path    string `yaml:"path"`    // CLI binary; empty = the driver's default
+	Session string `yaml:"session"` // wslc only
+	// Socket is the Unix socket of the docker or podman daemon ("/path" or
+	// "unix:///path"; Windows: a named pipe); empty = $DOCKER_HOST, then the runtime's default.
+	// The CLI, the API access of the resource monitoring and the Linux
+	// sign-in check all use it.
+	Socket         string        `yaml:"socket"`
 	CommandTimeout time.Duration `yaml:"command_timeout"`
 	PullTimeout    time.Duration `yaml:"pull_timeout"`
 
@@ -114,6 +120,17 @@ type Registry struct {
 // CheckUpdatesOn reports whether update checks are enabled.
 func (r Registry) CheckUpdatesOn() bool { return r.CheckUpdates == nil || *r.CheckUpdates }
 
+// Metrics configures the background monitoring of the containers.
+type Metrics struct {
+	// Interval is how often CPU, RAM and disk I/O are sampled.
+	Interval time.Duration `yaml:"interval"`
+	// DashboardInterval is the sampling interval while the dashboard is
+	// shown.
+	DashboardInterval time.Duration `yaml:"dashboard_interval"`
+	// DiskInterval is how often the disk usage is measured.
+	DiskInterval time.Duration `yaml:"disk_interval"`
+}
+
 // User is a login account. Either PasswordHash (bcrypt, preferred) or
 // Password (plaintext) must be set.
 type User struct {
@@ -143,6 +160,7 @@ func Default() *Config {
 		},
 		Events:   Events{Dir: "events"},
 		Registry: Registry{CheckUpdates: &on, CheckInterval: 30 * time.Minute, Timeout: 10 * time.Second, Insecure: []string{}},
+		Metrics:  Metrics{Interval: time.Minute, DashboardInterval: 10 * time.Second, DiskInterval: time.Hour},
 	}
 }
 
@@ -306,6 +324,10 @@ func (c *Config) applyDefaults() {
 	c.Runtime.PullTimeout = cmp(c.Runtime.PullTimeout, d.Runtime.PullTimeout)
 	c.Runtime.ComposeTimeout = cmp(c.Runtime.ComposeTimeout, d.Runtime.ComposeTimeout)
 	c.Runtime.ComposeDir = cmp(c.Runtime.ComposeDir, d.Runtime.ComposeDir)
+	c.Runtime.Socket = SocketPath(c.Runtime.Socket)
+	c.Metrics.Interval = cmp(c.Metrics.Interval, d.Metrics.Interval)
+	c.Metrics.DashboardInterval = cmp(c.Metrics.DashboardInterval, d.Metrics.DashboardInterval)
+	c.Metrics.DiskInterval = cmp(c.Metrics.DiskInterval, d.Metrics.DiskInterval)
 	c.Events.Dir = cmp(c.Events.Dir, d.Events.Dir)
 	if c.Registry.CheckUpdates == nil {
 		c.Registry.CheckUpdates = d.Registry.CheckUpdates
@@ -351,10 +373,40 @@ func (c *Config) validate() error {
 			errs = append(errs, fmt.Errorf("users[%d] (%s): set only one of password_hash and password", i, u.Username))
 		}
 	}
+	if s := c.Runtime.Socket; s != "" && strings.Contains(s, "://") {
+		errs = append(errs, fmt.Errorf("runtime.socket %q: only unix:// sockets and npipe:// pipes are supported", s))
+	}
+	m := c.Metrics
+	if m.Interval < 10*time.Second {
+		errs = append(errs, fmt.Errorf("metrics.interval %s: must be at least 10s", m.Interval))
+	}
+	if m.DashboardInterval < 2*time.Second {
+		errs = append(errs, fmt.Errorf("metrics.dashboard_interval %s: must be at least 2s", m.DashboardInterval))
+	}
+	if m.DashboardInterval > m.Interval {
+		errs = append(errs, fmt.Errorf("metrics.dashboard_interval %s: must not exceed metrics.interval %s", m.DashboardInterval, m.Interval))
+	}
+	if m.DiskInterval < 5*time.Minute {
+		errs = append(errs, fmt.Errorf("metrics.disk_interval %s: must be at least 5m", m.DiskInterval))
+	}
 	if c.Registry.CheckInterval < time.Minute {
 		errs = append(errs, fmt.Errorf("registry.check_interval %s: must be at least 1m", c.Registry.CheckInterval))
 	}
 	return errors.Join(errs...)
+}
+
+// SocketPath turns a runtime.socket value into a path: "unix:///x" becomes
+// "/x", a Windows "npipe:////./pipe/x" becomes `\\.\pipe\x`. Other schemes are
+// returned unchanged (and rejected by validate).
+func SocketPath(s string) string {
+	s = strings.TrimSpace(s)
+	if p, ok := strings.CutPrefix(s, "unix://"); ok {
+		return p
+	}
+	if p, ok := strings.CutPrefix(s, "npipe://"); ok {
+		return strings.ReplaceAll(p, "/", `\`)
+	}
+	return s
 }
 
 // ListenIsLoopback reports whether the listen address only binds loopback.

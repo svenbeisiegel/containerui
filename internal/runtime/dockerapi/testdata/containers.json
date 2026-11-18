@@ -1,0 +1,116 @@
+[
+ {
+  "Id": "2f99a52f3283d3aaa49d3042f47e46d20dbf45e6650d4b75419425db850e9812",
+  "Names": [
+   "/cui-api-bind"
+  ],
+  "Image": "alpine:3.24",
+  "ImageID": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+  "ImageManifestDescriptor": {
+   "mediaType": "application/vnd.oci.image.manifest.v1+json",
+   "digest": "sha256:0f49f331d9212aff11b932863be4eb01cdf962969aa86dab7d1ee21ac6f5f52b",
+   "size": 1022,
+   "annotations": {
+    "com.docker.official-images.bashbrew.arch": "amd64",
+    "org.opencontainers.image.base.name": "scratch",
+    "org.opencontainers.image.created": "2026-11-05T18:00:01Z",
+    "org.opencontainers.image.revision": "0c9af76133a2dd9a31dedf3600e423087b29a879",
+    "org.opencontainers.image.source": "https://github.com/alpinelinux/docker-alpine.git#0c9af76133a2dd9a31dedf3600e423087b29a879:x86_64",
+    "org.opencontainers.image.url": "https://hub.docker.com/_/alpine",
+    "org.opencontainers.image.version": "3.24.4"
+   },
+   "platform": {
+    "architecture": "amd64",
+    "os": "linux"
+   }
+  },
+  "Command": "sleep 600",
+  "Created": 1794984402,
+  "Ports": [],
+  "Labels": {
+   "cui-bench": "1"
+  },
+  "State": "running",
+  "Status": "Up 5 seconds",
+  "HostConfig": {
+   "NetworkMode": "bridge"
+  },
+  "Health": {
+   "Status": "none",
+   "FailingStreak": 0
+  },
+  "Mounts": [
+   {
+    "Type": "volume",
+    "Name": "cui-api-data",
+    "Source": "/var/lib/docker/volumes/cui-api-data/_data",
+    "Destination": "/shared",
+    "Driver": "local",
+    "Mode": "z",
+    "RW": true,
+    "Propagation": ""
+   },
+   {
+    "Type": "bind",
+    "Source": "/srv/cuitest/config",
+    "Destination": "/cfg",
+    "Mode": "ro",
+    "RW": false,
+    "Propagation": "rprivate"
+   }
+  ]
+ },
+ {
+  "Id": "a0b1ed6e575b364a98ec184693e8a5db96285743ba083922b5cbe4c6abfe9474",
+  "Names": [
+   "/cui-api-busy"
+  ],
+  "Image": "alpine:3.24",
+  "ImageID": "sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf",
+  "ImageManifestDescriptor": {
+   "mediaType": "application/vnd.oci.image.manifest.v1+json",
+   "digest": "sha256:0f49f331d9212aff11b932863be4eb01cdf962969aa86dab7d1ee21ac6f5f52b",
+   "size": 1022,
+   "annotations": {
+    "com.docker.official-images.bashbrew.arch": "amd64",
+    "org.opencontainers.image.base.name": "scratch",
+    "org.opencontainers.image.created": "2026-11-05T18:00:01Z",
+    "org.opencontainers.image.revision": "0c9af76133a2dd9a31dedf3600e423087b29a879",
+    "org.opencontainers.image.source": "https://github.com/alpinelinux/docker-alpine.git#0c9af76133a2dd9a31dedf3600e423087b29a879:x86_64",
+    "org.opencontainers.image.url": "https://hub.docker.com/_/alpine",
+    "org.opencontainers.image.version": "3.24.4"
+   },
+   "platform": {
+    "architecture": "amd64",
+    "os": "linux"
+   }
+  },
+  "Command": "sh -c 'while true; do dd if=/dev/zero of=/data/x bs=1M count=8 2>/dev/null; sync; done'",
+  "Created": 1794984388,
+  "Ports": [],
+  "Labels": {
+   "cui-bench": "1"
+  },
+  "State": "running",
+  "Status": "Up 19 seconds",
+  "HostConfig": {
+   "NetworkMode": "bridge"
+  },
+  "Health": {
+   "Status": "none",
+   "FailingStreak": 0
+  },
+  "Mounts": [
+   {
+    "Type": "volume",
+    "Name": "cui-api-data",
+    "Source": "/var/lib/docker/volumes/cui-api-data/_data",
+    "Destination": "/data",
+    "Driver": "local",
+    "Mode": "z",
+    "RW": true,
+    "Propagation": ""
+   }
+  ]
+ }
+]

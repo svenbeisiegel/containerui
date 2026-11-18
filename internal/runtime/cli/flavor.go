@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"os"
 	goruntime "runtime"
 	"strings"
@@ -127,11 +128,34 @@ func englishKind(text string) error {
 	return nil
 }
 
-// SocketPath returns the Unix socket (Linux) or named pipe (Windows)
+// SocketPath returns the Unix socket (Linux, macOS) or named pipe (Windows)
 // through which the runtime is reached, or "" if there is none (wslc,
-// rootless podman). Who may use the socket decides who may use the runtime.
+// rootless podman): runtime.socket if set, else the flavor's default. Who
+// may use the socket decides who may use the runtime.
 func (d *Driver) SocketPath() string {
+	if d.socket != "" {
+		return d.socket
+	}
 	return socketPath(d.flavor, goruntime.GOOS, os.Getenv("DOCKER_HOST"), os.Geteuid())
+}
+
+// socketEnv points the CLI of flavor f at a configured socket: docker reads
+// DOCKER_HOST, podman CONTAINER_HOST. nil keeps the CLI's own choice.
+func socketEnv(f *Flavor, socket string) []string {
+	if socket == "" {
+		return nil
+	}
+	host := "unix://" + socket
+	if strings.HasPrefix(socket, `\\`) {
+		host = "npipe://" + strings.ReplaceAll(socket, `\`, "/")
+	}
+	switch f {
+	case Docker:
+		return []string{"DOCKER_HOST=" + host}
+	case Podman:
+		return []string{"CONTAINER_HOST=" + host}
+	}
+	return nil
 }
 
 func socketPath(f *Flavor, goos, dockerHost string, euid int) string {
@@ -159,4 +183,59 @@ func socketPath(f *Flavor, goos, dockerHost string, euid int) string {
 		}
 	}
 	return ""
+}
+
+// APISocket returns the Unix socket through which the runtime's API can be
+// read (the resource monitoring prefers it to the CLI), or "" if none is
+// known: runtime.socket, $DOCKER_HOST, the default socket, or the one the
+// CLI itself uses (docker's current context, podman's remote socket).
+func (d *Driver) APISocket(ctx context.Context) string {
+	if d.socket != "" {
+		return d.socket
+	}
+	if goruntime.GOOS == "windows" {
+		return "" // named pipes are not supported by the API client
+	}
+	host := os.Getenv("DOCKER_HOST")
+	switch d.flavor {
+	case Docker:
+		if host != "" {
+			p, _ := strings.CutPrefix(host, "unix://")
+			if p == host {
+				return "" // tcp:// or ssh://
+			}
+			return p
+		}
+	case Podman:
+		if h := os.Getenv("CONTAINER_HOST"); h != "" {
+			p, _ := strings.CutPrefix(h, "unix://")
+			if p == h {
+				return ""
+			}
+			return p
+		}
+	default:
+		return ""
+	}
+	if p := d.SocketPath(); p != "" && exists(p) {
+		return p
+	}
+	args := []string{"context", "inspect", "--format", "{{.Endpoints.docker.Host}}"}
+	if d.flavor == Podman {
+		args = []string{"info", "--format", "{{.Host.RemoteSocket.Path}}"}
+	}
+	out, err := d.run(ctx, "socket lookup", args...)
+	if err != nil {
+		return ""
+	}
+	p, _ := strings.CutPrefix(strings.TrimSpace(string(normalize(out))), "unix://")
+	if p == "" || !strings.HasPrefix(p, "/") || !exists(p) {
+		return ""
+	}
+	return p
+}
+
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

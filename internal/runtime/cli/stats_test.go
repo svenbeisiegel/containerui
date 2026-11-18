@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"os"
+	"path/filepath"
 	"reflect"
+	goruntime "runtime"
 	"strings"
 	"testing"
 
@@ -156,5 +158,106 @@ func TestWSLCNoStats(t *testing.T) {
 	}
 	if _, err := d.Stats(context.Background()); !errors.Is(err, runtime.ErrUnsupported) {
 		t.Errorf("err = %v", err)
+	}
+}
+
+func TestDockerDiskUsageBinds(t *testing.T) {
+	r := &scriptRunner{script: map[string]string{
+		"system df --format":           testdata(t, "docker_df.ndjson"),
+		"system df --verbose --format": testdata(t, "docker_df_v.json"),
+		"container inspect":            testdata(t, "docker_inspect_binds.json"),
+	}}
+	du, err := NewWithRunner(r, Docker, config.Runtime{}).DiskUsage(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := du.Containers[2].Binds; !reflect.DeepEqual(got, []string{"/srv/cuitest/config"}) {
+		t.Errorf("busy binds = %v", got)
+	}
+	for _, c := range du.Containers[:2] {
+		if len(c.Binds) != 0 {
+			t.Errorf("%s binds = %v", c.Name, c.Binds)
+		}
+	}
+	last := r.calls[len(r.calls)-1]
+	if strings.Join(last[:2], " ") != "container inspect" || len(last) != 2+len(du.Containers) {
+		t.Errorf("inspect args = %v", last)
+	}
+}
+
+func TestDiskUsageWithoutInspect(t *testing.T) {
+	// A failing inspect leaves the binds unknown but the disk usage intact.
+	r := &scriptRunner{script: map[string]string{
+		"system df --format":           testdata(t, "docker_df.ndjson"),
+		"system df --verbose --format": testdata(t, "docker_df_v.json"),
+	}}
+	du, err := NewWithRunner(r, Docker, config.Runtime{}).DiskUsage(context.Background())
+	if err != nil || len(du.Containers) != 3 || du.Containers[2].Binds != nil {
+		t.Errorf("du = %+v, %v", du, err)
+	}
+}
+
+func TestSocketEnv(t *testing.T) {
+	for _, tc := range []struct {
+		f      *Flavor
+		socket string
+		want   []string
+	}{
+		{Docker, "", nil},
+		{Docker, "/run/user/1000/docker.sock", []string{"DOCKER_HOST=unix:///run/user/1000/docker.sock"}},
+		{Docker, `\\.\pipe\docker_x`, []string{"DOCKER_HOST=npipe:////./pipe/docker_x"}},
+		{Podman, "/run/podman/podman.sock", []string{"CONTAINER_HOST=unix:///run/podman/podman.sock"}},
+		{WSLC, "/x.sock", nil},
+	} {
+		if got := socketEnv(tc.f, tc.socket); !reflect.DeepEqual(got, tc.want) {
+			t.Errorf("socketEnv(%s, %q) = %v, want %v", tc.f.Name, tc.socket, got, tc.want)
+		}
+	}
+	d := NewWithRunner(&fakeRunner{}, Docker, config.Runtime{Socket: "/srv/d.sock"})
+	if got := d.SocketPath(); got != "/srv/d.sock" {
+		t.Errorf("SocketPath = %q", got)
+	}
+	if got := NewWithRunner(&fakeRunner{}, WSLC, config.Runtime{Socket: "/srv/d.sock"}).SocketPath(); got != "" {
+		t.Errorf("wslc SocketPath = %q", got)
+	}
+	if got := (execRunner{path: "docker", env: []string{"DOCKER_HOST=unix:///x"}}).environ(); got[len(got)-1] != "DOCKER_HOST=unix:///x" {
+		t.Errorf("environ = %v", got)
+	}
+	if got := (execRunner{path: "docker"}).environ(); got != nil {
+		t.Errorf("environ without socket = %v", got)
+	}
+}
+
+func TestAPISocket(t *testing.T) {
+	t.Setenv("DOCKER_HOST", "")
+	t.Setenv("CONTAINER_HOST", "")
+	ctx := context.Background()
+	if got := NewWithRunner(&fakeRunner{}, Docker, config.Runtime{Socket: "/cfg.sock"}).APISocket(ctx); got != "/cfg.sock" {
+		t.Errorf("configured = %q", got)
+	}
+	if got := NewWithRunner(&fakeRunner{}, WSLC, config.Runtime{}).APISocket(ctx); got != "" {
+		t.Errorf("wslc = %q", got)
+	}
+	sock := filepath.Join(t.TempDir(), "ctx.sock")
+	if err := os.WriteFile(sock, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if goruntime.GOOS != "windows" && !exists("/var/run/docker.sock") {
+		r := &scriptRunner{script: map[string]string{"context inspect": "unix://" + sock + "\n"}}
+		if got := NewWithRunner(r, Docker, config.Runtime{}).APISocket(ctx); got != sock {
+			t.Errorf("from docker context = %q, want %q", got, sock)
+		}
+		r = &scriptRunner{script: map[string]string{"context inspect": "unix:///does/not/exist.sock"}}
+		if got := NewWithRunner(r, Docker, config.Runtime{}).APISocket(ctx); got != "" {
+			t.Errorf("missing context socket = %q", got)
+		}
+	}
+	t.Setenv("DOCKER_HOST", "tcp://10.0.0.1:2375")
+	if got := NewWithRunner(&fakeRunner{}, Docker, config.Runtime{}).APISocket(ctx); got != "" {
+		t.Errorf("tcp DOCKER_HOST = %q", got)
+	}
+	t.Setenv("DOCKER_HOST", "unix:///run/user/1000/docker.sock")
+	if got := NewWithRunner(&fakeRunner{}, Docker, config.Runtime{}).APISocket(ctx); got != "/run/user/1000/docker.sock" && goruntime.GOOS != "windows" {
+		t.Errorf("unix DOCKER_HOST = %q", got)
 	}
 }

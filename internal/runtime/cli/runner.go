@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
 	"os/exec"
 	"time"
 
@@ -30,12 +31,24 @@ type Runner interface {
 
 type execRunner struct {
 	path string
+	// env is added to the environment of the CLI (DOCKER_HOST for a
+	// configured socket); nil inherits it unchanged.
+	env []string
 }
 
 func (r execRunner) command(ctx context.Context, args []string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, r.path, args...)
+	cmd.Env = r.environ()
 	hideWindow(cmd)
 	return cmd
+}
+
+// environ is the CLI's environment, nil for the unchanged one.
+func (r execRunner) environ() []string {
+	if len(r.env) == 0 {
+		return nil
+	}
+	return append(os.Environ(), r.env...)
 }
 
 func (r execRunner) Run(ctx context.Context, args []string) ([]byte, []byte, int, error) {
