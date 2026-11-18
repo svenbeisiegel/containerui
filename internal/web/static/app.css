@@ -297,8 +297,8 @@ button:hover, .button:hover { border-color: var(--accent); color: var(--accent);
 button:disabled { opacity: .55; cursor: progress; }
 button.primary, .button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 button.primary:hover, .button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-text); }
-button.danger { color: var(--bad); }
-button.danger:hover { border-color: var(--bad); color: var(--bad); }
+button.danger, .button.danger { color: var(--bad); }
+button.danger:hover, .button.danger:hover { border-color: var(--bad); color: var(--bad); }
 button.link { border: 0; background: none; color: var(--accent); padding: 0; }
 button.link:hover { text-decoration: underline; }
 button.block { width: 100%; padding: .6rem 1rem; }
@@ -306,6 +306,26 @@ button.block { width: 100%; padding: .6rem 1rem; }
 
 .actions { display: inline-flex; gap: .35rem; flex-wrap: wrap; justify-content: flex-end; align-items: flex-start; }
 .actions form { margin: 0; }
+/* Header menu (volumes.html "Prune volumes"): the summary is a button, the
+   form drops down below it; drawer.js closes it on an outside click. */
+details.menu { position: relative; }
+details.menu > summary { list-style: none; }
+details.menu > summary::-webkit-details-marker { display: none; }
+details.menu > summary::after { content: "▾"; font-size: .75em; margin-left: .1rem; }
+details.menu[open] > summary { border-color: var(--bad); }
+.menu-panel {
+  position: absolute; right: 0; top: calc(100% + .35rem); z-index: 15;
+  width: min(22rem, calc(100vw - 2rem)); padding: .9rem 1rem;
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+  box-shadow: 0 8px 24px rgb(0 0 0 / .16);
+}
+.menu-panel p { margin: 0; }
+@media (max-width: 640px) {
+  /* Anchor the panel to the header's right edge so it stays on screen. */
+  .page-head > .actions { position: relative; }
+  .page-head details.menu { position: static; }
+}
 details.inline { position: relative; }
 details.inline summary { list-style: none; }
 details.inline summary::-webkit-details-marker { display: none; }
@@ -524,6 +544,10 @@ main:has(.output-handle) { padding-right: calc(1.25rem + 28px); } /* keep conten
 .drawer-body .flash { margin: 0; }
 .drawer-body pre.log { flex: 1; min-height: 6rem; max-height: none; margin: 0; }
 .drawer-body .empty { margin: 0; }
+.activity-list { gap: 0; }
+.activity-list .job:first-child { margin-top: 0; }
+.activity-list .job .flash { margin-top: .5rem; }
+.activity-list .job pre.log { min-height: 0; max-height: 320px; }
 .down-form { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: .9rem; padding-top: .9rem; border-top: 1px solid var(--border); }
 
 @media (max-width: 720px) {

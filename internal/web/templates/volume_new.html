@@ -1,0 +1,54 @@
+{{define "head"}}<script src="/static/drawer.js" defer></script>{{end}}
+{{define "content"}}
+{{$f := .Data.Form}}
+<div class="page-head">
+  <div>
+    <a class="back" href="/volumes">← Volumes</a>
+    <h1>Create Volume</h1>
+  </div>
+</div>
+<section class="panel">
+  <form method="post" action="/volumes" class="stack">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    {{if .Data.Err}}<div class="flash error" role="alert">{{.Data.Err}}</div>{{end}}
+    <div class="fields">
+      <label class="field">
+        <span class="field-label">Name <span class="opt">optional</span></span>
+        <input name="name" value="{{$f.Name}}" placeholder="data" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" autocomplete="off" spellcheck="false">
+        <small class="hint">Generated if empty (anonymous volume).</small>
+      </label>
+      <label class="field">
+        <span class="field-label">Driver</span>
+        <select name="driver">
+          <option value="">Default</option>
+          {{range .Data.Drivers}}<option value="{{.}}" {{if eq . $f.Driver}}selected{{end}}>{{.}}</option>{{end}}
+        </select>
+        {{with .Data.Drivers}}<small class="hint">The runtime's default is <code>{{index . 0}}</code>.</small>{{end}}
+      </label>
+    </div>
+    {{/* Inputs inside a closed <details> are still submitted. */}}
+    <details class="section advanced"{{if $f.AdvancedChanged}} open{{end}}>
+      <summary>
+        <span class="summary-title">Options &amp; Labels</span>
+        <span class="summary-sub">Driver-specific options and metadata</span>
+      </summary>
+      <div class="advanced-body">
+        <div class="fields">
+          <label class="field">
+            <span class="field-label">Driver options <span class="opt flag">--opt</span></span>
+            <textarea name="options" rows="3" placeholder="key=value" spellcheck="false">{{$f.Options}}</textarea>
+            <small class="hint">One per line: <code>key=value</code></small>
+          </label>
+          <label class="field">
+            <span class="field-label">Labels <span class="opt flag">--label</span></span>
+            <textarea name="labels" rows="3" placeholder="app=web" spellcheck="false">{{$f.Labels}}</textarea>
+            <small class="hint">One per line: <code>key=value</code></small>
+          </label>
+        </div>
+      </div>
+    </details>
+    <div><button type="submit" class="primary">Create volume</button></div>
+  </form>
+</section>
+{{template "activity_drawer" .Data.Activity}}
+{{end}}

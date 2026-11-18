@@ -186,7 +186,7 @@
   </div>
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>
-  {{else if not .Images}}<p class="empty">No images. Pull one above.</p>
+  {{else if not .Images}}<p class="empty">No images. Use <em>Pull image</em> to get one.</p>
   {{else}}
   <div class="table-wrap"><table>
     <thead><tr><th>Repository</th><th>Tag</th><th>ID</th><th>Size</th><th>Created</th><th class="right">Actions</th></tr></thead>
@@ -235,32 +235,59 @@
 </section>
 {{end}}
 
-{{/* image_update expects dict: Ref (image to pull), Label, Title, CSRF. */}}
+{{/* image_update expects dict: Ref (image to pull), Label, Title, CSRF.
+     The pull shows in the Images activity drawer. */}}
 {{define "image_update"}}
-<form method="post" action="/images/pull" hx-post="/images/pull" hx-target="#pulls" hx-swap="outerHTML" hx-disabled-elt="find button">
+<form method="post" action="/images/pull" hx-post="/images/pull" hx-swap="none" hx-disabled-elt="find button">
   <input type="hidden" name="csrf" value="{{.CSRF}}">
   <input type="hidden" name="ref" value="{{.Ref}}">
   <button type="submit" class="primary" title="{{.Title}}">{{.Label}}</button>
 </form>
 {{end}}
 
-{{define "pulls_panel"}}
-<div id="pulls" {{if .AnyRunning}}hx-get="/partials/pulls" hx-trigger="every 1s" hx-swap="outerHTML"{{end}}>
-  {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
-  {{range .Jobs}}
-  <details class="job {{.Status}}" {{if not .Done}}open{{end}}>
+{{/* activity_drawer: drawer on the right of the Images, Volumes and
+     Networks pages listing recent actions of the tab (activityView), opened
+     from a handle on the right edge like the compose output (drawer.js). */}}
+{{define "activity_drawer"}}
+<aside id="activity" class="drawer" aria-labelledby="activity-title"{{if not .Open}} hidden{{end}}>
+  <div class="drawer-head">
+    <h2 id="activity-title">{{.Title}}</h2>
+    <form method="post" action="/activity/{{.Tab}}/clear" hx-post="/activity/{{.Tab}}/clear" hx-target="#activity-jobs" hx-swap="outerHTML">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <button type="submit" title="Clear the list">Clear</button>
+    </form>
+    <button type="button" class="drawer-close" data-output-close aria-label="Close {{.Title}}" title="Close">×</button>
+  </div>
+  {{template "activity_body" .}}
+</aside>
+<button type="button" class="output-handle" data-output-toggle aria-controls="activity" aria-expanded="{{if .Open}}true{{else}}false{{end}}" title="{{.Title}}">
+  <span class="chev" aria-hidden="true">‹</span><span class="sr-only">{{.Title}}</span>{{template "activity_state" .}}
+</button>
+{{end}}
+
+{{/* activity_body polls while an entry runs and reloads when an action
+     records one. As a partial it also updates the toggle's badge. */}}
+{{define "activity_body"}}
+<div id="activity-jobs" class="drawer-body activity-list" hx-get="/partials/activity/{{.Tab}}" hx-swap="outerHTML"
+     hx-trigger="{{if .AnyRunning}}every 1s, {{end}}activity-changed from:body">
+  {{range $i, $j := .Entries}}
+  <details class="job {{.Status}}"{{if or (not .Done) (eq $i 0)}} open{{end}}>
     <summary>
-      <span class="badge {{if eq .Status "running"}}warn{{else if eq .Status "succeeded"}}ok{{else}}bad{{end}}">{{.Status}}</span>
+      {{template "job_badge" .Status}}
       <span class="mono">{{.Target}}</span>
-      <span class="muted small">started {{ago .Started}} by {{.Owner}}</span>
+      <span class="muted small">{{ago .Started}} by {{.Owner}}</span>
     </summary>
     {{if .Error}}<div class="flash error">{{.Error}}</div>{{end}}
     {{if .Lines}}<pre class="log">{{range .Lines}}{{.}}
-{{end}}</pre>{{end}}
+{{end}}</pre>{{else if not .Done}}<p class="muted small">Waiting for output…</p>{{end}}
   </details>
-  {{end}}
+  {{else}}<p class="empty">No recent activity.</p>{{end}}
 </div>
+{{if .Partial}}{{template "activity_state" .}}{{end}}
 {{end}}
+
+{{/* activity_state: the status dot of the newest entry in the edge handle. */}}
+{{define "activity_state"}}<span id="activity-state"{{if .Partial}} hx-swap-oob="true"{{end}}>{{with .Newest}}<span class="status-dot {{.Status}}" title="{{.Status}}"></span><span class="sr-only">{{.Status}}</span>{{end}}</span>{{end}}
 
 {{/* ---------- container recreate (edit / image update) ---------- */}}
 {{define "container_update"}}
@@ -335,7 +362,7 @@
   </div>
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>
-  {{else if not .Volumes}}<p class="empty">No volumes. Create one above.</p>
+  {{else if not .Volumes}}<p class="empty">No volumes. Use <em>Create volume</em> to add one.</p>
   {{else}}
   <div class="table-wrap"><table>
     <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Used by</th><th>Mountpoint</th><th class="right">Actions</th></tr></thead>
@@ -416,7 +443,7 @@
 {{end}}
 
 {{/* compose_output: drawer on the right with the output of the last
-     compose action (composeOutputView). compose_output.js opens and closes
+     compose action (composeOutputView). drawer.js opens and closes
      it; only its body is refreshed, so it stays open or closed. */}}
 {{define "compose_output"}}
 <aside id="compose-output" class="drawer" aria-labelledby="compose-output-title"{{if not .Open}} hidden{{end}}>
@@ -583,7 +610,7 @@
   </div>
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>
-  {{else if not .Networks}}<p class="empty">No networks. Create one above.</p>
+  {{else if not .Networks}}<p class="empty">No networks. Use <em>Create network</em> to add one.</p>
   {{else}}
   <div class="table-wrap"><table>
     <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Internal</th><th>Used by</th><th>ID</th><th class="right">Actions</th></tr></thead>

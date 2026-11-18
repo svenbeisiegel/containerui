@@ -1,11 +1,14 @@
 // Package jobs runs long operations (image pulls) in the background so they
 // outlive the HTTP request that started them, and records their progress.
+// Short operations that finish within the request can be recorded as
+// finished jobs, so the UI shows them in the same activity list.
 package jobs
 
 import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -40,6 +43,10 @@ type Job struct {
 }
 
 func (j Job) Done() bool { return j.Status != Running }
+
+// Seq is the job's creation order within its manager: a later job has a
+// higher Seq even when the clock gives both the same Started time.
+func (j Job) Seq() uint64 { return j.seq }
 
 // Func is the work a job performs; it reports progress lines via progress.
 type Func func(ctx context.Context, progress func(line string)) error
@@ -93,6 +100,30 @@ func (m *Manager) Start(kind, target, owner string, fn Func) Job {
 	return snapshot
 }
 
+// Record stores an operation that already finished: it failed with err, or
+// succeeded if err is nil. lines are kept as its output.
+func (m *Manager) Record(kind, target, owner string, lines []string, err error) Job {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	now := time.Now()
+	j := &Job{ID: hex.EncodeToString(b), Kind: kind, Target: target, Owner: owner, Status: Succeeded, Started: now, Finished: now}
+	if err != nil {
+		j.Status, j.Error = Failed, err.Error()
+	}
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+	j.Lines = append([]string(nil), lines...)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.prune()
+	m.seq++
+	j.seq = m.seq
+	m.jobs[j.ID] = j
+	return j.copy()
+}
+
 func (m *Manager) Get(id string) (Job, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -103,13 +134,13 @@ func (m *Manager) Get(id string) (Job, bool) {
 	return j.copy(), true
 }
 
-// List returns jobs of the given kind, newest first.
-func (m *Manager) List(kind string) []Job {
+// List returns jobs of the given kinds, newest first.
+func (m *Manager) List(kinds ...string) []Job {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var out []Job
 	for _, j := range m.jobs {
-		if j.Kind == kind {
+		if slices.Contains(kinds, j.Kind) {
 			out = append(out, j.copy())
 		}
 	}

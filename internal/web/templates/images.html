@@ -1,15 +1,11 @@
+{{define "head"}}<script src="/static/drawer.js" defer></script>{{end}}
 {{define "content"}}
 <h1 class="sr-only">Images</h1>
 {{if .Caps.Pull}}
-<section class="panel">
-  <h2>Pull an Image</h2>
-  <form class="inline-form" method="post" action="/images/pull" hx-post="/images/pull" hx-target="#pulls" hx-swap="outerHTML" data-reset-on-success>
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <input name="ref" required placeholder="e.g. alpine:latest or ghcr.io/org/app:1.0" aria-label="Image reference">
-    <button type="submit" class="primary">Pull</button>
-  </form>
-  {{template "pulls_panel" .Data.Pulls}}
-</section>
+<div class="page-head">
+  <div class="actions"><a class="button primary" href="/images/pull">Pull image</a></div>
+</div>
 {{end}}
 {{template "images_table" .Data.Images}}
+{{template "activity_drawer" .Data.Activity}}
 {{end}}

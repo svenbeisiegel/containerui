@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/svenbeisiegel/containerui/internal/jobs"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 	"github.com/svenbeisiegel/containerui/internal/updates"
 )
@@ -652,15 +651,16 @@ type imagesView struct {
 	CSRF    string
 }
 
-type pullsView struct {
-	Jobs       []jobs.Job
-	AnyRunning bool
-	Err        string // validation error for the pull form
+type imagesPage struct {
+	Images   imagesView
+	Activity activityView
 }
 
-type imagesPage struct {
-	Images imagesView
-	Pulls  pullsView
+// imagePullView is the "Pull image" page.
+type imagePullView struct {
+	Ref      string
+	Err      string
+	Activity activityView
 }
 
 func (s *Server) loadImages(r *http.Request, f *flash) imagesView {
@@ -702,21 +702,8 @@ func (s *Server) handleImageCheckUpdates(w http.ResponseWriter, r *http.Request)
 	s.renderPartial(w, "images_table", s.loadImages(r, f))
 }
 
-func (s *Server) loadPulls() pullsView {
-	v := pullsView{Jobs: s.jobs.List("pull")}
-	if len(v.Jobs) > 5 {
-		v.Jobs = v.Jobs[:5]
-	}
-	for _, j := range v.Jobs {
-		if !j.Done() {
-			v.AnyRunning = true
-		}
-	}
-	return v
-}
-
 func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
-	data := imagesPage{Images: s.loadImages(r, nil), Pulls: s.loadPulls()}
+	data := imagesPage{Images: s.loadImages(r, nil), Activity: s.loadActivity(r, "images")}
 	s.render(w, "images", s.newPage(r, "Images", "images", data))
 }
 
@@ -724,29 +711,33 @@ func (s *Server) handleImagesPartial(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "images_table", s.loadImages(r, nil))
 }
 
-func (s *Server) handlePullsPartial(w http.ResponseWriter, r *http.Request) {
-	v := s.loadPulls()
-	if !v.AnyRunning && isHTMX(r) {
-		// The polling panel stops after this response; let the image
-		// table reload once to show the newly pulled image.
-		w.Header().Set("HX-Trigger", "images-changed")
+func (s *Server) renderPullPage(w http.ResponseWriter, r *http.Request, ref, errMsg string) {
+	v := imagePullView{Ref: ref, Err: errMsg, Activity: s.loadActivity(r, "images")}
+	s.render(w, "image_pull", s.newPage(r, "Pull image", "images", v))
+}
+
+func (s *Server) handleImagePullPage(w http.ResponseWriter, r *http.Request) {
+	if !s.caps().Pull {
+		http.NotFound(w, r)
+		return
 	}
-	s.renderPartial(w, "pulls_panel", v)
+	s.renderPullPage(w, r, "", "")
 }
 
 func (s *Server) handleImagePull(w http.ResponseWriter, r *http.Request) {
 	ref := strings.TrimSpace(r.PostFormValue("ref"))
 	user := sessionFrom(r).Username
 	if !s.caps().Pull {
-		s.renderPullError(w, r, runtime.ErrUnsupported)
+		http.NotFound(w, r)
 		return
 	}
 	if err := runtime.ValidateImageRef(ref); err != nil {
-		s.renderPullError(w, r, err)
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		s.renderPullPage(w, r, ref, userError(err))
 		return
 	}
 	s.log.Info("image pull started", "ref", ref, "user", user)
-	s.jobs.Start("pull", ref, user, func(ctx context.Context, progress func(string)) error {
+	s.jobs.Start(pullJobKind, ref, user, func(ctx context.Context, progress func(string)) error {
 		err := s.rt.PullImage(ctx, ref, progress)
 		if err != nil {
 			s.log.Warn("image pull failed", "ref", ref, "user", user, "error", err)
@@ -758,31 +749,25 @@ func (s *Server) handleImagePull(w http.ResponseWriter, r *http.Request) {
 		}
 		return nil
 	})
-	if !isHTMX(r) {
-		http.Redirect(w, r, "/images", http.StatusSeeOther)
+	if isHTMX(r) {
+		// The update buttons in the image table: open the drawer in place.
+		s.openActivity(w, r, "images", false)
+		w.WriteHeader(http.StatusOK)
 		return
 	}
-	s.renderPartial(w, "pulls_panel", s.loadPulls())
+	s.openActivity(w, r, "images", true)
+	http.Redirect(w, r, "/images", http.StatusSeeOther)
 }
 
-func (s *Server) renderPullError(w http.ResponseWriter, r *http.Request, err error) {
+// imageResult records an image action in the Images drawer and answers
+// with a fresh table (htmx) or a redirect to the list.
+func (s *Server) imageResult(w http.ResponseWriter, r *http.Request, target, msg, errMsg string) {
+	s.recordActivity(w, r, imageJobKind, target, msg, errMsg, nil, !isHTMX(r))
 	if !isHTMX(r) {
-		sessionFrom(r).SetFlash(userError(err))
 		http.Redirect(w, r, "/images", http.StatusSeeOther)
 		return
 	}
-	v := s.loadPulls()
-	v.Err = userError(err)
-	s.renderPartial(w, "pulls_panel", v)
-}
-
-func (s *Server) imageResult(w http.ResponseWriter, r *http.Request, f *flash) {
-	if !isHTMX(r) {
-		sessionFrom(r).SetFlash(f.Msg)
-		http.Redirect(w, r, "/images", http.StatusSeeOther)
-		return
-	}
-	s.renderPartial(w, "images_table", s.loadImages(r, f))
+	s.renderPartial(w, "images_table", s.loadImages(r, nil))
 }
 
 func (s *Server) handleImageTag(w http.ResponseWriter, r *http.Request) {
@@ -796,11 +781,11 @@ func (s *Server) handleImageTag(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		s.log.Warn("image tag failed", "source", source, "target", target, "error", err)
-		s.imageResult(w, r, errFlash(err))
+		s.imageResult(w, r, "tag "+source+" → "+target, "", userError(err))
 		return
 	}
 	s.log.Info("image tagged", "source", source, "target", target, "user", sessionFrom(r).Username)
-	s.imageResult(w, r, okFlash("Tagged %s as %s.", source, target))
+	s.imageResult(w, r, "tag "+source+" → "+target, fmt.Sprintf("Tagged %s as %s.", source, target), "")
 }
 
 func (s *Server) handleImageDelete(w http.ResponseWriter, r *http.Request) {
@@ -808,18 +793,18 @@ func (s *Server) handleImageDelete(w http.ResponseWriter, r *http.Request) {
 	force := r.PostFormValue("force") == "true"
 	if err := s.rt.RemoveImage(r.Context(), ref, force); err != nil {
 		s.log.Warn("image delete failed", "ref", ref, "error", err)
-		f := errFlash(err)
+		msg := userError(err)
 		if errors.Is(err, runtime.ErrConflict) {
-			f.Msg += " The image is used by a container; delete the container first, or refresh the list and delete again to remove it anyway."
+			msg += " The image is used by a container; delete the container first, or refresh the list and delete again to remove it anyway."
 		}
-		s.imageResult(w, r, f)
+		s.imageResult(w, r, "delete "+ref, "", msg)
 		return
 	}
 	s.log.Info("image deleted", "ref", ref, "force", force, "user", sessionFrom(r).Username)
 	if s.updates != nil {
 		s.updates.Refresh(r.Context(), ref)
 	}
-	s.imageResult(w, r, okFlash("Deleted image %s.", ref))
+	s.imageResult(w, r, "delete "+ref, fmt.Sprintf("Deleted image %s.", ref), "")
 }
 
 // ---- volumes ----
@@ -844,20 +829,27 @@ type volumeForm struct {
 func (f volumeForm) AdvancedChanged() bool { return f.Options != "" || f.Labels != "" }
 
 type volumesPage struct {
-	Volumes volumesView
-	Form    volumeForm
-	FormErr string // error from the create form
-	Drivers []string
+	Volumes  volumesView
+	Activity activityView
 	// PruneAnonymous: prune can be limited to anonymous volumes.
 	PruneAnonymous bool
 }
 
+// volumeNewView is the "Create volume" page.
+type volumeNewView struct {
+	Form     volumeForm
+	Err      string // error from the create form
+	Drivers  []string
+	Activity activityView
+}
+
 type volumeDetailView struct {
-	Name    string
-	Volume  *volumeRow
-	Inspect string
-	Err     string
-	CSRF    string
+	Name     string
+	Volume   *volumeRow
+	Inspect  string
+	Err      string
+	CSRF     string
+	Activity activityView
 }
 
 // volumesSupported answers 404 if the runtime has no volume support.
@@ -896,15 +888,22 @@ func (s *Server) loadVolumes(r *http.Request, f *flash) volumesView {
 	return v
 }
 
-func (s *Server) renderVolumesPage(w http.ResponseWriter, r *http.Request, f volumeForm, formErr string) {
-	caps := s.caps()
-	data := volumesPage{Volumes: s.loadVolumes(r, nil), Form: f, FormErr: formErr, Drivers: caps.VolumeDrivers, PruneAnonymous: caps.PruneAnonymous}
+func (s *Server) handleVolumes(w http.ResponseWriter, r *http.Request) {
+	if !s.volumesSupported(w, r) {
+		return
+	}
+	data := volumesPage{Volumes: s.loadVolumes(r, nil), Activity: s.loadActivity(r, "volumes"), PruneAnonymous: s.caps().PruneAnonymous}
 	s.render(w, "volumes", s.newPage(r, "Volumes", "volumes", data))
 }
 
-func (s *Server) handleVolumes(w http.ResponseWriter, r *http.Request) {
+func (s *Server) renderVolumeNew(w http.ResponseWriter, r *http.Request, f volumeForm, formErr string) {
+	v := volumeNewView{Form: f, Err: formErr, Drivers: s.caps().VolumeDrivers, Activity: s.loadActivity(r, "volumes")}
+	s.render(w, "volume_new", s.newPage(r, "Create volume", "volumes", v))
+}
+
+func (s *Server) handleVolumeNew(w http.ResponseWriter, r *http.Request) {
 	if s.volumesSupported(w, r) {
-		s.renderVolumesPage(w, r, volumeForm{}, "")
+		s.renderVolumeNew(w, r, volumeForm{}, "")
 	}
 }
 
@@ -919,7 +918,7 @@ func (s *Server) handleVolumeDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	v := volumeDetailView{Name: name, CSRF: sessionFrom(r).CSRF}
+	v := volumeDetailView{Name: name, CSRF: sessionFrom(r).CSRF, Activity: s.loadActivity(r, "volumes")}
 	for _, row := range s.loadVolumes(r, nil).Volumes {
 		if row.Name == name {
 			v.Volume = &row
@@ -955,26 +954,26 @@ func (s *Server) handleVolumeCreate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.log.Warn("volume create failed", "name", f.Name, "user", sessionFrom(r).Username, "error", err)
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		s.renderVolumesPage(w, r, f, userError(err))
+		s.renderVolumeNew(w, r, f, userError(err))
 		return
 	}
 	s.log.Info("volume created", "name", name, "driver", opts.Driver, "user", sessionFrom(r).Username)
 	if f.Name == "" {
 		name = shortID(name)
 	}
-	sessionFrom(r).SetFlash(fmt.Sprintf("Volume %s created.", name))
-	http.Redirect(w, r, "/volumes", http.StatusSeeOther)
+	s.recordActivity(w, r, volumeJobKind, "create "+name, fmt.Sprintf("Volume %s created.", name), "", nil, true)
+	redirect(w, r, "/volumes")
 }
 
-// volumeResult answers a volume action: htmx gets a fresh table, other
-// clients a redirect to the list.
-func (s *Server) volumeResult(w http.ResponseWriter, r *http.Request, f *flash) {
+// volumeResult records a volume action in the Volumes drawer and answers
+// with a fresh table (htmx) or a redirect to the list.
+func (s *Server) volumeResult(w http.ResponseWriter, r *http.Request, target, msg, errMsg string, out []string) {
+	s.recordActivity(w, r, volumeJobKind, target, msg, errMsg, out, !isHTMX(r))
 	if !isHTMX(r) {
-		sessionFrom(r).SetFlash(f.Msg)
 		http.Redirect(w, r, "/volumes", http.StatusSeeOther)
 		return
 	}
-	s.renderPartial(w, "volumes_table", s.loadVolumes(r, f))
+	s.renderPartial(w, "volumes_table", s.loadVolumes(r, nil))
 }
 
 func (s *Server) handleVolumeDelete(w http.ResponseWriter, r *http.Request) {
@@ -984,20 +983,20 @@ func (s *Server) handleVolumeDelete(w http.ResponseWriter, r *http.Request) {
 	name := r.PostFormValue("name")
 	force := r.PostFormValue("force") == "true"
 	err := s.rt.RemoveVolume(r.Context(), name, force)
-	var f *flash
+	var msg, errMsg string
 	if err != nil {
 		s.log.Warn("volume delete failed", "name", name, "force", force, "error", err)
-		f = errFlash(err)
+		errMsg = userError(err)
 		if errors.Is(err, runtime.ErrConflict) {
-			f.Msg += " The volume is used by a container; delete the container first."
+			errMsg += " The volume is used by a container; delete the container first."
 		}
 	} else {
 		s.log.Info("volume deleted", "name", name, "force", force, "user", sessionFrom(r).Username)
-		f = okFlash("Deleted volume %s.", name)
+		msg = fmt.Sprintf("Deleted volume %s.", name)
 	}
 	if r.PostFormValue("view") == "detail" {
 		// Back to the detail page on failure, to the list once it is gone.
-		sessionFrom(r).SetFlash(f.Msg)
+		s.recordActivity(w, r, volumeJobKind, "delete "+name, msg, errMsg, nil, true)
 		to := "/volumes"
 		if err != nil {
 			to = "/volumes/" + url.PathEscape(name)
@@ -1005,7 +1004,7 @@ func (s *Server) handleVolumeDelete(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, to)
 		return
 	}
-	s.volumeResult(w, r, f)
+	s.volumeResult(w, r, "delete "+name, msg, errMsg, nil)
 }
 
 func (s *Server) handleVolumePrune(w http.ResponseWriter, r *http.Request) {
@@ -1013,16 +1012,16 @@ func (s *Server) handleVolumePrune(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	all := r.PostFormValue("all") == "on" || !s.caps().PruneAnonymous
+	target := "prune"
+	if all && s.caps().PruneAnonymous {
+		target += " --all"
+	}
 	out, err := s.rt.PruneVolumes(r.Context(), all)
 	if err != nil {
 		s.log.Warn("volume prune failed", "all", all, "error", err)
-		s.volumeResult(w, r, errFlash(err))
+		s.volumeResult(w, r, target, "", userError(err), nil)
 		return
 	}
 	s.log.Info("volumes pruned", "all", all, "user", sessionFrom(r).Username)
-	f := okFlash("Pruned unused volumes.")
-	if out != "" {
-		f.Msg += " " + strings.Join(lines(out), " ")
-	}
-	s.volumeResult(w, r, f)
+	s.volumeResult(w, r, target, "Pruned unused volumes.", "", lines(out))
 }
