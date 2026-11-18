@@ -3,7 +3,6 @@ package web
 import (
 	"errors"
 	"net/http"
-	"time"
 
 	"github.com/svenbeisiegel/containerui/internal/jobs"
 )
@@ -69,6 +68,10 @@ func (v activityView) Newest() *jobs.Job {
 	return &v.Entries[0]
 }
 
+// sessActivityCleared (uint64) holds the Seq of the newest entry when the
+// user cleared the drawer; older entries are not shown to them. A sequence
+// rather than a time, since the clock can give an action recorded right
+// after the clear the same time (Windows).
 func sessActivityCleared(tab string) string { return "activity-cleared-" + tab }
 func sessActivityOpen(tab string) string    { return "activity-open-" + tab }
 
@@ -91,12 +94,12 @@ func (s *Server) loadActivity(r *http.Request, tab string) activityView {
 	sess := sessionFrom(r)
 	v := activityView{Tab: t.Name, Title: t.Title, CSRF: sess.CSRF}
 	v.Open = sess.Pop(sessActivityOpen(tab)) != nil
-	cleared, _ := sess.Get(sessActivityCleared(tab)).(time.Time)
+	cleared, _ := sess.Get(sessActivityCleared(tab)).(uint64)
 	for _, j := range s.jobs.List(t.Kinds...) { // newest first
 		if !j.Done() {
 			v.AnyRunning = true
 		}
-		if j.Started.After(cleared) && len(v.Entries) < maxActivity {
+		if j.Seq() > cleared && len(v.Entries) < maxActivity {
 			v.Entries = append(v.Entries, j)
 		}
 	}
@@ -152,7 +155,11 @@ func (s *Server) handleActivityClear(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	sessionFrom(r).Set(sessActivityCleared(t.Name), time.Now())
+	var newest uint64
+	if l := s.jobs.List(t.Kinds...); len(l) > 0 {
+		newest = l[0].Seq()
+	}
+	sessionFrom(r).Set(sessActivityCleared(t.Name), newest)
 	if !isHTMX(r) {
 		redirect(w, r, "/"+t.Name)
 		return

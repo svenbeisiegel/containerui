@@ -77,6 +77,9 @@ func TestRecordAndListKinds(t *testing.T) {
 	if bad.Status != Failed || bad.Error != "in use" {
 		t.Errorf("bad = %+v", bad)
 	}
+	if !(pull.Seq() < ok.Seq() && ok.Seq() < bad.Seq()) {
+		t.Errorf("seq = %d %d %d", pull.Seq(), ok.Seq(), bad.Seq())
+	}
 	l := m.List("pull", "image")
 	if len(l) != 3 || l[0].ID != bad.ID || l[1].ID != ok.ID || l[2].ID != pull.ID {
 		t.Errorf("list = %+v", l)

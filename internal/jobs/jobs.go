@@ -44,6 +44,10 @@ type Job struct {
 
 func (j Job) Done() bool { return j.Status != Running }
 
+// Seq is the job's creation order within its manager: a later job has a
+// higher Seq even when the clock gives both the same Started time.
+func (j Job) Seq() uint64 { return j.seq }
+
 // Func is the work a job performs; it reports progress lines via progress.
 type Func func(ctx context.Context, progress func(line string)) error
 
