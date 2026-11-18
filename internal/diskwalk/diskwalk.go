@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	goruntime "runtime"
 	"sort"
 	"strings"
 
@@ -33,17 +34,41 @@ var skipTree = []string{
 	"/var/lib/docker", "/var/lib/containers",
 }
 
+// skipExactWindows and skipTreeWindows are the same for Windows paths with
+// a drive (C:\Users), matched on any drive and ignoring case. A drive root
+// is always skipped.
+var (
+	skipExactWindows = []string{"/Users", "/Program Files", "/Program Files (x86)", "/ProgramData"}
+	skipTreeWindows  = []string{"/Windows", "/ProgramData/Docker", "/ProgramData/DockerDesktop"}
+)
+
 // Skipped reports whether path is a system path that is not measured.
 // extra lists further paths skipped with everything below them.
 func Skipped(path string, extra []string) bool {
 	for _, p := range candidates(path) {
-		for _, s := range skipExact {
-			if p == s {
+		vol, rest := split(p)
+		exact, tree := skipExact, skipTree
+		if vol != "" {
+			if rest == "/" {
+				return true // a drive or share root
+			}
+			exact, tree = skipExactWindows, skipTreeWindows
+		}
+		for _, s := range exact {
+			if rest == key(s) {
 				return true
 			}
 		}
-		for _, s := range append(skipTree[:len(skipTree):len(skipTree)], extra...) {
-			if s != "" && within(p, filepath.Clean(s)) {
+		for _, s := range tree {
+			if within(rest, key(s)) {
+				return true
+			}
+		}
+		for _, s := range extra {
+			if s == "" {
+				continue
+			}
+			if xv, xr := split(s); strings.EqualFold(vol, xv) && within(rest, xr) {
 				return true
 			}
 		}
@@ -62,11 +87,34 @@ func candidates(path string) []string {
 	return out
 }
 
+// split cleans path and splits it into its volume name (C:, \\host\share;
+// only on Windows) and the rest as a key.
+func split(path string) (vol, rest string) {
+	path = filepath.Clean(path)
+	vol = filepath.VolumeName(path)
+	rest = key(path[len(vol):])
+	if rest == "" || rest == "." {
+		rest = "/"
+	}
+	return vol, rest
+}
+
+// key is path with forward slashes, lower case on Windows, where file
+// names ignore case, so that paths can be compared as strings.
+func key(path string) string {
+	path = filepath.ToSlash(path)
+	if goruntime.GOOS == "windows" {
+		path = strings.ToLower(path)
+	}
+	return path
+}
+
+// within reports whether path is dir or below it; both are keys.
 func within(path, dir string) bool {
 	if dir == "/" {
 		return true
 	}
-	return path == dir || strings.HasPrefix(path, dir+string(filepath.Separator))
+	return path == dir || strings.HasPrefix(path, dir+"/")
 }
 
 // Measure measures every path once. Deeper paths are measured first, so
@@ -94,7 +142,7 @@ func Measure(ctx context.Context, paths []string, extraSkip []string) map[string
 		}
 		return todo[i] < todo[j]
 	})
-	w := &walker{seen: map[fileID]bool{}}
+	w := &walker{seen: map[fileID]bool{}, roots: map[string]bool{}}
 	for _, p := range todo {
 		out[p] = w.measure(ctx, p)
 	}
@@ -105,6 +153,9 @@ type walker struct {
 	// seen holds the directories and hard-linked files counted so far.
 	// Plain files cannot be reached twice, so they are not kept.
 	seen map[fileID]bool
+	// roots holds the keys of the folders measured so far, so that an
+	// outer path skips an inner one also where there are no file IDs.
+	roots map[string]bool
 }
 
 func (w *walker) measure(ctx context.Context, path string) runtime.BindSize {
@@ -123,6 +174,9 @@ func (w *walker) measure(ctx context.Context, path string) runtime.BindSize {
 		return runtime.BindSize{Note: runtime.BindPartial}
 	}
 	rootDev := stat(fi).id.dev
+	if fi.IsDir() {
+		defer func() { w.roots[key(root)] = true }()
+	}
 	var res runtime.BindSize
 	n := 0
 	err = filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
@@ -143,6 +197,9 @@ func (w *walker) measure(ctx context.Context, path string) runtime.BindSize {
 		st := stat(info)
 		if d.IsDir() && st.id.dev != rootDev {
 			return filepath.SkipDir // another file system mounted below
+		}
+		if d.IsDir() && w.roots[key(p)] {
+			return filepath.SkipDir // measured already, as a deeper path or the same one
 		}
 		if d.IsDir() || st.links > 1 {
 			if st.id.known() {

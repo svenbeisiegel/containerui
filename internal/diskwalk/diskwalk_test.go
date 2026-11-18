@@ -136,3 +136,26 @@ func TestSkipped(t *testing.T) {
 		t.Error("extra skip path not applied")
 	}
 }
+
+func TestSkippedWindows(t *testing.T) {
+	if goruntime.GOOS != "windows" {
+		t.Skip("Windows paths")
+	}
+	for path, want := range map[string]bool{
+		`C:\`: true, `d:\`: true, `C:\Windows`: true, `C:\Windows\System32\drivers`: true,
+		`C:\Users`: true, `c:\users`: true, `C:\Users\u\data`: false, `C:\Program Files`: true,
+		`C:\ProgramData`: true, `C:\ProgramData\Docker\volumes\x`: true, `C:\ProgramData\app`: false,
+		`D:\data`: false, `D:\Users`: true, `\\host\share`: true, `\\host\share\data`: false,
+		`C:\windowsish`: false,
+	} {
+		if got := Skipped(path, nil); got != want {
+			t.Errorf("Skipped(%s) = %v, want %v", path, got, want)
+		}
+	}
+	if !Skipped(`D:\Docker-Root\overlay`, []string{`d:\docker-root`}) {
+		t.Error("extra skip path not applied")
+	}
+	if Skipped(`C:\docker-root\overlay`, []string{`D:\docker-root`}) {
+		t.Error("extra skip path applied on another drive")
+	}
+}
