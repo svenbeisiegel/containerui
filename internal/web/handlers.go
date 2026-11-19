@@ -324,11 +324,11 @@ type containerNewView struct {
 	Networks []runtime.Network
 	Edit     *containerEdit // nil: create a new container
 
-	// Import from inspect output (create only): the container the form was
-	// filled from, or the rejected paste and why.
-	Import     *containerImport
-	ImportText string
-	ImportErr  string
+	// Import (create only): what the form was filled from.
+	Import *containerImport
+	// MissingNetwork is the form's network if it does not exist (yet),
+	// e.g. one named in an imported compose file.
+	MissingNetwork string
 }
 
 func (s *Server) newContainerView(ctx context.Context, f containerForm, err string) containerNewView {
@@ -336,6 +336,9 @@ func (s *Server) newContainerView(ctx context.Context, f containerForm, err stri
 	v.Images, _ = s.rt.ListImages(ctx)
 	if s.caps().Networks {
 		v.Networks, _ = s.rt.ListNetworks(ctx)
+		if f.Network != "" && !slices.ContainsFunc(v.Networks, func(n runtime.Network) bool { return n.Name == f.Network }) {
+			v.MissingNetwork = f.Network
+		}
 	}
 	return v
 }
@@ -343,12 +346,6 @@ func (s *Server) newContainerView(ctx context.Context, f containerForm, err stri
 // defaultContainerForm is the empty create form.
 func defaultContainerForm() containerForm {
 	return containerForm{Pull: string(runtime.PullMissing), Start: true, TTY: true, Interactive: true}
-}
-
-func (s *Server) handleContainerNew(w http.ResponseWriter, r *http.Request) {
-	f := defaultContainerForm()
-	f.Image = r.URL.Query().Get("image")
-	s.render(w, "container_new", s.newPage(r, "Create container", "containers", s.newContainerView(r.Context(), f, "")))
 }
 
 // parseContainerForm reads the create / edit form.

@@ -64,7 +64,25 @@ Features:
     runtimes do not record `--pull`, so ContainerUI keeps the policy chosen
     on create or edit in the label `containerui.pull`; containers without
     it (or on wslc, which has no labels) use *missing*.
-  - **Import from docker inspect**: on the create page, paste the output of
+  - **How to start**: *Create container* first asks how: **from scratch**
+    (the empty form), **from docker inspect**, **from a docker command** or
+    **from a compose file**. The imports fill the create form for review;
+    nothing is created until you submit it. *Run…* on the Images page goes
+    straight to the form.
+  - **From a docker command**: paste a `docker run …` or `docker create …`
+    command (also `podman`, `sudo`, `docker container run`; line
+    continuations with `\`, `` ` `` or `^`). Its flags fill the form;
+    flags the form has no field for (`--device`, `--tmpfs`, `-P`, …) are
+    listed as not carried over. `run` starts the container, `create` does
+    not; `--tty` and `--interactive` are only set when the command has them.
+  - **From a compose file**: paste a whole compose file or just the part
+    that defines the service, with or without its name or the `services:`
+    key. If several services have an image, you choose one. Variables use
+    their defaults (`${TAG:-1.27}`); named volumes and networks get compose's
+    project prefix when the file has a top-level `name:` (else a note says
+    so); relative bind mounts, `depends_on`, `env_file` and options the form
+    cannot express are pointed out. A service with only `build:` is rejected.
+  - **From docker inspect**: paste the output of
     `docker inspect <container>` (or `podman inspect`, or open / drop a
     saved `.json` file) to fill the form from an existing container, also
     one from another host. The input must be the inspect output of exactly

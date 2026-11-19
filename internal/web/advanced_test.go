@@ -21,7 +21,7 @@ func checkbox(body, name string) bool {
 func TestCreateFormAdvancedDefaults(t *testing.T) {
 	e := newEnv(t)
 	e.login()
-	body := e.do("GET", "/containers/new", nil).Body.String()
+	body := e.do("GET", "/containers/new/scratch", nil).Body.String()
 	m := advancedOpenRe.FindStringSubmatch(body)
 	if m == nil {
 		t.Fatal("advanced section missing")

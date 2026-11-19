@@ -1,0 +1,30 @@
+{{define "content"}}
+<div class="page-head">
+  <div class="title-row">
+    {{template "back_button" "/containers"}}
+    <h1>Create Container</h1>
+  </div>
+</div>
+<nav class="source-cards" aria-label="How to create the container">
+  <a class="source-card" href="/containers/new/scratch">
+    <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="3.5" width="17" height="17" rx="2.5"/><path d="M12 8v8M8 12h8"/></g></svg>
+    <span class="source-title">From scratch</span>
+    <span class="source-sub">Start with an empty form</span>
+  </a>
+  <a class="source-card" href="/containers/new/inspect">
+    <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3.5H7A2.5 2.5 0 0 0 4.5 6v3.5A2.5 2.5 0 0 1 2 12a2.5 2.5 0 0 1 2.5 2.5V18A2.5 2.5 0 0 0 7 20.5h1M16 3.5h1A2.5 2.5 0 0 1 19.5 6v3.5A2.5 2.5 0 0 0 22 12a2.5 2.5 0 0 0-2.5 2.5V18a2.5 2.5 0 0 1-2.5 2.5h-1"/></g></svg>
+    <span class="source-title">From docker inspect</span>
+    <span class="source-sub">Copy an existing container</span>
+  </a>
+  <a class="source-card" href="/containers/new/cli">
+    <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4" width="19" height="16" rx="2.5"/><path d="m6.5 9.5 3 2.5-3 2.5M12 15h5"/></g></svg>
+    <span class="source-title">From a docker command</span>
+    <span class="source-sub"><code>docker run …</code> or <code>docker create …</code></span>
+  </a>
+  <a class="source-card" href="/containers/new/compose">
+    <svg viewBox="0 0 24 24" width="56" height="56" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2.5 2.5 7.25 12 12l9.5-4.75z"/><path d="m2.5 12 9.5 4.75L21.5 12"/><path d="m2.5 16.75 9.5 4.75 9.5-4.75"/></g></svg>
+    <span class="source-title">From a compose file</span>
+    <span class="source-sub">One service of a <code>compose.yaml</code></span>
+  </a>
+</nav>
+{{end}}

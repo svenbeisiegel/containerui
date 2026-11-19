@@ -1,0 +1,42 @@
+{{define "content"}}
+{{$v := .Data}}
+{{$src := $v.Source}}
+<div class="page-head">
+  <div class="title-row">
+    {{template "back_button" "/containers/new"}}
+    <h1>Create Container</h1>
+  </div>
+</div>
+<form method="post" action="/containers/new/{{$src.Key}}" class="panel import-form" data-file-load>
+  <input type="hidden" name="csrf" value="{{.CSRF}}">
+  <div>
+    <h2>{{$src.Title}}</h2>
+    <p class="muted import-lead">{{$src.Lead}}</p>
+  </div>
+  {{if $v.Err}}<div class="flash error" role="alert">{{$v.Err}}</div>{{end}}
+  <div class="compose-toolbar">
+    <button type="button" data-file-open>Open file…</button>
+    <input type="file" accept="{{$src.Accept}}" hidden data-file-input>
+    <span class="hint">{{$src.Hint}}</span>
+  </div>
+  <div class="dropzone" data-file-drop>
+    <textarea name="text" rows="12" class="code" spellcheck="false" autocomplete="off" required aria-label="{{$src.Label}}" data-file-target
+              {{if not $v.Text}}autofocus{{end}} placeholder="{{$src.Placeholder}}">{{$v.Text}}</textarea>
+    <div class="drop-hint" aria-hidden="true">{{$src.DropHint}}</div>
+  </div>
+  {{if $v.Services}}
+  <fieldset class="service-choice">
+    <legend>The compose file defines {{len $v.Services}} services with an image. Which one should the container run?</legend>
+    {{range $i, $s := $v.Services}}
+    <label class="service-option">
+      <input type="radio" name="service" value="{{$s.Name}}" required{{if or (eq $s.Name $v.Service) (and (not $v.Service) (eq $i 0))}} checked autofocus{{end}}>
+      <span class="service-name">{{$s.Name}}</span>
+      <span class="mono muted">{{$s.Image}}</span>
+    </label>
+    {{end}}
+  </fieldset>
+  {{end}}
+  <p class="hint">Only fills the create form; nothing is created until you review it and choose <em>Create container</em>.</p>
+  <div class="import-actions"><button type="submit" class="primary">Fill the form</button></div>
+</form>
+{{end}}

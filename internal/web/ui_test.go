@@ -135,7 +135,7 @@ func TestLayoutThemeAndBrand(t *testing.T) {
 func TestCreateFormLayout(t *testing.T) {
 	e := newEnv(t)
 	e.login()
-	body := e.do("GET", "/containers/new", nil).Body.String()
+	body := e.do("GET", "/containers/new/scratch", nil).Body.String()
 	// The required marker must sit inside the label text, not as a flex
 	// sibling of the input (the misalignment from the screenshot).
 	if !strings.Contains(body, `<span class="field-label">Image <span class="req" aria-hidden="true">*</span></span>`) {
@@ -219,17 +219,19 @@ func TestBackButtons(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 	for path, back := range map[string]string{
-		"/images/pull":         "/images",
-		"/containers/new":      "/containers",
-		"/containers/web/edit": "/containers/c0ffee000001",
-		"/containers/web":      "/containers",
-		"/volumes/new":         "/volumes",
-		"/volumes/data":        "/volumes",
-		"/networks/new":        "/networks",
-		"/networks/backend":    "/networks",
-		"/compose/new":         "/compose",
-		"/compose/shop":        "/compose",
-		"/compose/shop/edit":   "/compose/shop",
+		"/images/pull":            "/images",
+		"/containers/new":         "/containers",
+		"/containers/new/scratch": "/containers/new",
+		"/containers/new/cli":     "/containers/new",
+		"/containers/web/edit":    "/containers/c0ffee000001",
+		"/containers/web":         "/containers",
+		"/volumes/new":            "/volumes",
+		"/volumes/data":           "/volumes",
+		"/networks/new":           "/networks",
+		"/networks/backend":       "/networks",
+		"/compose/new":            "/compose",
+		"/compose/shop":           "/compose",
+		"/compose/shop/edit":      "/compose/shop",
 	} {
 		body := e.do("GET", path, nil).Body.String()
 		want := `<div class="title-row"><a class="button" href="` + back + `">Back</a>`

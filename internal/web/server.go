@@ -165,7 +165,7 @@ func (s *Server) Close() {
 }
 
 func (s *Server) parseTemplates() error {
-	pages := []string{"login", "dashboard", "containers", "container_new", "container_detail", "images", "image_pull", "volumes", "volume_new", "volume_detail", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events"}
+	pages := []string{"login", "dashboard", "containers", "container_choose", "container_import", "container_new", "container_detail", "images", "image_pull", "volumes", "volume_new", "volume_detail", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events"}
 	for _, p := range pages {
 		t, err := template.New(p).Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/partials.html", "templates/"+p+".html")
 		if err != nil {
@@ -209,7 +209,12 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /partials/containers", s.handleContainersPartial)
 	authed.HandleFunc("GET /containers/new", s.handleContainerNew)
 	authed.HandleFunc("POST /containers", s.handleContainerCreate)
-	authed.HandleFunc("POST /containers/new/import", s.handleContainerImport)
+	authed.HandleFunc("GET /containers/new/scratch", s.handleContainerScratch)
+	// Literal paths: a {source} wildcard would clash with /containers/{id}/edit.
+	for src := range importSources {
+		authed.HandleFunc("GET /containers/new/"+src, s.handleContainerImportPage)
+		authed.HandleFunc("POST /containers/new/"+src, s.handleContainerImport)
+	}
 	authed.HandleFunc("GET /containers/{id}", s.handleContainerDetail)
 	authed.HandleFunc("POST /containers/{id}/{action}", s.handleContainerAction)
 	authed.HandleFunc("GET /containers/{id}/edit", s.handleContainerEdit)
