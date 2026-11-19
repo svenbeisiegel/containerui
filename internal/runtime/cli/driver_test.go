@@ -311,6 +311,7 @@ func TestMiscArgs(t *testing.T) {
 		{func() error { return d.RemoveVolume(ctx, "data", true) }, "volume remove --force data"},
 		{func() error { _, err := d.PruneVolumes(ctx, false); return err }, "volume prune --force"},
 		{func() error { _, err := d.PruneVolumes(ctx, true); return err }, "volume prune --force --all"},
+		{func() error { _, err := d.PruneImages(ctx); return err }, "image prune --all --force"},
 	}
 	for _, s := range steps {
 		if err := s.do(); err != nil {

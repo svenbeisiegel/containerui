@@ -13,19 +13,20 @@ import (
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 )
 
-func TestLogsButtonsOnDetailPage(t *testing.T) {
+// The container list's menus offer the logs: watching only while the
+// container runs.
+func TestLogsInContainerMenu(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 
-	body := e.do("GET", "/containers/c0ffee000001", nil).Body.String()
-	for _, want := range []string{`href="/containers/c0ffee000001/logs/download"`, `href="/containers/c0ffee000001/logs/watch" target="_blank"`} {
+	body := e.do("GET", "/partials/containers", nil, htmx).Body.String()
+	for _, want := range []string{`href="/containers/c0ffee000001/logs/download"`, `href="/containers/c0ffee000001/logs/watch" target="_blank"`, `href="/containers/c0ffee000002/logs/download"`} {
 		if !strings.Contains(body, want) {
-			t.Errorf("running container page lacks %q", want)
+			t.Errorf("container list lacks %q", want)
 		}
 	}
-	body = e.do("GET", "/containers/c0ffee000002", nil).Body.String()
-	if !strings.Contains(body, "/logs/download") || strings.Contains(body, "/logs/watch") {
-		t.Error("stopped container should offer the download only")
+	if strings.Contains(body, "/containers/c0ffee000002/logs/watch") {
+		t.Error("stopped container offers Watch logs")
 	}
 }
 

@@ -19,6 +19,33 @@ const (
 	PullNever   PullPolicy = "never"
 )
 
+// LabelPull records the pull policy a container was created with, so
+// that recreating it applies the same policy: the runtimes do not keep
+// --pull. Labels starting with LabelOwnPrefix are ContainerUI's own.
+const (
+	LabelPull      = "containerui.pull"
+	LabelOwnPrefix = "containerui."
+)
+
+// ParsePullPolicy returns the policy s names, ok false if it names none.
+func ParsePullPolicy(s string) (PullPolicy, bool) {
+	switch p := PullPolicy(s); p {
+	case PullMissing, PullAlways, PullNever:
+		return p, true
+	}
+	return "", false
+}
+
+// SetPullLabel records policy p (default PullMissing) in o.Labels,
+// replacing an earlier record.
+func (o *CreateContainerOpts) SetPullLabel(p PullPolicy) {
+	if p == "" {
+		p = PullMissing
+	}
+	o.Labels = slices.DeleteFunc(slices.Clone(o.Labels), func(l string) bool { return strings.HasPrefix(l, LabelPull+"=") })
+	o.Labels = append(o.Labels, LabelPull+"="+string(p))
+}
+
 // VolumeMount binds a host path or named volume into the container.
 type VolumeMount struct {
 	Source   string // host path (e.g. C:\data) or volume name

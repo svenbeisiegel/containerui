@@ -1,15 +1,7 @@
 {{define "content"}}
 {{$v := .Data}}
 <div class="page-head">
-  <div class="title-row">{{template "back_button" "/containers"}}<h1 class="wrap">{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}{{if $v.Update}} <a class="badge warn update-tag" href="#update" title="A newer image is available">update</a>{{end}}</h1></div>
-  <div class="actions">
-    {{if $v.CanEdit}}<a class="button" href="/containers/{{$v.Container.ID}}/edit">Edit</a>{{end}}
-    {{if and $v.Container $v.Caps.Logs}}
-    <a class="button" href="/containers/{{$v.Container.ID}}/logs/download" download>Download logs</a>
-    {{if $v.Container.State.IsRunning}}<a class="button" href="/containers/{{$v.Container.ID}}/logs/watch" target="_blank" rel="noopener">Watch logs</a>{{end}}
-    {{end}}
-    {{with $v.Terminal}}{{template "terminal_connect" .}}{{end}}
-  </div>
+  <div class="title-row">{{template "back_button" "/containers"}}<h1 class="wrap">{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}{{with $v.Updates}} <span class="badge warn update-tag" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update in the actions menu of the container list.">update</span>{{end}}</h1></div>
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Job}}{{template "recreate_job" .}}{{end}}
@@ -24,11 +16,10 @@
     {{if .Networks}}<dt>Networks</dt><dd>{{if $v.Caps.Networks}}{{range $i, $n := .Networks}}{{if $i}}, {{end}}<a href="/networks/{{$n}}">{{$n}}</a>{{end}}{{else}}{{join .Networks ", "}}{{end}}</dd>{{end}}
     {{if .Mounts}}<dt>Mounts</dt><dd>{{join .Mounts ", "}}</dd>{{end}}
     {{if $v.Project}}<dt>Compose project</dt><dd><a href="/compose/{{$v.Project}}">{{$v.Project}}</a> <span class="muted">— edit and update it through the project</span></dd>{{end}}
+    {{with $v.Updates}}<dt>Image update</dt><dd>{{range $i, $u := .}}{{if $i}}, {{end}}<span class="mono">{{$u.Ref}}</span> <span class="muted small">({{$u.Label}})</span>{{end}}</dd>{{end}}
     <dt>Created</dt><dd>{{datetime .Created}} ({{ago .Created}})</dd>
   </dl>
-  {{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF)}}
 </section>
-{{with $v.Update}}{{template "container_update" .}}{{end}}
 {{end}}
 {{if $v.Inspect}}
 <section class="panel">

@@ -118,8 +118,8 @@ func (s *Server) handleDashboardPartial(w http.ResponseWriter, r *http.Request) 
 
 type containersView struct {
 	Containers []runtime.Container
-	// Updates marks containers whose image has a newer version, by ID.
-	Updates map[string]bool
+	// Updates lists the newer images a container can be updated to, by ID.
+	Updates map[string][]updates.Candidate
 	Err     string
 	Flash   *flash
 	Caps    runtime.Capabilities
@@ -134,10 +134,10 @@ func (s *Server) loadContainers(r *http.Request, f *flash) containersView {
 	}
 	v.Containers = cs
 	if s.updates != nil {
-		v.Updates = map[string]bool{}
+		v.Updates = map[string][]updates.Candidate{}
 		for _, c := range cs {
-			if len(s.updates.ForContainer(c)) > 0 {
-				v.Updates[c.ID] = true
+			if cands := s.updates.ForContainer(c); len(cands) > 0 {
+				v.Updates[c.ID] = cands
 			}
 		}
 	}
@@ -158,21 +158,18 @@ type containerDetailView struct {
 	Inspect   string
 	Err       string
 	Caps      runtime.Capabilities
-	CSRF      string
-	Terminal  *terminalView // nil if the runtime has no terminal support
 	// Project is the compose project managing the container ("" if none).
 	Project string
-	// CanEdit: the container can be edited (recreated).
-	CanEdit bool
-	// Update offers the newer images the container can be updated to.
-	Update *containerUpdateView
+	// Updates lists the newer images the update check found; the
+	// container list's menu offers to update to them.
+	Updates []updates.Candidate
 	// Job is the running or recent recreate job of the container.
 	Job *recreateJobView
 }
 
 func (s *Server) handleContainerDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	v := containerDetailView{ID: id, Caps: s.caps(), CSRF: sessionFrom(r).CSRF}
+	v := containerDetailView{ID: id, Caps: s.caps()}
 	if cs, err := s.rt.ListContainers(r.Context(), runtime.ListContainersOpts{All: true}); err == nil {
 		for i := range cs {
 			if cs[i].ID == id || cs[i].Name == id {
@@ -210,14 +207,8 @@ func (s *Server) handleContainerDetail(w http.ResponseWriter, r *http.Request) {
 	if v.Container != nil {
 		title = v.Container.Name
 		v.Project = v.Container.Labels[runtime.LabelProject]
-		v.CanEdit = v.Caps.Inspect && v.Project == ""
-		v.Update = s.containerUpdate(r, *v.Container, v.Inspect)
-		if v.Caps.Terminal {
-			// Running containers load the shell check asynchronously.
-			v.Terminal = &terminalView{ID: v.Container.ID, Name: v.Container.Name, State: "stopped", CSRF: v.CSRF}
-			if v.Container.State == runtime.StateRunning {
-				v.Terminal.State = "checking"
-			}
+		if s.updates != nil {
+			v.Updates = s.updates.ForContainer(*v.Container)
 		}
 	}
 	s.render(w, "container_detail", s.newPage(r, "Container "+title, "containers", v))
@@ -262,9 +253,6 @@ func (s *Server) handleContainerAction(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		s.log.Warn("container action failed", "action", action, "id", id, "user", sessionFrom(r).Username, "error", err)
 		f = errFlash(err)
-		if action == "delete" && errors.Is(err, runtime.ErrConflict) {
-			f.Msg += " Stop the container first or use Force delete."
-		}
 	} else {
 		s.log.Info("container action", "action", action, "id", id, "user", sessionFrom(r).Username)
 		f = okFlash("Container %s %s.", name, done)
@@ -407,6 +395,7 @@ func (s *Server) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 	f := parseContainerForm(r)
 	opts, err := f.toOpts()
 	if err == nil {
+		s.setPullLabel(&opts, opts.Pull)
 		var id string
 		id, err = s.rt.CreateContainer(r.Context(), opts)
 		if err == nil {
@@ -844,8 +833,8 @@ func (s *Server) pullUpdates(ctx context.Context, user string, progress func(str
 
 // imageResult records an image action in the Images drawer and answers
 // with a fresh table (htmx) or a redirect to the list.
-func (s *Server) imageResult(w http.ResponseWriter, r *http.Request, target, msg, errMsg string) {
-	s.recordActivity(w, r, imageJobKind, target, msg, errMsg, nil, !isHTMX(r))
+func (s *Server) imageResult(w http.ResponseWriter, r *http.Request, target, msg, errMsg string, out []string) {
+	s.recordActivity(w, r, imageJobKind, target, msg, errMsg, out, !isHTMX(r))
 	if !isHTMX(r) {
 		http.Redirect(w, r, "/images", http.StatusSeeOther)
 		return
@@ -864,11 +853,11 @@ func (s *Server) handleImageTag(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		s.log.Warn("image tag failed", "source", source, "target", target, "error", err)
-		s.imageResult(w, r, "tag "+source+" → "+target, "", userError(err))
+		s.imageResult(w, r, "tag "+source+" → "+target, "", userError(err), nil)
 		return
 	}
 	s.log.Info("image tagged", "source", source, "target", target, "user", sessionFrom(r).Username)
-	s.imageResult(w, r, "tag "+source+" → "+target, fmt.Sprintf("Tagged %s as %s.", source, target), "")
+	s.imageResult(w, r, "tag "+source+" → "+target, fmt.Sprintf("Tagged %s as %s.", source, target), "", nil)
 }
 
 func (s *Server) handleImageDelete(w http.ResponseWriter, r *http.Request) {
@@ -880,14 +869,28 @@ func (s *Server) handleImageDelete(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, runtime.ErrConflict) {
 			msg += " The image is used by a container; delete the container first, or refresh the list and delete again to remove it anyway."
 		}
-		s.imageResult(w, r, "delete "+ref, "", msg)
+		s.imageResult(w, r, "delete "+ref, "", msg, nil)
 		return
 	}
 	s.log.Info("image deleted", "ref", ref, "force", force, "user", sessionFrom(r).Username)
 	if s.updates != nil {
 		s.updates.Refresh(r.Context(), ref)
 	}
-	s.imageResult(w, r, "delete "+ref, fmt.Sprintf("Deleted image %s.", ref), "")
+	s.imageResult(w, r, "delete "+ref, fmt.Sprintf("Deleted image %s.", ref), "", nil)
+}
+
+// handleImagePrune removes every image no container uses
+// (image prune --all).
+func (s *Server) handleImagePrune(w http.ResponseWriter, r *http.Request) {
+	const target = "prune --all"
+	out, err := s.rt.PruneImages(r.Context())
+	if err != nil {
+		s.log.Warn("image prune failed", "error", err)
+		s.imageResult(w, r, target, "", userError(err), nil)
+		return
+	}
+	s.log.Info("images pruned", "user", sessionFrom(r).Username)
+	s.imageResult(w, r, target, "Pruned unused images.", "", lines(out))
 }
 
 // ---- volumes ----

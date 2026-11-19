@@ -169,7 +169,7 @@ document.addEventListener("submit", function (e) {
     } else if (el.matches("details.row-menu-sub")) {
       var menu = el.closest("details.row-menu");
       if (menu && menu.open) place(menu);
-      var input = el.open && el.querySelector("input:not([type=hidden])");
+      var input = el.open && el.querySelector("input:not([type=hidden]), select");
       if (input) input.focus();
     }
   }, true);
@@ -197,14 +197,14 @@ document.addEventListener("submit", function (e) {
   window.addEventListener("resize", placeAll);
 
   // Polling replaces the whole table: reopen the row menu that was open,
-  // with the Tag… form as it was.
+  // with the Tag… or Update… form as it was.
   var saved = null;
   document.addEventListener("htmx:beforeSwap", function (e) {
     var t = e.detail.target;
     var m = t && t.querySelector && t.querySelector("details.row-menu[open]");
     if (!m) return;
     var sub = m.querySelector("details.row-menu-sub");
-    var input = m.querySelector("details.row-menu-sub input:not([type=hidden])");
+    var input = m.querySelector("details.row-menu-sub :is(input:not([type=hidden]), select)");
     saved = {
       key: m.getAttribute("data-menu"),
       focus: m.contains(document.activeElement),
@@ -222,7 +222,7 @@ document.addEventListener("submit", function (e) {
     m.open = true;
     place(m);
     var sub = m.querySelector("details.row-menu-sub");
-    var input = m.querySelector("details.row-menu-sub input:not([type=hidden])");
+    var input = m.querySelector("details.row-menu-sub :is(input:not([type=hidden]), select)");
     if (sub && s.sub) sub.open = true;
     if (input) input.value = s.value;
     if (s.inInput && input) input.focus();

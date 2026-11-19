@@ -238,7 +238,7 @@ func TestPagesRender(t *testing.T) {
 	pages := map[string][]string{
 		"/":                         {"Running Containers", "web", "nginx", "Container Metrics", "Disk Usage per Container", "Disk Usage by Category", "/static/metrics.js"},
 		"/partials/dashboard":       {`id="dashboard"`},
-		"/containers":               {"web", "job", "Force delete", "Start"},
+		"/containers":               {"web", "job", ">Delete<", ">Start<", ">Recreate<"},
 		"/partials/containers":      {`id="containers"`},
 		"/containers/new":           {`name="image"`, "alpine:latest", "bridge"},
 		"/containers/new?image=x":   {`value="x"`},
@@ -295,7 +295,7 @@ func TestContainerActions(t *testing.T) {
 	}
 	// Deleting a running container without force reports a conflict.
 	w = e.post("/containers/c0ffee000001/delete", url.Values{"name": {"web"}, "view": {"list"}}, htmx)
-	if !strings.Contains(w.Body.String(), "Force delete") || !strings.Contains(w.Body.String(), "flash error") {
+	if !strings.Contains(w.Body.String(), "container is running") || !strings.Contains(w.Body.String(), "flash error") {
 		t.Errorf("delete running: %s", w.Body.String())
 	}
 	// Detail view redirects back to the detail page (or the list after delete).
@@ -468,5 +468,31 @@ func TestVolumeActions(t *testing.T) {
 	want := []string{"create-volume logs", "rmv data force=false", "rmv data force=true", "rmv logs force=false", "rmv data force=false", "prune-volumes all=false", "prune-volumes all=true"}
 	if !reflect.DeepEqual(e.rt.Calls, want) {
 		t.Errorf("calls = %v", e.rt.Calls)
+	}
+}
+
+// Prune images removes every image no container uses and reports it in
+// the Images drawer.
+func TestImagePrune(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	e.rt.AddImage(runtime.Image{ID: "sha256:ccc333", Repository: "busybox", Tag: "1", Size: "1MB"})
+	page := e.do("GET", "/images", nil).Body.String()
+	checkHeadActions(t, "/images", page, []string{"Prune images", "Prune images", "Pull image", "Refresh"})
+	w := e.post("/images/prune", nil, htmx)
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `id="images"`) || strings.Contains(w.Body.String(), "busybox") {
+		t.Fatalf("prune = %d\n%s", w.Code, w.Body.String())
+	}
+	if !slices.Contains(e.rt.Calls, "prune-images") {
+		t.Errorf("calls = %v", e.rt.Calls)
+	}
+	imgs, _ := e.rt.ListImages(context.Background())
+	for _, img := range imgs {
+		if img.Containers == 0 {
+			t.Errorf("unused image %s kept", img.Ref())
+		}
+	}
+	if act := e.do("GET", "/partials/activity/images", nil, htmx).Body.String(); !strings.Contains(act, "prune --all") || !strings.Contains(act, "busybox:1") {
+		t.Errorf("activity:\n%s", act)
 	}
 }

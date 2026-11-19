@@ -242,12 +242,13 @@ func TestBackButtons(t *testing.T) {
 	}
 }
 
-// Table rows offer their actions in a ⋮ menu; detail pages keep buttons.
+// Table rows offer their actions in a ⋮ menu; volume and network detail
+// pages keep buttons, the container detail page has no actions.
 func TestRowMenus(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 	for path, items := range map[string][]string{
-		"/partials/containers": {`data-menu="c-c0ffee000001"`, `aria-label="Actions for web"`, ">Stop<", ">Restart<", ">Force delete<"},
+		"/partials/containers": {`data-menu="c-c0ffee000001"`, `aria-label="Actions for web"`, ">Stop<", ">Restart<", ">Recreate<", ">Connect<", ">Delete<"},
 		"/partials/images":     {`data-menu="i-nginx:1.27"`, "Run…", "Tag…", `<details class="row-menu-sub">`, ">Delete<"},
 		"/partials/volumes":    {`data-menu="v-data"`, ">Delete<", ">Force delete<"},
 		"/partials/networks":   {`data-menu="n-backend"`, ">Delete<"},
@@ -270,7 +271,10 @@ func TestRowMenus(t *testing.T) {
 			t.Errorf("GET %s: row menu without ⋮ button or panel", path)
 		}
 	}
-	for _, path := range []string{"/containers/web", "/volumes/data", "/networks/backend"} {
+	if body := e.do("GET", "/containers/web", nil).Body.String(); strings.Contains(body, `class="row-menu"`) || strings.Contains(body, `<div class="actions">`) || strings.Contains(body, `hx-post="/containers/`) {
+		t.Error("GET /containers/web: the detail page offers actions")
+	}
+	for _, path := range []string{"/volumes/data", "/networks/backend"} {
 		body := e.do("GET", path, nil).Body.String()
 		i := strings.Index(body, `<section class="panel">`)
 		j := strings.Index(body[max(i, 0):], "</section>")

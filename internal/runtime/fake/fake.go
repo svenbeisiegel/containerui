@@ -433,6 +433,28 @@ func (f *Runtime) RemoveImage(_ context.Context, ref string, force bool) error {
 	return nil
 }
 
+// PruneImages removes the images no container uses.
+func (f *Runtime) PruneImages(context.Context) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.record("prune-images"); err != nil {
+		return "", err
+	}
+	used := map[string]bool{}
+	for _, c := range f.containers {
+		used[c.Image] = true
+	}
+	var removed []string
+	for ref := range f.images {
+		if !used[ref] {
+			removed = append(removed, ref)
+			delete(f.images, ref)
+		}
+	}
+	slices.Sort(removed)
+	return "Deleted Images:\n" + strings.Join(removed, "\n"), nil
+}
+
 func (f *Runtime) TagImage(_ context.Context, source, target string) error {
 	if err := runtime.ValidateImageRef(target); err != nil {
 		return err

@@ -38,8 +38,8 @@ func TestEditContainer(t *testing.T) {
 			t.Errorf("edit page misses %q", want)
 		}
 	}
-	if !strings.Contains(e.do("GET", "/containers/web", nil).Body.String(), `href="/containers/c0ffee000001/edit"`) {
-		t.Error("detail page has no Edit button")
+	if !strings.Contains(e.do("GET", "/partials/containers", nil, htmx).Body.String(), `href="/containers/c0ffee000001/edit"`) {
+		t.Error("container menu has no Edit item")
 	}
 
 	form := url.Values{
@@ -53,7 +53,7 @@ func TestEditContainer(t *testing.T) {
 	}
 	e.jobs.Wait()
 	got := e.rt.LastCreate
-	if len(got.Volumes) != 2 || got.RestartPolicy != "always" || !slices.Equal(got.Labels, []string{"team=web"}) ||
+	if len(got.Volumes) != 2 || got.RestartPolicy != "always" || !slices.Equal(got.Labels, []string{"team=web", "containerui.pull=missing"}) ||
 		!reflect.DeepEqual(got.Networks, []runtime.NetworkAttachment{{Name: "backend", Aliases: []string{"www"}}, {Name: "bridge"}}) {
 		t.Errorf("create opts = %+v", got)
 	}
@@ -89,11 +89,19 @@ func TestEditComposeContainerRefused(t *testing.T) {
 		t.Fatalf("edit = %d", w.Code)
 	}
 	page := e.do("GET", "/containers/shop-web-1", nil).Body.String()
-	if !strings.Contains(page, "compose project shop") || strings.Contains(page, "/edit\"") {
-		t.Error("compose container: missing notice or Edit button shown")
+	if !strings.Contains(page, "compose project shop") {
+		t.Error("compose container: missing notice")
 	}
-	if w := e.post("/containers/shop-web-1/update", url.Values{"image": {"nginx:1.28"}}, htmx); w.Header().Get("HX-Redirect") != "/containers/shop-web-1" {
-		t.Errorf("update redirect = %q", w.Header().Get("HX-Redirect"))
+	list := e.do("GET", "/partials/containers", nil, htmx).Body.String()
+	for _, item := range []string{"/edit\"", "/recreate\"", "/update\""} {
+		if id := e.container("shop-web-1").ID; strings.Contains(list, "/containers/"+id+item) {
+			t.Errorf("compose container menu offers %s", item)
+		}
+	}
+	for _, act := range []string{"update", "recreate"} {
+		if w := e.post("/containers/shop-web-1/"+act, url.Values{"image": {"nginx:1.28"}}, htmx); w.Header().Get("HX-Redirect") != "/containers" {
+			t.Errorf("%s redirect = %q", act, w.Header().Get("HX-Redirect"))
+		}
 	}
 	e.jobs.Wait()
 	if slices.ContainsFunc(e.rt.Calls, func(c string) bool { return strings.HasPrefix(c, "create") }) {
@@ -152,9 +160,12 @@ func TestImageUpdates(t *testing.T) {
 
 	// The container list marks outdated containers.
 	list := e.do("GET", "/partials/containers", nil, htmx).Body.String()
-	for _, id := range []string{"c0ffee000001", "c0ffee000002"} {
-		if !strings.Contains(list, `href="/containers/`+id+`#update"`) {
-			t.Errorf("container %s has no update tag", id)
+	if n := strings.Count(list, `class="badge warn update-tag"`); n < 2 {
+		t.Errorf("%d containers have an update tag; want web and job", n)
+	}
+	for _, want := range []string{`action="/containers/c0ffee000001/update"`, ">Update…<", `<option value="nginx:1.28">1.28 (minor)</option>`} {
+		if !strings.Contains(list, want) {
+			t.Errorf("container menu misses %q", want)
 		}
 	}
 	// The images page offers to pull the newer images.
@@ -191,10 +202,13 @@ func TestImageUpdates(t *testing.T) {
 		t.Error("pull button still shown after pulling 1.28")
 	}
 	page = e.do("GET", "/containers/web", nil).Body.String()
-	for _, want := range []string{`href="#update"`, `<option value="nginx:1.28">1.28 (minor)</option>`, "Update container"} {
+	for _, want := range []string{"update-tag", "Image update", "nginx:1.28"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("detail page misses %q", want)
 		}
+	}
+	if strings.Contains(page, "/update\"") {
+		t.Error("detail page offers an update action")
 	}
 
 	w := e.post("/containers/c0ffee000001/update", url.Values{"image": {"nginx:1.28"}}, htmx)
@@ -215,8 +229,8 @@ func TestImageUpdates(t *testing.T) {
 	if pulls != 1 {
 		t.Errorf("nginx:1.28 pulled %d times; the local image should be used", pulls)
 	}
-	if page := e.do("GET", "/containers/web", nil).Body.String(); strings.Contains(page, `id="update"`) {
-		t.Error("updated container still offers an update")
+	if page := e.do("GET", "/containers/web", nil).Body.String(); strings.Contains(page, "update-tag") {
+		t.Error("updated container still shows an update")
 	}
 
 	// Only images the check found are accepted.
@@ -230,8 +244,8 @@ func TestImageUpdates(t *testing.T) {
 	stub.set("alpine:latest", registry.Status{})
 	e.post("/images/pull", url.Values{"ref": {"alpine:latest"}}, htmx)
 	e.jobs.Wait()
-	if page := e.do("GET", "/containers/job", nil).Body.String(); !strings.Contains(page, `<option value="alpine:latest">latest (newer image already pulled)</option>`) {
-		t.Errorf("job container: no update to the pulled image:\n%s", page)
+	if list := e.do("GET", "/partials/containers", nil, htmx).Body.String(); !strings.Contains(list, `<option value="alpine:latest">latest (newer image already pulled)</option>`) {
+		t.Errorf("job container: no update to the pulled image:\n%s", list)
 	}
 
 	// Check now asks every registry again.
@@ -324,5 +338,83 @@ func TestFormFromOptsRoundTrip(t *testing.T) {
 	}
 	if !slices.Contains(f.RestartPolicies(), "on-failure:3") {
 		t.Error("custom restart policy missing from the select")
+	}
+}
+
+// Recreate keeps the settings and applies the container's own pull
+// policy: always pulls the image first, missing uses the local one.
+func TestRecreateContainer(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	pulled := func(ref string) bool { return slices.Contains(e.rt.Calls, "pull "+ref) }
+
+	// web has no recorded policy: missing.
+	w := e.post("/containers/c0ffee000001/recreate", nil, htmx)
+	if w.Header().Get("HX-Redirect") != "/containers/web" {
+		t.Fatalf("recreate redirect = %q", w.Header().Get("HX-Redirect"))
+	}
+	e.jobs.Wait()
+	c := e.container("web")
+	if c == nil || c.ID == "c0ffee000001" || c.Image != "nginx:1.27" || c.State != runtime.StateRunning || pulled("nginx:1.27") {
+		t.Fatalf("recreated web = %+v, calls %v", c, e.rt.Calls)
+	}
+	if got := e.rt.LastCreate; got.Ports[0].HostPort != 8080 || !slices.Contains(got.Labels, "containerui.pull=missing") {
+		t.Errorf("recreate opts = %+v", got)
+	}
+
+	// A container created with pull policy always is pulled again.
+	form := url.Values{"image": {"alpine:latest"}, "name": {"pinger"}, "pull": {"always"}, "tty": {"on"}, "interactive": {"on"}}
+	if w := e.post("/containers", form); w.Code != http.StatusSeeOther {
+		t.Fatalf("create = %d\n%s", w.Code, w.Body.String())
+	}
+	list := e.do("GET", "/partials/containers", nil, htmx).Body.String()
+	if !strings.Contains(list, "Pull policy always: alpine:latest is pulled first.") {
+		t.Error("recreate confirmation does not name the pull policy")
+	}
+	e.rt.Calls = nil
+	e.post("/containers/pinger/recreate", nil, htmx)
+	e.jobs.Wait()
+	if !pulled("alpine:latest") || !slices.Contains(e.rt.LastCreate.Labels, "containerui.pull=always") {
+		t.Errorf("recreate with pull policy always: calls %v, labels %v", e.rt.Calls, e.rt.LastCreate.Labels)
+	}
+}
+
+// The ⋮ menu of a container offers what fits its state.
+func TestContainerMenuByState(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	list := e.do("GET", "/partials/containers", nil, htmx).Body.String()
+	menu := func(id string) string {
+		i := strings.Index(list, `data-menu="c-`+id+`"`)
+		if i < 0 {
+			t.Fatalf("no menu for %s", id)
+		}
+		j := strings.Index(list[i:], "</details>")
+		return list[i : i+j]
+	}
+	for id, c := range map[string]struct{ has, lacks []string }{
+		"c0ffee000001": { // web, running
+			has:   []string{">Stop<", ">Restart<", ">Edit<", ">Recreate<", ">Connect<", ">Watch logs<", ">Download logs<", ">Delete<", `name="force" value="true"`},
+			lacks: []string{">Start<", ">Update…<"},
+		},
+		"c0ffee000002": { // job, stopped
+			has:   []string{">Start<", ">Edit<", ">Recreate<", ">Download logs<", ">Delete<"},
+			lacks: []string{">Stop<", ">Restart<", ">Connect<", ">Watch logs<"},
+		},
+	} {
+		m := menu(id)
+		for _, want := range c.has {
+			if !strings.Contains(m, want) {
+				t.Errorf("%s menu lacks %q", id, want)
+			}
+		}
+		for _, bad := range c.lacks {
+			if strings.Contains(m, bad) {
+				t.Errorf("%s menu offers %q", id, bad)
+			}
+		}
+	}
+	if m := menu(e.container("shop-web-1").ID); strings.Contains(m, ">Edit<") || strings.Contains(m, ">Recreate<") || !strings.Contains(m, ">Delete<") {
+		t.Errorf("compose container menu:\n%s", m)
 	}
 }

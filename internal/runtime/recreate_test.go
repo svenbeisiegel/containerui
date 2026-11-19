@@ -211,3 +211,37 @@ func TestRecreateRollsBack(t *testing.T) {
 		t.Errorf("%d app containers", n)
 	}
 }
+
+// The pull policy ContainerUI records in a label comes back as the
+// container's pull policy and is not one of its own labels.
+func TestOptsFromInspectPullLabel(t *testing.T) {
+	doc := func(labels map[string]string) json.RawMessage {
+		b, _ := json.Marshal(map[string]any{"Id": "abc", "Name": "/web", "Config": map[string]any{"Image": "nginx:latest", "Labels": labels}})
+		return b
+	}
+	for label, want := range map[string]runtime.PullPolicy{"always": runtime.PullAlways, "never": runtime.PullNever, "missing": runtime.PullMissing, "bogus": runtime.PullMissing, "": runtime.PullMissing} {
+		labels := map[string]string{"team": "web"}
+		if label != "" {
+			labels[runtime.LabelPull] = label
+		}
+		src, err := runtime.OptsFromInspect(doc(labels), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if src.Opts.Pull != want || !slices.Equal(src.Opts.Labels, []string{"team=web"}) {
+			t.Errorf("label %q: pull = %q, labels = %v", label, src.Opts.Pull, src.Opts.Labels)
+		}
+	}
+}
+
+func TestSetPullLabel(t *testing.T) {
+	o := runtime.CreateContainerOpts{Labels: []string{"team=web", runtime.LabelPull + "=never"}}
+	o.SetPullLabel(runtime.PullAlways)
+	if want := []string{"team=web", "containerui.pull=always"}; !slices.Equal(o.Labels, want) {
+		t.Errorf("labels = %v; want %v", o.Labels, want)
+	}
+	o.SetPullLabel("")
+	if want := []string{"team=web", "containerui.pull=missing"}; !slices.Equal(o.Labels, want) {
+		t.Errorf("labels = %v; want %v", o.Labels, want)
+	}
+}

@@ -13,53 +13,23 @@ import (
 	"github.com/coder/websocket"
 )
 
-func TestTerminalConnectOnDetailPage(t *testing.T) {
+// Connect is in the container menu of running containers only; the
+// terminal page itself reports a missing shell.
+func TestTerminalConnectInMenu(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 
-	w := e.do("GET", "/containers/c0ffee000001", nil)
-	body := w.Body.String()
-	for _, want := range []string{`id="terminal-connect"`, `hx-get="/containers/c0ffee000001/terminal/check"`, `class="unavailable" disabled>Connect`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("running container page lacks %q", want)
-		}
+	list := e.do("GET", "/partials/containers", nil, htmx).Body.String()
+	if !strings.Contains(list, `href="/containers/c0ffee000001/terminal" target="_blank" rel="noopener">Connect<`) {
+		t.Error("running container menu lacks Connect")
+	}
+	if strings.Contains(list, `/containers/c0ffee000002/terminal"`) {
+		t.Error("stopped container menu offers Connect")
 	}
 	// xterm only loads on the terminal page.
-	if strings.Contains(w.Header().Get("Content-Security-Policy"), "unsafe-inline") || strings.Contains(body, "xterm") {
+	w := e.do("GET", "/containers/c0ffee000001", nil)
+	if strings.Contains(w.Header().Get("Content-Security-Policy"), "unsafe-inline") || strings.Contains(w.Body.String(), "xterm") {
 		t.Error("detail page must not relax the CSP or load xterm")
-	}
-
-	body = e.do("GET", "/containers/c0ffee000002", nil).Body.String()
-	if !strings.Contains(body, `title="Start the container to open a terminal."`) || strings.Contains(body, "terminal/check") ||
-		!strings.Contains(body, `class="unavailable" disabled>Connect`) {
-		t.Error("stopped container should show a disabled Connect button without a check")
-	}
-}
-
-func TestTerminalCheck(t *testing.T) {
-	e := newEnv(t)
-	e.login()
-
-	body := e.do("GET", "/containers/c0ffee000001/terminal/check", nil, htmx).Body.String()
-	if !strings.Contains(body, `href="/containers/c0ffee000001/terminal" target="_blank"`) || !strings.Contains(body, "/bin/sh") ||
-		!strings.Contains(body, `class="button primary"`) || strings.Contains(body, "disabled") {
-		t.Errorf("ready button:\n%s", body)
-	}
-
-	body = e.do("GET", "/containers/job/terminal/check", nil, htmx).Body.String()
-	if !strings.Contains(body, "Start the container") || strings.Contains(body, "data-terminal-connect") || !strings.Contains(body, "disabled") {
-		t.Errorf("stopped button:\n%s", body)
-	}
-
-	e.rt.NoShell = true
-	body = e.do("GET", "/containers/web/terminal/check", nil, htmx).Body.String()
-	if !strings.Contains(body, "No shell (bash or sh) found") || strings.Contains(body, "data-terminal-connect") || !strings.Contains(body, "disabled") {
-		t.Errorf("no-shell button:\n%s", body)
-	}
-
-	body = e.do("GET", "/containers/nope/terminal/check", nil, htmx).Body.String()
-	if !strings.Contains(body, "not found") {
-		t.Errorf("unknown container button:\n%s", body)
 	}
 }
 

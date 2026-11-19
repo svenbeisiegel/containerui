@@ -3,6 +3,15 @@
 <h1 class="sr-only">Images</h1>
 <div class="page-head">
   <div class="actions">
+    <details class="menu">
+      <summary class="button danger">Prune images</summary>
+      <form method="post" action="/images/prune" hx-post="/images/prune" hx-target="#images" hx-swap="outerHTML" hx-disabled-elt="find button"
+            hx-confirm="Remove every image that no container uses?" class="menu-panel stack">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <p class="muted small">Removes every image that no container, running or stopped, uses – tagged images included (<code>image prune --all</code>). Pull them again to use them later.</p>
+        <div><button type="submit" class="danger">Prune images</button></div>
+      </form>
+    </details>
     {{template "images_scan" .Data.Images}}
     {{if .Caps.Pull}}<a class="button primary" href="/images/pull">Pull image</a>{{end}}
     {{template "refresh_button" (dict "Href" "/images" "Get" "/partials/images" "Target" "#images")}}

@@ -55,6 +55,9 @@ func OptsFromInspect(container, image json.RawMessage) (RecreateSource, error) {
 	lost := func(format string, args ...any) { src.Lost = append(src.Lost, fmt.Sprintf(format, args...)) }
 	o := &src.Opts
 	o.Image, o.Name, o.Pull = c.Config.Image, src.Name, PullMissing
+	if p, ok := ParsePullPolicy(c.Config.Labels[LabelPull]); ok {
+		o.Pull = p
+	}
 
 	// Overriding the entrypoint resets the image's command, so the
 	// container's command is kept as it is then.

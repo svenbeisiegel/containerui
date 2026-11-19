@@ -130,6 +130,15 @@ func (s *Server) startRecreate(r *http.Request, src runtime.RecreateSource, opts
 	return target, nil
 }
 
+// setPullLabel records the container's pull policy p in a label, so
+// recreating it later pulls the same way; runtimes without labels
+// (wslc) do not record it and recreate with PullMissing.
+func (s *Server) setPullLabel(opts *runtime.CreateContainerOpts, p runtime.PullPolicy) {
+	if s.caps().CreateOptions[runtime.OptLabel] {
+		opts.SetPullLabel(p)
+	}
+}
+
 // ---- edit ----
 
 func (s *Server) editView(ctx context.Context, src runtime.RecreateSource, f containerForm, err string) containerNewView {
@@ -146,7 +155,7 @@ func (s *Server) handleContainerEdit(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		sessionFrom(r).SetFlash(userError(err))
-		http.Redirect(w, r, "/containers/"+id, http.StatusSeeOther)
+		http.Redirect(w, r, "/containers", http.StatusSeeOther)
 		return
 	}
 	f := formFromOpts(src.Opts)
@@ -162,12 +171,13 @@ func (s *Server) handleContainerEditSave(w http.ResponseWriter, r *http.Request)
 	}
 	if err != nil {
 		sessionFrom(r).SetFlash(userError(err))
-		http.Redirect(w, r, "/containers/"+id, http.StatusSeeOther)
+		http.Redirect(w, r, "/containers", http.StatusSeeOther)
 		return
 	}
 	f := parseContainerForm(r)
 	opts, err := f.toOpts()
 	if err == nil {
+		s.setPullLabel(&opts, opts.Pull)
 		var target string
 		if target, err = s.startRecreate(r, src, opts, "edit"); err == nil {
 			sessionFrom(r).SetFlash(fmt.Sprintf("Recreating container %s…", target))
@@ -181,40 +191,8 @@ func (s *Server) handleContainerEditSave(w http.ResponseWriter, r *http.Request)
 
 // ---- image update ----
 
-// containerUpdateView offers to recreate a container with a newer image
-// that the update check found.
-type containerUpdateView struct {
-	ID, Name, CSRF string
-	Ref            string              // the container's image
-	Project        string              // compose project managing the container
-	AutoRemove     bool                // started with --rm: no rollback
-	CanRecreate    bool                // the runtime can pull and inspect
-	Candidates     []updates.Candidate // newest image first
-}
-
-// containerUpdate returns the update offer for c, nil if there is none.
-// inspect is the container's inspect document.
-func (s *Server) containerUpdate(r *http.Request, c runtime.Container, inspect string) *containerUpdateView {
-	if s.updates == nil {
-		return nil
-	}
-	cands := s.updates.ForContainer(c)
-	if len(cands) == 0 {
-		return nil
-	}
-	caps := s.caps()
-	v := &containerUpdateView{ID: c.ID, Name: c.Name, CSRF: sessionFrom(r).CSRF, Ref: c.Image,
-		Project: c.Labels[runtime.LabelProject], CanRecreate: caps.Pull && caps.Inspect, Candidates: cands}
-	var ci runtime.ContainerInspect
-	if json.Unmarshal([]byte(inspect), &ci) == nil {
-		v.AutoRemove = ci.HostConfig.AutoRemove
-		if ci.Config.Image != "" {
-			v.Ref = ci.Config.Image
-		}
-	}
-	return v
-}
-
+// handleContainerUpdate recreates a container with one of the newer
+// images the update check found for it (the list's Update menu items).
 func (s *Server) handleContainerUpdate(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	image := strings.TrimSpace(r.PostFormValue("image"))
@@ -237,9 +215,12 @@ func (s *Server) handleContainerUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	to := "/containers/" + id
+	to := "/containers"
 	if err == nil {
 		opts := src.Opts
+		// The container keeps its pull policy; this update only pulls
+		// the new image if needed (or always, if the registry has a newer one).
+		s.setPullLabel(&opts, src.Opts.Pull)
 		opts.Image, opts.Pull, opts.Start = image, runtime.PullMissing, src.Running
 		if cand.Pull {
 			opts.Pull = runtime.PullAlways
@@ -251,6 +232,36 @@ func (s *Server) handleContainerUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if err != nil {
+		sessionFrom(r).SetFlash(userError(err))
+	}
+	redirect(w, r, to)
+}
+
+// ---- recreate ----
+
+// handleContainerRecreate replaces a container with one created from the
+// same settings and image tag. Its pull policy decides whether the image
+// is pulled first (always), only if missing, or never; with "always" a
+// newer image of a tag such as latest is picked up.
+func (s *Server) handleContainerRecreate(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	src, err := s.recreateSource(r.Context(), id)
+	if err == nil {
+		err = managedError(src)
+	}
+	to := "/containers"
+	if err == nil {
+		opts := src.Opts
+		opts.Start = src.Running
+		s.setPullLabel(&opts, opts.Pull)
+		var target string
+		if target, err = s.startRecreate(r, src, opts, "recreate"); err == nil {
+			sessionFrom(r).SetFlash(fmt.Sprintf("Recreating container %s…", src.Name))
+			to = "/containers/" + target
+		}
+	}
+	if err != nil {
+		s.log.Warn("container recreate refused", "id", id, "user", sessionFrom(r).Username, "error", err)
 		sessionFrom(r).SetFlash(userError(err))
 	}
 	redirect(w, r, to)

@@ -131,19 +131,57 @@
 {{end}}
 
 {{/* ---------- containers ---------- */}}
-{{/* container_actions expects dict: C (container), Caps, View ("list"|"detail"), CSRF;
-     optional Return (page to go back to) and Menu (render as a row menu). */}}
+{{/* container_actions: the ⋮ menu of a container row with every action
+     that fits the container's state. Expects dict: C (container), Caps,
+     View ("list": refresh #containers, "detail": redirect), CSRF; optional
+     Return (page to go back to) and Updates (the container's update
+     candidates). Edit, Recreate and Update are left out for compose
+     containers, which change through their project. */}}
 {{define "container_actions"}}
-{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "c-%s" .C.ID) "Name" .C.Name)}}{{else}}<div class="actions">{{end}}
-  {{if .C.State.IsRunning}}
+{{$c := .C}}{{$caps := .Caps}}{{$csrf := .CSRF}}
+{{$running := $c.State.IsRunning}}
+{{$recreate := and $caps.Inspect (not (index $c.Labels "com.docker.compose.project"))}}
+{{template "row_menu_open" (dict "Key" (printf "c-%s" $c.ID) "Name" $c.Name)}}
+  {{if $running}}
     {{template "container_action" (dict "P" . "Act" "stop" "Label" "Stop" "Class" "" "Confirm" "" "Force" false)}}
-    {{if .Caps.Restart}}{{template "container_action" (dict "P" . "Act" "restart" "Label" "Restart" "Class" "" "Confirm" "" "Force" false)}}{{end}}
-    {{template "container_action" (dict "P" . "Act" "delete" "Label" "Force delete" "Class" "danger" "Confirm" (printf "Force delete running container %s? It will be killed and removed." .C.Name) "Force" true)}}
+    {{if $caps.Restart}}{{template "container_action" (dict "P" . "Act" "restart" "Label" "Restart" "Class" "" "Confirm" "" "Force" false)}}{{end}}
   {{else}}
     {{template "container_action" (dict "P" . "Act" "start" "Label" "Start" "Class" "primary" "Confirm" "" "Force" false)}}
-    {{template "container_action" (dict "P" . "Act" "delete" "Label" "Delete" "Class" "danger" "Confirm" (printf "Delete container %s?" .C.Name) "Force" false)}}
   {{end}}
-{{if .Menu}}{{template "row_menu_close"}}{{else}}</div>{{end}}
+  {{if $recreate}}
+  <hr class="row-menu-sep">
+  <a class="button" href="/containers/{{$c.ID}}/edit">Edit</a>
+  {{$pull := or (index $c.Labels "containerui.pull") "missing"}}
+  <form method="post" action="/containers/{{$c.ID}}/recreate" hx-post="/containers/{{$c.ID}}/recreate" hx-swap="none" hx-disabled-elt="find button"
+        hx-confirm="Recreate container {{$c.Name}}? It is stopped, removed and created again with the same settings; volumes are kept. {{if eq $pull "always"}}Pull policy always: {{$c.Image}} is pulled first.{{else if eq $pull "never"}}Pull policy never: the local image is used.{{else}}Pull policy missing: the local image is used, pulled only if it is gone.{{end}}">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <button type="submit" title="Stop, remove and create the container again (pull policy {{$pull}})">Recreate</button>
+  </form>
+  {{with and $caps.Pull .Updates}}
+  <details class="row-menu-sub">
+    <summary class="button primary" title="A newer image is available">Update…</summary>
+    <form class="tag-form" method="post" action="/containers/{{$c.ID}}/update" hx-post="/containers/{{$c.ID}}/update" hx-swap="none" hx-disabled-elt="find button"
+          hx-confirm="Update container {{$c.Name}} to the selected image? It is recreated with the same settings; volumes are kept.">
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <select name="image" aria-label="Image to update {{$c.Name}} to">
+        {{range .}}<option value="{{.Ref}}">{{.Label}}</option>{{end}}
+      </select>
+      <button type="submit" class="primary" title="Pull the image if needed and recreate the container with it">Update</button>
+    </form>
+  </details>
+  {{end}}
+  {{end}}
+  {{if or (and $running $caps.Terminal) $caps.Logs}}
+  <hr class="row-menu-sep">
+  {{if and $running $caps.Terminal}}<a class="button" href="/containers/{{$c.ID}}/terminal" target="_blank" rel="noopener">Connect</a>{{end}}
+  {{if $caps.Logs}}
+  {{if $running}}<a class="button" href="/containers/{{$c.ID}}/logs/watch" target="_blank" rel="noopener">Watch logs</a>{{end}}
+  <a class="button" href="/containers/{{$c.ID}}/logs/download" download>Download logs</a>
+  {{end}}
+  {{end}}
+  <hr class="row-menu-sep">
+  {{template "container_action" (dict "P" . "Act" "delete" "Label" "Delete" "Class" "danger" "Confirm" (printf "Delete container %s?%s" $c.Name (or (and $running " It is running and will be killed first.") "")) "Force" true)}}
+{{template "row_menu_close"}}
 {{end}}
 
 {{define "container_action"}}
@@ -169,13 +207,13 @@
     {{$caps := .Caps}}{{$csrf := .CSRF}}{{$upd := .Updates}}
     {{range .Containers}}
       <tr>
-        <td><a href="/containers/{{.ID}}">{{.Name}}</a>{{if index $upd .ID}} <a class="badge warn update-tag" href="/containers/{{.ID}}#update" title="A newer image is available">update</a>{{end}}<div class="id">{{shortID .ID}}</div>
+        <td><a href="/containers/{{.ID}}">{{.Name}}</a>{{with index $upd .ID}} <span class="badge warn update-tag" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update in the actions menu.">update</span>{{end}}<div class="id">{{shortID .ID}}</div>
           {{with index .Labels "com.docker.compose.project"}}{{if $caps.Compose}}<a class="tag" href="/compose/{{.}}" title="Compose project">{{.}}</a>{{else}}<span class="tag" title="Compose project">{{.}}</span>{{end}}{{end}}</td>
         <td class="mono">{{.Image}}</td>
         <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
         <td class="mono small">{{.Ports}}</td>
         <td title="{{datetime .Created}}">{{ago .Created}}</td>
-        <td class="right">{{template "container_actions" (dict "C" . "Caps" $caps "View" "list" "CSRF" $csrf "Menu" true)}}</td>
+        <td class="right">{{template "container_actions" (dict "C" . "Caps" $caps "View" "list" "CSRF" $csrf "Updates" (index $upd .ID))}}</td>
       </tr>
     {{else}}
       <tr><td colspan="6" class="empty">{{if .Err}}Could not load containers.{{else}}No containers yet. Use <em>Create container</em> to add one.{{end}}</td></tr>
@@ -331,27 +369,7 @@
 {{/* activity_state: the status dot of the newest entry in the edge handle. */}}
 {{define "activity_state"}}<span id="activity-state"{{if .Partial}} hx-swap-oob="true"{{end}}>{{with .Newest}}<span class="status-dot {{.Status}}" title="{{.Status}}"></span><span class="sr-only">{{.Status}}</span>{{end}}</span>{{end}}
 
-{{/* ---------- container recreate (edit / image update) ---------- */}}
-{{define "container_update"}}
-<section class="panel update-panel" id="update">
-  <h2>Image update</h2>
-  <p><span class="badge warn">update</span> A newer image is available for <code>{{.Ref}}</code>.</p>
-  {{if .Project}}
-  <p class="muted small">This container belongs to compose project <a href="/compose/{{.Project}}">{{.Project}}</a>: change the image in its compose file, then pull and deploy the project.</p>
-  {{else if .CanRecreate}}
-  <form method="post" action="/containers/{{.ID}}/update" hx-post="/containers/{{.ID}}/update" hx-swap="none" class="inline-form update-form"
-        hx-confirm="Recreate container {{.Name}} with the selected image? It is stopped and replaced with the same settings; volumes are kept.{{if .AutoRemove}} It was started with --rm, so it cannot be restored if this fails.{{end}}" hx-disabled-elt="find button">
-    <input type="hidden" name="csrf" value="{{.CSRF}}">
-    <select name="image" aria-label="Image to update to">
-      {{range .Candidates}}<option value="{{.Ref}}">{{.Label}}</option>{{end}}
-    </select>
-    <button type="submit" class="primary">Update container</button>
-  </form>
-  <p class="muted small">The image is pulled if needed; the container is recreated with the same settings.</p>
-  {{end}}
-</section>
-{{end}}
-
+{{/* ---------- container recreate (edit / recreate / image update) ---------- */}}
 {{/* recreate_job expects recreateJobView. */}}
 {{define "recreate_job"}}
 <div id="recreate-job" {{if and .Job (not .Job.Done)}}hx-get="/partials/containers/{{.Name}}/job?poll=1" hx-trigger="every 1s" hx-swap="outerHTML"{{end}}>
@@ -588,7 +606,7 @@
           <td class="mono">{{.Image}}</td>
           <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
           <td class="mono small">{{.Ports}}</td>
-          <td class="right">{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Return" (printf "/compose/%s" $p.Name) "Menu" true)}}</td>
+          <td class="right">{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Return" (printf "/compose/%s" $p.Name))}}</td>
         </tr>
         {{end}}
       {{end}}
@@ -665,21 +683,6 @@
     </tbody>
   </table></div>
 </section>
-{{end}}
-
-{{/* ---------- terminal ---------- */}}
-{{/* terminal_connect expects a terminalView. "checking" loads the real
-     state; only "ready" links to the terminal page, the rest are disabled. */}}
-{{define "terminal_connect"}}
-<span class="terminal-connect" id="terminal-connect"
-  {{if eq .State "checking"}}hx-get="/containers/{{.ID}}/terminal/check" hx-trigger="load" hx-swap="outerHTML" title="Checking whether a shell is available…"
-  {{else if eq .State "ready"}}title="Open a {{.Shell}} shell in a new tab"
-  {{else if eq .State "stopped"}}title="Start the container to open a terminal."
-  {{else if eq .State "unsupported"}}title="This runtime does not support terminals."
-  {{else}}title="{{.Err}}"{{end}}>
-  {{if eq .State "ready"}}<a class="button primary" href="/containers/{{.ID}}/terminal" target="_blank" rel="noopener" data-terminal-connect>Connect</a>
-  {{else}}<button type="button" class="unavailable" disabled>Connect</button>{{end}}
-</span>
 {{end}}
 
 {{/* ---------- events ---------- */}}

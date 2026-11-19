@@ -206,12 +206,12 @@ func Without(a, b []string) []string {
 	return out
 }
 
-// OwnLabels drops compose's and the runtimes' own labels and labels
-// inherited unchanged from the image.
+// OwnLabels drops compose's, the runtimes' and ContainerUI's own labels
+// and labels inherited unchanged from the image.
 func OwnLabels(labels, image map[string]string) map[string]string {
 	out := map[string]string{}
 	for k, v := range labels {
-		if strings.HasPrefix(k, LabelPrefix) || strings.HasPrefix(k, "io.podman.compose.") || strings.HasPrefix(k, "com.microsoft.wsl.") {
+		if strings.HasPrefix(k, LabelPrefix) || strings.HasPrefix(k, "io.podman.compose.") || strings.HasPrefix(k, "com.microsoft.wsl.") || strings.HasPrefix(k, LabelOwnPrefix) {
 			continue
 		}
 		if iv, ok := image[k]; ok && iv == v {

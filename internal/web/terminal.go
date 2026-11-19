@@ -26,16 +26,6 @@ const (
 // session, so logout or expiry closes it. Tests shorten it.
 var terminalSessionCheck = 30 * time.Second
 
-// terminalView is rendered by the terminal_connect partial.
-type terminalView struct {
-	ID    string // container ID (URL path segment)
-	Name  string
-	State string // "unsupported", "stopped", "checking", "unavailable", "ready"
-	Shell string
-	Err   string
-	CSRF  string
-}
-
 // findContainer looks a container up by ID or name. On failure it returns
 // the HTTP status and the message to show.
 func (s *Server) findContainer(ctx context.Context, id string) (*runtime.Container, int, string) {
@@ -70,29 +60,6 @@ func (s *Server) terminalTarget(ctx context.Context, id string) (c *runtime.Cont
 		return c, "", http.StatusConflict, userError(err)
 	}
 	return c, shell, http.StatusOK, ""
-}
-
-// handleTerminalCheck renders the Connect button after checking whether a
-// shell can be opened. The detail page loads it asynchronously because the
-// check runs a command in the container.
-func (s *Server) handleTerminalCheck(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	v := terminalView{ID: id, Name: id, CSRF: sessionFrom(r).CSRF}
-	c, shell, status, msg := s.terminalTarget(r.Context(), id)
-	if c != nil {
-		v.ID, v.Name = c.ID, c.Name
-	}
-	switch {
-	case status == http.StatusNotImplemented:
-		v.State = "unsupported"
-	case c != nil && c.State != runtime.StateRunning:
-		v.State = "stopped"
-	case msg != "":
-		v.State, v.Err = "unavailable", msg
-	default:
-		v.State, v.Shell = "ready", shell
-	}
-	s.renderPartial(w, "terminal_connect", v)
 }
 
 // terminalPageView is rendered by the standalone terminal page.

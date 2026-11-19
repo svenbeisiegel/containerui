@@ -354,6 +354,7 @@ details.row-menu[open] > summary.kebab { border-color: var(--accent); color: var
 /* Hidden until app.js has placed it, so it never flashes at the corner. */
 details.row-menu:not(.placed) > .row-menu-panel { visibility: hidden; }
 .row-menu-panel form { margin: 0; }
+.row-menu-sep { width: 100%; margin: .2rem 0; border: 0; border-top: 1px solid var(--border); }
 .row-menu-panel :is(button, .button, summary.button) {
   width: 100%; justify-content: flex-start; white-space: nowrap;
   padding: .45rem .7rem; border: 0; border-radius: 4px;
@@ -369,7 +370,7 @@ details.row-menu:not(.placed) > .row-menu-panel { visibility: hidden; }
 .row-menu-panel :is(button, .button, summary):focus-visible { outline-offset: -2px; }
 details.row-menu-sub[open] > summary { color: var(--accent); }
 .tag-form { display: flex; gap: .35rem; padding: .35rem .3rem .45rem; }
-.tag-form input { width: 14rem; min-width: 0; }
+.tag-form :is(input, select) { width: 14rem; min-width: 0; }
 .row-menu-panel .tag-form button.primary,
 .row-menu-panel .tag-form button.primary:hover {
   width: auto; flex: none; justify-content: center; padding: .45rem .9rem;
@@ -604,7 +605,7 @@ main:has(.output-handle) { padding-right: calc(1.25rem + 28px); } /* keep conten
   .session .user { display: none; }
   .grid2 { grid-template-columns: 1fr; }
   .tag-form { position: static; margin-top: .35rem; box-shadow: none; }
-  .tag-form input { width: 100%; }
+  .tag-form :is(input, select) { width: 100%; }
   .form-actions { padding: .7rem .9rem; }
   .form-actions .button, .form-actions button { flex: 1; }
   .login { margin-top: 10vh; padding: 1.5rem; }

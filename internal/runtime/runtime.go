@@ -49,6 +49,9 @@ type Runtime interface {
 	TagImage(ctx context.Context, source, target string) error
 	// InspectImage returns the runtime's raw inspect document for an image.
 	InspectImage(ctx context.Context, ref string) (json.RawMessage, error)
+	// PruneImages removes every image no container (running or stopped)
+	// uses, tagged ones included, and returns the runtime's report.
+	PruneImages(ctx context.Context) (string, error)
 
 	ListVolumes(ctx context.Context) ([]Volume, error)
 	InspectVolume(ctx context.Context, name string) (json.RawMessage, error)

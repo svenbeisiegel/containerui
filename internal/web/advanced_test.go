@@ -61,6 +61,7 @@ func TestCreateWithAdvancedOptions(t *testing.T) {
 		CPUs: "0.5", Memory: "64M", Hostname: "cui-host", User: "1000:1000",
 		DNS: []string{"1.1.1.1", "8.8.8.8"}, DNSSearch: []string{"example.com"},
 		DNSOptions: []string{"ndots:2", "timeout:3"}, Ulimits: []string{"nofile=1024:2048", "nproc=512"},
+		Labels: []string{"containerui.pull=missing"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("opts =\n %+v\nwant\n %+v", got, want)

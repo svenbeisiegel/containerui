@@ -488,6 +488,16 @@ func (d *Driver) RemoveImage(ctx context.Context, ref string, force bool) error 
 	return err
 }
 
+func (d *Driver) PruneImages(ctx context.Context) (string, error) {
+	// --all also removes tagged images no container uses; --force only
+	// skips the interactive confirmation, which nobody could answer.
+	out, err := d.run(ctx, "image prune", "image", "prune", "--all", "--force")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(normalize(out))), nil
+}
+
 func (d *Driver) TagImage(ctx context.Context, source, target string) error {
 	if err := errors.Join(runtime.ValidateImageRef(source), runtime.ValidateImageRef(target)); err != nil {
 		return err

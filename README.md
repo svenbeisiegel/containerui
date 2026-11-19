@@ -34,7 +34,10 @@ Features:
   wslc shows no metrics yet.
 - **Containers**: create (image, name, command, ports, env, volumes, labels,
   networks with aliases and fixed IPs, restart policy, pull policy), start,
-  stop, restart, delete / force delete, inspect
+  stop, restart, edit, recreate, update, delete (always `--force`), inspect.
+  Every action is in the ⋮ menu of the container's row in the list, which
+  offers only what fits its state (a running container has *Stop*, a
+  stopped one *Start*, …); the container page shows information only.
   - A collapsible **Advanced options** section on the create form adds
     `--tty` and `--interactive` (on by default), `--rm`, `--no-healthcheck`,
     `--entrypoint`, `--workdir`, `--cpus`, `--memory`, `--hostname`,
@@ -44,7 +47,7 @@ Features:
     the runtime. Options a runtime cannot set are hidden (wslc: restart
     policy, labels, entrypoint, working directory, security options, extra
     hosts and network aliases, until verified).
-  - **Edit**: the container page's *Edit* button opens the create form
+  - **Edit**: the menu's *Edit* item opens the create form
     filled with the container's settings (read back from `inspect`; values
     the container only inherits from its image are left out). Saving
     **recreates** the container: it is renamed and stopped, the new one is
@@ -54,6 +57,13 @@ Features:
     old one is renamed back and restarted. Settings the form cannot express
     (devices, tmpfs mounts, sysctls, security options, a custom health
     check, …) are listed on the form as *will be lost* before you save.
+  - **Recreate** does the same without changes, e.g. to pick up a newer
+    image of a tag such as `latest`. It follows the container's pull
+    policy: *always* pulls the image first (if the pull fails, the container
+    is left untouched), *missing* and *never* use the local image. The
+    runtimes do not record `--pull`, so ContainerUI keeps the policy chosen
+    on create or edit in the label `containerui.pull`; containers without
+    it (or on wslc, which has no labels) use *missing*.
   - **Import from docker inspect**: on the create page, paste the output of
     `docker inspect <container>` (or `podman inspect`, or open / drop a
     saved `.json` file) to fill the form from an existing container, also
@@ -78,8 +88,8 @@ Features:
     deleted in the registry is marked *not in registry*, and its higher
     versions are still looked up. A container whose image has a newer
     version, in the registry or already pulled (offered even when the
-    registry cannot be reached), gets an *update* tag after its name; its page offers *Update container*, which
-    pulls the chosen image if needed and recreates the container with the
+    registry cannot be reached), gets an *update* tag after its name; its menu offers *Update…*, which
+    lets you pick one of the newer images, pulls it if needed and recreates the container with the
     same settings, like *Edit*. Public registries work anonymously; private
     ones with the logins in the runtime's auth file (`docker login` /
     `podman login` as the account ContainerUI runs as, or
@@ -88,18 +98,20 @@ Features:
   - Containers of a **compose project** cannot be edited or updated here:
     change the image or settings in the project's compose file and deploy
     it, so compose keeps track of them.
-- **Terminal**: the detail page has a *Connect* button next to the log
-  buttons that opens an interactive shell (`<cli> container exec -it`) in a
-  new tab. It checks first that the container runs and has a shell (bash,
-  else sh): the button is blue when a terminal can be opened and grey and
-  disabled otherwise, with the reason as its tooltip. Up to 8 terminals can
+- **Terminal**: the menu of a running container has *Connect*, which opens
+  an interactive shell (`<cli> container exec -it`) in a new tab. The tab
+  checks that the container has a shell (bash, else sh) and shows the
+  reason if no terminal can be opened. Up to 8 terminals can
   be open at once; *Disconnect*, closing the tab or signing out ends the shell.
-- **Logs**: the detail page offers *Download logs* (the container's complete
+- **Logs**: the container menu offers *Download logs* (the container's complete
   output, stdout and stderr, as `<container-name>_<YYYYMMDD-HHMMSS>.log`)
   and, for a running container, *Watch logs*, which opens a new tab that
   shows the last 100 lines and then follows the output live as plain text
   under a fixed header with the container's details.
-- **Images**: pull (with live progress), tag, delete / force delete
+- **Images**: pull (with live progress), tag, delete / force delete,
+  *Prune images* (`image prune --all --force`: removes every image no
+  container, running or stopped, uses; `--force` only skips the CLI's
+  confirmation prompt)
 - **Volumes**: list (with the containers using each volume), create (name,
   driver — `guest`/`vhd` for wslc, `local` for docker/podman — driver options, labels), delete / force delete, prune
   (optionally including unused named volumes, `--all`) and a detail page with
