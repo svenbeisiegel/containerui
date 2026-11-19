@@ -26,6 +26,7 @@
     </form>
     {{end}}
     <a class="button primary" href="/volumes/new">Create volume</a>
+    {{template "refresh_button" (dict "Href" "/volumes" "Get" "/partials/volumes" "Target" "#volumes")}}
   </div>
 </div>
 {{template "volumes_table" .Data.Volumes}}

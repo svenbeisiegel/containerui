@@ -10,6 +10,10 @@
 </button>
 {{end}}
 
+{{/* refresh_button expects dict: Href (the page, without htmx), Get (the
+     table partial), Target (its id). Always the last page-head action. */}}
+{{define "refresh_button"}}<a class="button" href="{{.Href}}" hx-get="{{.Get}}" hx-target="{{.Target}}" hx-swap="outerHTML">Refresh</a>{{end}}
+
 {{/* ---------- dashboard ---------- */}}
 {{define "dashboard_body"}}
 <div id="dashboard" hx-get="/partials/dashboard" hx-trigger="every 5s" hx-swap="outerHTML">
@@ -28,9 +32,7 @@
 
   <section class="panel">
     <h2>Running Containers</h2>
-    {{if .ContErr}}<div class="flash error">{{.ContErr}}</div>
-    {{else if not .Running}}<p class="empty">No containers are running. <a href="/containers/new">Create one</a>.</p>
-    {{else}}
+    {{if .ContErr}}<div class="flash error">{{.ContErr}}</div>{{end}}
     <div class="table-wrap"><table>
       <thead><tr><th>Name</th><th>Image</th><th>Status</th>{{if .Metrics}}<th class="num">CPU</th><th class="num">RAM</th><th class="num">Disk I/O</th>{{end}}</tr></thead>
       <tbody>
@@ -41,10 +43,11 @@
           <td>{{template "state" .State}} <span class="muted">{{.Status}}</span></td>
           {{if $.Metrics}}{{$c := index $.Current .ID}}<td class="num">{{or $c.CPU "–"}}</td><td class="num">{{or $c.Mem "–"}}</td><td class="num">{{or $c.IO "–"}}</td>{{end}}
         </tr>
+      {{else}}
+        <tr><td colspan="{{if .Metrics}}6{{else}}3{{end}}" class="empty">{{if .ContErr}}Could not load containers.{{else}}No containers are running.{{end}}</td></tr>
       {{end}}
       </tbody>
     </table></div>
-    {{end}}
   </section>
 
   {{with .Metrics}}
@@ -144,9 +147,7 @@
 {{define "containers_table"}}
 <section id="containers" class="panel" hx-get="/partials/containers" hx-trigger="every 5s" hx-swap="outerHTML">
   {{template "flash" .Flash}}
-  {{if .Err}}<div class="flash error">{{.Err}}</div>
-  {{else if not .Containers}}<p class="empty">No containers yet. <a href="/containers/new">Create one</a>.</p>
-  {{else}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
     <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Ports</th><th>Created</th><th class="right">Actions</th></tr></thead>
     <tbody>
@@ -161,33 +162,19 @@
         <td title="{{datetime .Created}}">{{ago .Created}}</td>
         <td class="right">{{template "container_actions" (dict "C" . "Caps" $caps "View" "list" "CSRF" $csrf)}}</td>
       </tr>
+    {{else}}
+      <tr><td colspan="6" class="empty">{{if .Err}}Could not load containers.{{else}}No containers yet. Use <em>Create container</em> to add one.{{end}}</td></tr>
     {{end}}
     </tbody>
   </table></div>
-  {{end}}
 </section>
 {{end}}
 
 {{/* ---------- images ---------- */}}
 {{define "images_table"}}
 <section id="images" class="panel" hx-get="/partials/images" hx-trigger="images-changed from:body{{if and .Scan .Scan.Scanning}}, every 2s{{end}}" hx-swap="outerHTML">
-  <div class="panel-head">
-    <h2>Local Images</h2>
-    <div class="actions">
-      {{with .Scan}}
-      <span class="muted small">{{if .Scanning}}Checking for updates…{{else if .Err}}Update check failed: {{.Err}}{{else if not .Last.IsZero}}Updates checked {{ago .Last}}{{end}}</span>
-      <form method="post" action="/images/check-updates" hx-post="/images/check-updates" hx-target="#images" hx-swap="outerHTML" hx-disabled-elt="find button">
-        <input type="hidden" name="csrf" value="{{$.CSRF}}">
-        <button type="submit" class="small" {{if .Scanning}}disabled{{end}} title="Ask the registries of all local images for newer versions now (checked every {{.Interval}} anyway)">Check for updates</button>
-      </form>
-      {{end}}
-      <button type="button" class="link" hx-get="/partials/images" hx-target="#images" hx-swap="outerHTML">Refresh</button>
-    </div>
-  </div>
   {{template "flash" .Flash}}
-  {{if .Err}}<div class="flash error">{{.Err}}</div>
-  {{else if not .Images}}<p class="empty">No images. Use <em>Pull image</em> to get one.</p>
-  {{else}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
     <thead><tr><th>Repository</th><th>Tag</th><th>ID</th><th>Size</th><th>Created</th><th class="right">Actions</th></tr></thead>
     <tbody>
@@ -228,11 +215,27 @@
           </div>
         </td>
       </tr>
+    {{else}}
+      <tr><td colspan="6" class="empty">{{if .Err}}Could not load images.{{else}}No images yet.{{if .Caps.Pull}} Use <em>Pull image</em> to get one.{{end}}{{end}}</td></tr>
     {{end}}
     </tbody>
   </table></div>
-  {{end}}
 </section>
+{{if .Partial}}{{template "images_scan" .}}{{end}}
+{{end}}
+
+{{/* images_scan: state and button of the image update check in the page
+     head. Image partials replace it out of band. */}}
+{{define "images_scan"}}
+<span id="images-scan" class="actions"{{if .Partial}} hx-swap-oob="true"{{end}}>
+  {{with .Scan}}
+  <span class="muted small">{{if .Scanning}}Checking for updates…{{else if .Err}}Update check failed: {{.Err}}{{else if not .Last.IsZero}}Updates checked {{ago .Last}}{{end}}</span>
+  <form method="post" action="/images/check-updates" hx-post="/images/check-updates" hx-target="#images" hx-swap="outerHTML" hx-disabled-elt="find button">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <button type="submit" {{if .Scanning}}disabled{{end}} title="Ask the registries of all local images for newer versions now (checked every {{.Interval}} anyway)">Check for updates</button>
+  </form>
+  {{end}}
+</span>
 {{end}}
 
 {{/* image_update expects dict: Ref (image to pull), Label, Title, CSRF.
@@ -356,14 +359,8 @@
 
 {{define "volumes_table"}}
 <section id="volumes" class="panel">
-  <div class="panel-head">
-    <h2>Volumes</h2>
-    <button type="button" class="link" hx-get="/partials/volumes" hx-target="#volumes" hx-swap="outerHTML">Refresh</button>
-  </div>
   {{template "flash" .Flash}}
-  {{if .Err}}<div class="flash error">{{.Err}}</div>
-  {{else if not .Volumes}}<p class="empty">No volumes. Use <em>Create volume</em> to add one.</p>
-  {{else}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
     <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Used by</th><th>Mountpoint</th><th class="right">Actions</th></tr></thead>
     <tbody>
@@ -377,10 +374,11 @@
         <td class="mono small">{{.Mountpoint}}</td>
         <td class="right">{{template "volume_actions" (dict "V" . "View" "list" "CSRF" $csrf)}}</td>
       </tr>
+    {{else}}
+      <tr><td colspan="6" class="empty">{{if .Err}}Could not load volumes.{{else}}No volumes yet. Use <em>Create volume</em> to add one.{{end}}</td></tr>
     {{end}}
     </tbody>
   </table></div>
-  {{end}}
 </section>
 {{end}}
 
@@ -420,9 +418,7 @@
 {{define "compose_table"}}
 <section id="compose" class="panel" hx-get="/partials/compose" hx-trigger="every 5s, compose-changed from:body" hx-swap="outerHTML">
   {{template "flash" .Flash}}
-  {{if .Err}}<div class="flash error">{{.Err}}</div>
-  {{else if not .Projects}}<p class="empty">No compose projects yet. <a href="/compose/new">Create one</a>.</p>
-  {{else}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
     <thead><tr><th>Project</th><th>Status</th><th>Services</th><th>Compose file</th><th class="right">Actions</th></tr></thead>
     <tbody>
@@ -435,10 +431,11 @@
         <td class="small">{{if .Stored}}<span class="badge info">stored</span>{{else if .ConfigFiles}}<span class="mono" title="Deployed outside ContainerUI">{{join .ConfigFiles ", "}}</span>{{else}}<span class="muted">unknown</span>{{end}}</td>
         <td class="right">{{template "compose_actions" (dict "P" . "View" "list" "CSRF" $csrf)}}</td>
       </tr>
+    {{else}}
+      <tr><td colspan="5" class="empty">{{if .Err}}Could not load compose projects.{{else}}No compose projects yet. Use <em>Create compose</em> to add one.{{end}}</td></tr>
     {{end}}
     </tbody>
   </table></div>
-  {{end}}
 </section>
 {{end}}
 
@@ -604,14 +601,8 @@
 
 {{define "networks_table"}}
 <section id="networks" class="panel">
-  <div class="panel-head">
-    <h2>Networks</h2>
-    <button type="button" class="link" hx-get="/partials/networks" hx-target="#networks" hx-swap="outerHTML">Refresh</button>
-  </div>
   {{template "flash" .Flash}}
-  {{if .Err}}<div class="flash error">{{.Err}}</div>
-  {{else if not .Networks}}<p class="empty">No networks. Use <em>Create network</em> to add one.</p>
-  {{else}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
     <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Internal</th><th>Used by</th><th>ID</th><th class="right">Actions</th></tr></thead>
     <tbody>
@@ -626,10 +617,11 @@
         <td class="id" title="{{.ID}}">{{shortID .ID}}</td>
         <td class="right">{{if .Predefined}}<span class="muted small">–</span>{{else}}{{template "network_actions" (dict "N" . "View" "list" "CSRF" $csrf)}}{{end}}</td>
       </tr>
+    {{else}}
+      <tr><td colspan="7" class="empty">{{if .Err}}Could not load networks.{{else}}No networks yet. Use <em>Create network</em> to add one.{{end}}</td></tr>
     {{end}}
     </tbody>
   </table></div>
-  {{end}}
 </section>
 {{end}}
 

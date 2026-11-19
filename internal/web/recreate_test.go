@@ -165,6 +165,17 @@ func TestImageUpdates(t *testing.T) {
 		}
 	}
 
+	// The check sits in the page head, left of Pull image and Refresh;
+	// image partials update it out of band.
+	page := e.do("GET", "/images", nil).Body.String()
+	checkHeadActions(t, "/images", page, []string{"Check for updates", "Pull image", "Refresh"})
+	if !strings.Contains(page, "Updates checked") {
+		t.Error("images page head misses the update check state")
+	}
+	if !strings.Contains(imgs, `id="images-scan" class="actions" hx-swap-oob="true"`) {
+		t.Error("images partial does not update the check state out of band")
+	}
+
 	// Pull the newer version: nginx:1.27 is no longer the latest local
 	// image, but the container still runs it.
 	e.post("/images/pull", url.Values{"ref": {"nginx:1.28"}}, htmx)
@@ -173,7 +184,7 @@ func TestImageUpdates(t *testing.T) {
 	if strings.Contains(imgs, ">Pull 1.28<") {
 		t.Error("pull button still shown after pulling 1.28")
 	}
-	page := e.do("GET", "/containers/web", nil).Body.String()
+	page = e.do("GET", "/containers/web", nil).Body.String()
 	for _, want := range []string{`href="#update"`, `<option value="nginx:1.28">1.28 (minor)</option>`, "Update container"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("detail page misses %q", want)

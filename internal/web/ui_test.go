@@ -183,12 +183,23 @@ func TestPageHeaders(t *testing.T) {
 			t.Errorf("GET %s: %d h1 elements, want 1", path, n)
 		}
 	}
-	for path, want := range map[string]string{
-		"/":        `href="/containers/new">Create container`,
-		"/compose": `href="/compose/new">Create compose`,
+	// Each list page has its actions top right, Refresh always last; the
+	// tables carry no title or buttons of their own.
+	for path, labels := range map[string][]string{
+		"/":           {"Refresh"},
+		"/containers": {"Create container", "Refresh"},
+		"/compose":    {"Create compose", "Refresh"},
+		"/images":     {"Pull image", "Refresh"},
+		"/volumes":    {"Prune volumes", "Create volume", "Refresh"},
+		"/networks":   {"Prune networks", "Create network", "Refresh"},
 	} {
-		if body := e.do("GET", path, nil).Body.String(); !strings.Contains(body, want) {
-			t.Errorf("GET %s: missing button %q", path, want)
+		body := e.do("GET", path, nil).Body.String()
+		checkHeadActions(t, path, body, labels)
+		if path == "/" && strings.Contains(body, "Create container") {
+			t.Error("GET /: the dashboard still offers Create container")
+		}
+		if path != "/" && strings.Contains(body, `class="panel-head"`) {
+			t.Errorf("GET %s: the table still has its own head", path)
 		}
 	}
 	for _, gone := range []string{"Projects deployed with", "how it is installed and the host"} {
@@ -200,5 +211,81 @@ func TestPageHeaders(t *testing.T) {
 	}
 	if body := e.do("GET", "/compose/shop", nil).Body.String(); !strings.Contains(body, `<h1 class="wrap">shop</h1>`) || !strings.Contains(body, "← Compose") {
 		t.Error("compose detail lost its name or back link")
+	}
+}
+
+// checkHeadActions checks that the page head holds the buttons labels in
+// order and nothing after the last one.
+func checkHeadActions(t *testing.T, path, body string, labels []string) {
+	t.Helper()
+	start := strings.Index(body, `<div class="page-head">`)
+	end := strings.Index(body, "<section")
+	if start < 0 || end < start {
+		t.Errorf("GET %s: no page head before the table", path)
+		return
+	}
+	head := body[start:end]
+	at := 0
+	for _, l := range labels {
+		i := strings.Index(head[at:], ">"+l+"<")
+		if i < 0 {
+			t.Errorf("GET %s: page head misses %q after the previous button:\n%s", path, l, head)
+			return
+		}
+		at += i + len(l) + 2
+	}
+	if rest := head[at:]; strings.Contains(rest, "<button") || strings.Contains(rest, `class="button`) {
+		t.Errorf("GET %s: a button follows %q:\n%s", path, labels[len(labels)-1], rest)
+	}
+}
+
+// Empty lists keep the table headers and show the hint in the body.
+func TestEmptyTables(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	ctx := context.Background()
+	cs, _ := e.rt.ListContainers(ctx, runtime.ListContainersOpts{All: true})
+	for _, c := range cs {
+		if err := e.rt.RemoveContainer(ctx, c.ID, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	imgs, _ := e.rt.ListImages(ctx)
+	for _, img := range imgs {
+		if err := e.rt.RemoveImage(ctx, img.Ref(), true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	vols, _ := e.rt.ListVolumes(ctx)
+	for _, v := range vols {
+		if err := e.rt.RemoveVolume(ctx, v.Name, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for path, want := range map[string]string{
+		"/partials/dashboard":  `class="empty">No containers are running.<`,
+		"/partials/containers": `<td colspan="6" class="empty">No containers yet. Use <em>Create container</em> to add one.`,
+		"/partials/images":     `<td colspan="6" class="empty">No images yet. Use <em>Pull image</em> to get one.`,
+		"/partials/volumes":    `<td colspan="6" class="empty">No volumes yet. Use <em>Create volume</em> to add one.`,
+	} {
+		body := e.do("GET", path, nil, htmx).Body.String()
+		if !strings.Contains(body, "<thead>") || !strings.Contains(body, want) {
+			t.Errorf("GET %s: want headers and %q:\n%s", path, want, body)
+		}
+	}
+
+	// A failed listing shows the error above the still headed table.
+	e.rt.SetErr(io.ErrUnexpectedEOF)
+	for path, want := range map[string]string{
+		"/partials/containers": "Could not load containers.",
+		"/partials/images":     "Could not load images.",
+		"/partials/volumes":    "Could not load volumes.",
+		"/partials/networks":   "Could not load networks.",
+		"/partials/compose":    "Could not load compose projects.",
+	} {
+		body := e.do("GET", path, nil, htmx).Body.String()
+		if !strings.Contains(body, "<thead>") || !strings.Contains(body, `class="flash error"`) || !strings.Contains(body, want) {
+			t.Errorf("GET %s with a runtime error: want headers, flash and %q:\n%s", path, want, body)
+		}
 	}
 }

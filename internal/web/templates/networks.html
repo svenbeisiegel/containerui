@@ -9,6 +9,7 @@
       <button type="submit" class="danger" title="Removes custom networks that no container is connected to">Prune networks</button>
     </form>
     <a class="button primary" href="/networks/new">Create network</a>
+    {{template "refresh_button" (dict "Href" "/networks" "Get" "/partials/networks" "Target" "#networks")}}
   </div>
 </div>
 {{template "networks_table" .Data.Networks}}

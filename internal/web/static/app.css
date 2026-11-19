@@ -157,6 +157,9 @@ code { font-family: var(--mono); font-size: .92em; background: var(--code-bg); p
 main { padding: 1.5rem 1.25rem 2rem; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
 .page-head > .actions { margin-left: auto; }
+/* The update check state and button on the Images page share the bar's gap. */
+#images-scan { display: contents; }
+#images-scan > .muted { align-self: center; }
 /* Visually hidden, read by screen readers (list pages keep their h1 so). */
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -269,6 +272,9 @@ tbody tr:hover { background: color-mix(in srgb, var(--soft) 55%, transparent); }
 .muted { color: var(--muted); }
 .small { font-size: .82rem; }
 .empty { color: var(--muted); margin: .25rem 0; }
+/* Empty lists keep their table headers; the hint sits centered below them. */
+td.empty { text-align: center; padding: 1.5rem .65rem; }
+tbody tr:hover:has(> td.empty) { background: none; }
 .footnote { color: var(--muted); font-size: .8rem; text-align: right; }
 .error-text { color: var(--bad); }
 

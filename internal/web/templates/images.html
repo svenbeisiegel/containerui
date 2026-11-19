@@ -1,11 +1,13 @@
 {{define "head"}}<script src="/static/drawer.js" defer></script>{{end}}
 {{define "content"}}
 <h1 class="sr-only">Images</h1>
-{{if .Caps.Pull}}
 <div class="page-head">
-  <div class="actions"><a class="button primary" href="/images/pull">Pull image</a></div>
+  <div class="actions">
+    {{template "images_scan" .Data.Images}}
+    {{if .Caps.Pull}}<a class="button primary" href="/images/pull">Pull image</a>{{end}}
+    {{template "refresh_button" (dict "Href" "/images" "Get" "/partials/images" "Target" "#images")}}
+  </div>
 </div>
-{{end}}
 {{template "images_table" .Data.Images}}
 {{template "activity_drawer" .Data.Activity}}
 {{end}}

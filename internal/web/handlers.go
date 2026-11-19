@@ -649,6 +649,9 @@ type imagesView struct {
 	Flash   *flash
 	Caps    runtime.Capabilities
 	CSRF    string
+	// Partial: rendered as an htmx partial, so it also updates the update
+	// check in the page head out of band.
+	Partial bool
 }
 
 type imagesPage struct {
@@ -699,7 +702,7 @@ func (s *Server) handleImageCheckUpdates(w http.ResponseWriter, r *http.Request)
 		http.Redirect(w, r, "/images", http.StatusSeeOther)
 		return
 	}
-	s.renderPartial(w, "images_table", s.loadImages(r, f))
+	s.renderImagesTable(w, r, f)
 }
 
 func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
@@ -707,8 +710,16 @@ func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "images", s.newPage(r, "Images", "images", data))
 }
 
+// renderImagesTable answers htmx with the images table and the update
+// check state of the page head.
+func (s *Server) renderImagesTable(w http.ResponseWriter, r *http.Request, f *flash) {
+	v := s.loadImages(r, f)
+	v.Partial = true
+	s.renderPartial(w, "images_table", v)
+}
+
 func (s *Server) handleImagesPartial(w http.ResponseWriter, r *http.Request) {
-	s.renderPartial(w, "images_table", s.loadImages(r, nil))
+	s.renderImagesTable(w, r, nil)
 }
 
 func (s *Server) renderPullPage(w http.ResponseWriter, r *http.Request, ref, errMsg string) {
@@ -767,7 +778,7 @@ func (s *Server) imageResult(w http.ResponseWriter, r *http.Request, target, msg
 		http.Redirect(w, r, "/images", http.StatusSeeOther)
 		return
 	}
-	s.renderPartial(w, "images_table", s.loadImages(r, nil))
+	s.renderImagesTable(w, r, nil)
 }
 
 func (s *Server) handleImageTag(w http.ResponseWriter, r *http.Request) {
