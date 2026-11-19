@@ -2,10 +2,7 @@
 {{define "content"}}
 {{$f := .Data.Form}}
 <div class="page-head">
-  <div>
-    <a class="back" href="/networks">← Networks</a>
-    <h1>Create Network</h1>
-  </div>
+  <div class="title-row">{{template "back_button" "/networks"}}<h1>Create Network</h1></div>
 </div>
 <section class="panel">
   <form method="post" action="/networks" class="stack">

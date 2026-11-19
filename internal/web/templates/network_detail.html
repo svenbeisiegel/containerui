@@ -2,10 +2,7 @@
 {{define "content"}}
 {{$v := .Data}}
 <div class="page-head">
-  <div>
-    <a class="back" href="/networks">← Networks</a>
-    <h1 class="wrap">{{$v.Name}}</h1>
-  </div>
+  <div class="title-row">{{template "back_button" "/networks"}}<h1 class="wrap">{{$v.Name}}</h1></div>
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Network}}
@@ -43,14 +40,14 @@
         <td class="mono small">{{with .IPv4}}{{.}}{{else}}<span class="muted">–</span>{{end}}</td>
         <td class="small">{{with .Aliases}}{{join . ", "}}{{else}}<span class="muted">–</span>{{end}}</td>
         <td class="right">
-          <div class="actions">
+          {{template "row_menu_open" (dict "Key" (printf "nc-%s" .ID) "Name" (or .Name (shortID .ID)))}}
             <form method="post" action="/networks/{{$v.Name}}/disconnect" hx-post="/networks/{{$v.Name}}/disconnect" hx-swap="none" hx-disabled-elt="find button"
                   hx-confirm="Disconnect {{if .Name}}{{.Name}}{{else}}{{shortID .ID}}{{end}} from network {{$v.Name}}?">
               <input type="hidden" name="csrf" value="{{$v.CSRF}}">
               <input type="hidden" name="container" value="{{if .Name}}{{.Name}}{{else}}{{.ID}}{{end}}">
               <button type="submit" class="danger">Disconnect</button>
             </form>
-          </div>
+          {{template "row_menu_close"}}
         </td>
       </tr>
     {{end}}

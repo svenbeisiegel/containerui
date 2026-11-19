@@ -209,8 +209,74 @@ func TestPageHeaders(t *testing.T) {
 			}
 		}
 	}
-	if body := e.do("GET", "/compose/shop", nil).Body.String(); !strings.Contains(body, `<h1 class="wrap">shop</h1>`) || !strings.Contains(body, "← Compose") {
-		t.Error("compose detail lost its name or back link")
+	if body := e.do("GET", "/compose/shop", nil).Body.String(); !strings.Contains(body, `<h1 class="wrap">shop</h1>`) {
+		t.Error("compose detail lost its name")
+	}
+}
+
+// Sub-pages have a Back button left of their title, in one row.
+func TestBackButtons(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	for path, back := range map[string]string{
+		"/images/pull":         "/images",
+		"/containers/new":      "/containers",
+		"/containers/web/edit": "/containers/c0ffee000001",
+		"/containers/web":      "/containers",
+		"/volumes/new":         "/volumes",
+		"/volumes/data":        "/volumes",
+		"/networks/new":        "/networks",
+		"/networks/backend":    "/networks",
+		"/compose/new":         "/compose",
+		"/compose/shop":        "/compose",
+		"/compose/shop/edit":   "/compose/shop",
+	} {
+		body := e.do("GET", path, nil).Body.String()
+		want := `<div class="title-row"><a class="button" href="` + back + `">Back</a>`
+		if i := strings.Index(body, `<div class="title-row">`); i < 0 || !strings.HasPrefix(strings.Join(strings.Fields(body[i:]), ""), strings.Join(strings.Fields(want), "")) {
+			t.Errorf("GET %s: no Back button to %s left of the title", path, back)
+		}
+		if strings.Contains(body, `class="back"`) || strings.Contains(body, "Back to containers") {
+			t.Errorf("GET %s: still has the old back link", path)
+		}
+	}
+}
+
+// Table rows offer their actions in a ⋮ menu; detail pages keep buttons.
+func TestRowMenus(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	for path, items := range map[string][]string{
+		"/partials/containers": {`data-menu="c-c0ffee000001"`, `aria-label="Actions for web"`, ">Stop<", ">Restart<", ">Force delete<"},
+		"/partials/images":     {`data-menu="i-nginx:1.27"`, "Run…", "Tag…", `<details class="row-menu-sub">`, ">Delete<"},
+		"/partials/volumes":    {`data-menu="v-data"`, ">Delete<", ">Force delete<"},
+		"/partials/networks":   {`data-menu="n-backend"`, ">Delete<"},
+		"/partials/compose":    {`data-menu="p-shop"`, ">Edit<"},
+		"/compose/shop":        {`<details class="row-menu"`, ">Stop<"},
+		"/networks/bridge":     {`<details class="row-menu"`, ">Disconnect<"},
+	} {
+		body := e.do("GET", path, nil, htmx).Body.String()
+		i := strings.Index(body, `<details class="row-menu"`)
+		if i < 0 {
+			t.Errorf("GET %s: no row menu", path)
+			continue
+		}
+		for _, want := range items {
+			if !strings.Contains(body[i:], want) && !strings.Contains(body, want) {
+				t.Errorf("GET %s: row menu misses %q", path, want)
+			}
+		}
+		if !strings.Contains(body, `class="row-menu-panel"`) || !strings.Contains(body, `class="button kebab"`) {
+			t.Errorf("GET %s: row menu without ⋮ button or panel", path)
+		}
+	}
+	for _, path := range []string{"/containers/web", "/volumes/data", "/networks/backend"} {
+		body := e.do("GET", path, nil).Body.String()
+		i := strings.Index(body, `<section class="panel">`)
+		j := strings.Index(body[max(i, 0):], "</section>")
+		if i < 0 || j < 0 || strings.Contains(body[i:i+j], `class="row-menu"`) || !strings.Contains(body[i:i+j], `<div class="actions">`) {
+			t.Errorf("GET %s: the detail panel's actions are not plain buttons", path)
+		}
 	}
 }
 

@@ -94,6 +94,48 @@ func TestCheckNow(t *testing.T) {
 	}
 }
 
+// BeginCheck reserves the scan right away: a second check is refused until
+// it ran. Updates lists only the images with a newer image.
+func TestBeginCheckAndUpdates(t *testing.T) {
+	ctx := context.Background()
+	rt := fake.New()
+	now := time.Now()
+	rt.AddImage(runtime.Image{ID: "sha256:a1", Repository: "nginx", Tag: "1.27", Created: now})
+	rt.AddImage(runtime.Image{ID: "sha256:a2", Repository: "alpine", Tag: "latest", Created: now})
+	rt.AddImage(runtime.Image{ID: "sha256:a3", Repository: "redis", Tag: "7", Created: now})
+	s := New(rt, stub{
+		"nginx:1.27":    {NewerTags: []registry.Tag{{Name: "1.28", Kind: "minor"}}},
+		"alpine:latest": {DigestChanged: true},
+	}, time.Hour, nil)
+
+	run, ok := s.BeginCheck()
+	if !ok || !s.State().Scanning {
+		t.Fatalf("check not reserved: ok %v, state %+v", ok, s.State())
+	}
+	if _, ok := s.BeginCheck(); ok || s.CheckNow() {
+		t.Error("second check started while the first is reserved")
+	}
+	if err := run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s.State().Scanning {
+		t.Error("still scanning after run")
+	}
+	var refs []string
+	for _, u := range s.Updates() {
+		refs = append(refs, u.Ref)
+	}
+	if want := []string{"alpine:latest", "nginx:1.27"}; !reflect.DeepEqual(refs, want) {
+		t.Errorf("updates = %v, want %v", refs, want)
+	}
+
+	run, _ = s.BeginCheck()
+	rt.SetErr(runtime.ErrUnsupported)
+	if err := run(ctx); err == nil {
+		t.Error("failed check returned no error")
+	}
+}
+
 // The registry deleted the tag a container runs, and a newer version was
 // pulled by hand: the container is offered the pulled version.
 func TestNewerLocalVersion(t *testing.T) {

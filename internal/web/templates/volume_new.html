@@ -2,10 +2,7 @@
 {{define "content"}}
 {{$f := .Data.Form}}
 <div class="page-head">
-  <div>
-    <a class="back" href="/volumes">← Volumes</a>
-    <h1>Create Volume</h1>
-  </div>
+  <div class="title-row">{{template "back_button" "/volumes"}}<h1>Create Volume</h1></div>
 </div>
 <section class="panel">
   <form method="post" action="/volumes" class="stack">

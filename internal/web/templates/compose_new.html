@@ -2,8 +2,8 @@
 {{define "content"}}
 {{$f := .Data}}
 <div class="page-head">
-  <div>
-    <a class="back" href="{{if $f.Edit}}/compose/{{$f.Project}}{{else}}/compose{{end}}">← {{if $f.Edit}}{{$f.Project}}{{else}}Compose{{end}}</a>
+  <div class="title-row">
+    {{if $f.Edit}}{{template "back_button" (printf "/compose/%s" $f.Project)}}{{else}}{{template "back_button" "/compose"}}{{end}}
     <h1>{{if $f.Edit}}Edit {{$f.Project}}{{else}}Create Compose{{end}}</h1>
   </div>
 </div>

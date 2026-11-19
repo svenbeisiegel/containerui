@@ -109,11 +109,18 @@ func humanDuration(d time.Duration) string {
 	days := int(d.Hours()) / 24
 	hours := int(d.Hours()) % 24
 	mins := int(d.Minutes()) % 60
+	// The second unit is left out when it is zero: "6 hours".
+	pair := func(n int, unit string, m int, sub string) string {
+		if m == 0 {
+			return plural(n, unit)
+		}
+		return plural(n, unit) + " " + plural(m, sub)
+	}
 	switch {
 	case days > 0:
-		return plural(days, "day") + " " + plural(hours, "hour")
+		return pair(days, "day", hours, "hour")
 	case hours > 0:
-		return plural(hours, "hour") + " " + plural(mins, "minute")
+		return pair(hours, "hour", mins, "minute")
 	}
 	return plural(mins, "minute")
 }

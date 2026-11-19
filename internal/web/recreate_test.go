@@ -159,21 +159,27 @@ func TestImageUpdates(t *testing.T) {
 	}
 	// The images page offers to pull the newer images.
 	imgs := e.do("GET", "/partials/images", nil, htmx).Body.String()
-	for _, want := range []string{`name="ref" value="nginx:1.28"`, ">Pull 1.28<", `name="ref" value="alpine:latest"`, ">Update<", "Updates checked", "Check for updates"} {
+	for _, want := range []string{`name="ref" value="nginx:1.28"`, ">Pull 1.28<", `name="ref" value="alpine:latest"`, ">Update<", "Updates checked", "2 images have an update"} {
 		if !strings.Contains(imgs, want) {
 			t.Errorf("images table misses %q", want)
 		}
 	}
 
-	// The check sits in the page head, left of Pull image and Refresh;
-	// image partials update it out of band.
+	// The check is a menu in the page head, left of Pull image and
+	// Refresh: the state, the pull switch (off) and Check. Image partials
+	// update only the state out of band, so an open menu stays open.
 	page := e.do("GET", "/images", nil).Body.String()
-	checkHeadActions(t, "/images", page, []string{"Check for updates", "Pull image", "Refresh"})
-	if !strings.Contains(page, "Updates checked") {
-		t.Error("images page head misses the update check state")
+	checkHeadActions(t, "/images", page, []string{"Check for updates", "Check", "Pull image", "Refresh"})
+	for _, want := range []string{`<details class="menu">`, "Updates checked", `<input type="checkbox" name="pull" value="true">`, "Pull new images"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("images page head misses %q", want)
+		}
 	}
-	if !strings.Contains(imgs, `id="images-scan" class="actions" hx-swap-oob="true"`) {
+	if !strings.Contains(imgs, `id="images-scan" class="scan-state" hx-swap-oob="true"`) {
 		t.Error("images partial does not update the check state out of band")
+	}
+	if strings.Contains(imgs, `<details class="menu">`) {
+		t.Error("images partial replaces the check menu")
 	}
 
 	// Pull the newer version: nginx:1.27 is no longer the latest local
@@ -236,6 +242,48 @@ func TestImageUpdates(t *testing.T) {
 	sc.Wait()
 	if stub.forcedChecks() <= before {
 		t.Error("check now did not force registry checks")
+	}
+}
+
+// Check with "Pull new images" runs the check as a job and then pulls the
+// rebuilt tag and the newest version; without it nothing is pulled.
+func TestImageCheckUpdatesPull(t *testing.T) {
+	e, _, sc := newUpdateEnv(t)
+	pulls := func() []string {
+		var out []string
+		for _, c := range e.rt.Calls {
+			if strings.HasPrefix(c, "pull ") {
+				out = append(out, c)
+			}
+		}
+		return out
+	}
+
+	e.post("/images/check-updates", nil, htmx)
+	sc.Wait()
+	e.jobs.Wait()
+	if p := pulls(); len(p) != 0 {
+		t.Fatalf("check without pull pulled %v", p)
+	}
+
+	w := e.post("/images/check-updates", url.Values{"pull": {"true"}}, htmx)
+	if w.Header().Get("HX-Trigger") != "activity-changed" {
+		t.Errorf("HX-Trigger = %q, want the activity drawer opened", w.Header().Get("HX-Trigger"))
+	}
+	if body := w.Body.String(); !strings.Contains(body, "Checking for updates") {
+		t.Errorf("response does not show the running check:\n%s", body)
+	}
+	e.jobs.Wait()
+	got := pulls()
+	slices.Sort(got)
+	if want := []string{"pull alpine:latest", "pull nginx:1.28"}; !slices.Equal(got, want) {
+		t.Errorf("pulls = %v, want %v", got, want)
+	}
+	drawer := e.do("GET", "/partials/activity/images", nil, htmx).Body.String()
+	for _, want := range []string{"check for updates and pull", "Pulling nginx:1.28 (newest minor version of nginx:1.27)", "Pulled 2 images."} {
+		if !strings.Contains(drawer, want) {
+			t.Errorf("activity misses %q:\n%s", want, drawer)
+		}
 	}
 }
 

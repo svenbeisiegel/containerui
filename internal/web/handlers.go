@@ -644,11 +644,13 @@ type imagesView struct {
 	// Updates is what the update check found, by image reference; Scan
 	// is nil without update checks.
 	Updates map[string]updates.Image
-	Scan    *updates.State
-	Err     string
-	Flash   *flash
-	Caps    runtime.Capabilities
-	CSRF    string
+	// UpdateCount: how many listed images have an update.
+	UpdateCount int
+	Scan        *updates.State
+	Err         string
+	Flash       *flash
+	Caps        runtime.Capabilities
+	CSRF        string
 	// Partial: rendered as an htmx partial, so it also updates the update
 	// check in the page head out of band.
 	Partial bool
@@ -680,6 +682,9 @@ func (s *Server) loadImages(r *http.Request, f *flash) imagesView {
 		for _, img := range imgs {
 			if u, ok := s.updates.Image(img.Ref()); ok && img.Tag != "<none>" {
 				v.Updates[img.Ref()] = u
+				if u.Available() {
+					v.UpdateCount++
+				}
 			}
 		}
 	}
@@ -687,13 +692,32 @@ func (s *Server) loadImages(r *http.Request, f *flash) imagesView {
 }
 
 // handleImageCheckUpdates starts checking all local images right away.
+// With pull set, a job runs the check and then pulls every update found
+// (see pullUpdates).
 func (s *Server) handleImageCheckUpdates(w http.ResponseWriter, r *http.Request) {
 	var f *flash
+	user := sessionFrom(r).Username
+	pull := r.PostFormValue("pull") == "true" && s.caps().Pull
 	switch {
 	case s.updates == nil:
 		f = errFlash(runtime.ErrUnsupported)
+	case pull:
+		run, ok := s.updates.BeginCheck()
+		if !ok {
+			f = &flash{Error: true, Msg: "An update check is already running."}
+			break
+		}
+		s.log.Info("image update check started", "user", user, "pull", true)
+		s.jobs.Start(pullJobKind, "check for updates and pull", user, func(ctx context.Context, progress func(string)) error {
+			progress("Checking all local images for updates…")
+			if err := run(ctx); err != nil {
+				return fmt.Errorf("update check failed: %s", userError(err))
+			}
+			return s.pullUpdates(ctx, user, progress)
+		})
+		s.openActivity(w, r, "images", !isHTMX(r))
 	case s.updates.CheckNow():
-		s.log.Info("image update check started", "user", sessionFrom(r).Username)
+		s.log.Info("image update check started", "user", user)
 	}
 	if !isHTMX(r) {
 		if f != nil {
@@ -749,16 +773,7 @@ func (s *Server) handleImagePull(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("image pull started", "ref", ref, "user", user)
 	s.jobs.Start(pullJobKind, ref, user, func(ctx context.Context, progress func(string)) error {
-		err := s.rt.PullImage(ctx, ref, progress)
-		if err != nil {
-			s.log.Warn("image pull failed", "ref", ref, "user", user, "error", err)
-			return errors.New(userError(err))
-		}
-		s.log.Info("image pulled", "ref", ref, "user", user)
-		if s.updates != nil {
-			s.updates.Refresh(ctx, ref)
-		}
-		return nil
+		return s.pullImage(ctx, ref, user, progress)
 	})
 	if isHTMX(r) {
 		// The update buttons in the image table: open the drawer in place.
@@ -768,6 +783,63 @@ func (s *Server) handleImagePull(w http.ResponseWriter, r *http.Request) {
 	}
 	s.openActivity(w, r, "images", true)
 	http.Redirect(w, r, "/images", http.StatusSeeOther)
+}
+
+// pullImage pulls ref and checks it for updates again.
+func (s *Server) pullImage(ctx context.Context, ref, user string, progress func(string)) error {
+	err := s.rt.PullImage(ctx, ref, progress)
+	if err != nil {
+		s.log.Warn("image pull failed", "ref", ref, "user", user, "error", err)
+		return errors.New(userError(err))
+	}
+	s.log.Info("image pulled", "ref", ref, "user", user)
+	if s.updates != nil {
+		s.updates.Refresh(ctx, ref)
+	}
+	return nil
+}
+
+// pullUpdates pulls, one after the other, what the update check offers
+// in the image table: the newer image of a rebuilt tag and the newest
+// newer version of a repository. A failed pull does not stop the others.
+func (s *Server) pullUpdates(ctx context.Context, user string, progress func(string)) error {
+	type pull struct{ ref, why string }
+	var pulls []pull
+	seen := map[string]bool{}
+	add := func(ref, why string) {
+		if !seen[ref] {
+			seen[ref] = true
+			pulls = append(pulls, pull{ref, why})
+		}
+	}
+	for _, u := range s.updates.Updates() {
+		if u.DigestChanged() {
+			add(u.Ref, "rebuilt in the registry")
+		}
+		if tags := u.NewerTags(); len(tags) > 0 {
+			add(u.Repo()+":"+tags[0].Name, "newest "+tags[0].Kind+" version of "+u.Ref)
+		}
+	}
+	if len(pulls) == 0 {
+		progress("No updates found.")
+		return nil
+	}
+	var failed []string
+	for _, p := range pulls {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		progress(fmt.Sprintf("Pulling %s (%s)…", p.ref, p.why))
+		if err := s.pullImage(ctx, p.ref, user, progress); err != nil {
+			progress(fmt.Sprintf("Pulling %s failed: %v", p.ref, err))
+			failed = append(failed, p.ref)
+		}
+	}
+	if len(failed) > 0 {
+		return fmt.Errorf("%d of %d pulls failed: %s", len(failed), len(pulls), strings.Join(failed, ", "))
+	}
+	progress("Pulled " + plural(len(pulls), "image") + ".")
+	return nil
 }
 
 // imageResult records an image action in the Images drawer and answers

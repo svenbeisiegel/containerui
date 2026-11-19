@@ -14,6 +14,20 @@
      table partial), Target (its id). Always the last page-head action. */}}
 {{define "refresh_button"}}<a class="button" href="{{.Href}}" hx-get="{{.Get}}" hx-target="{{.Target}}" hx-swap="outerHTML">Refresh</a>{{end}}
 
+{{/* back_button: the first item of a sub-page's title row; expects the href. */}}
+{{define "back_button"}}<a class="button" href="{{.}}">Back</a>{{end}}
+
+{{/* Row action menus: a ⋮ button in a table row opens the row's actions
+     (app.js positions the panel, closes it on an outside click and keeps
+     it open across table refreshes by data-menu). The action templates
+     take Menu to render so instead of a button row. row_menu_open expects
+     dict: Key (unique on the page), Name (for the label). */}}
+{{define "row_menu_open"}}<details class="row-menu" data-menu="{{.Key}}">
+  <summary class="button kebab" aria-label="Actions for {{.Name}}" title="Actions">{{template "kebab_icon"}}</summary>
+  <div class="row-menu-panel">{{end}}
+{{define "row_menu_close"}}</div></details>{{end}}
+{{define "kebab_icon"}}<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><g fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></g></svg>{{end}}
+
 {{/* ---------- dashboard ---------- */}}
 {{define "dashboard_body"}}
 <div id="dashboard" hx-get="/partials/dashboard" hx-trigger="every 5s" hx-swap="outerHTML">
@@ -117,9 +131,10 @@
 {{end}}
 
 {{/* ---------- containers ---------- */}}
-{{/* container_actions expects dict: C (container), Caps, View ("list"|"detail"), CSRF */}}
+{{/* container_actions expects dict: C (container), Caps, View ("list"|"detail"), CSRF;
+     optional Return (page to go back to) and Menu (render as a row menu). */}}
 {{define "container_actions"}}
-<div class="actions">
+{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "c-%s" .C.ID) "Name" .C.Name)}}{{else}}<div class="actions">{{end}}
   {{if .C.State.IsRunning}}
     {{template "container_action" (dict "P" . "Act" "stop" "Label" "Stop" "Class" "" "Confirm" "" "Force" false)}}
     {{if .Caps.Restart}}{{template "container_action" (dict "P" . "Act" "restart" "Label" "Restart" "Class" "" "Confirm" "" "Force" false)}}{{end}}
@@ -128,7 +143,7 @@
     {{template "container_action" (dict "P" . "Act" "start" "Label" "Start" "Class" "primary" "Confirm" "" "Force" false)}}
     {{template "container_action" (dict "P" . "Act" "delete" "Label" "Delete" "Class" "danger" "Confirm" (printf "Delete container %s?" .C.Name) "Force" false)}}
   {{end}}
-</div>
+{{if .Menu}}{{template "row_menu_close"}}{{else}}</div>{{end}}
 {{end}}
 
 {{define "container_action"}}
@@ -160,7 +175,7 @@
         <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
         <td class="mono small">{{.Ports}}</td>
         <td title="{{datetime .Created}}">{{ago .Created}}</td>
-        <td class="right">{{template "container_actions" (dict "C" . "Caps" $caps "View" "list" "CSRF" $csrf)}}</td>
+        <td class="right">{{template "container_actions" (dict "C" . "Caps" $caps "View" "list" "CSRF" $csrf "Menu" true)}}</td>
       </tr>
     {{else}}
       <tr><td colspan="6" class="empty">{{if .Err}}Could not load containers.{{else}}No containers yet. Use <em>Create container</em> to add one.{{end}}</td></tr>
@@ -188,14 +203,14 @@
         <td>{{.Size}}</td>
         <td title="{{datetime .Created}}">{{ago .Created}}</td>
         <td class="right">
-          <div class="actions">
+          {{template "row_menu_open" (dict "Key" (printf "i-%s" .Ref) "Name" .Ref)}}
             {{if and $u.Available $caps.Pull}}
             {{if $u.DigestChanged}}{{template "image_update" (dict "Ref" $u.Ref "Label" "Update" "Title" (printf "Pull the newer image for %s" $u.Ref) "CSRF" $csrf)}}{{end}}
             {{with $u.NewerTags}}{{$t := index . 0}}{{template "image_update" (dict "Ref" (printf "%s:%s" $u.Repo $t.Name) "Label" (printf "Pull %s" $t.Name) "Title" (printf "Pull %s:%s, the newest %s version" $u.Repo $t.Name $t.Kind) "CSRF" $csrf)}}{{end}}
             {{end}}
             <a class="button" href="/containers/new?image={{.Ref}}">Run…</a>
             {{if $caps.Tag}}
-            <details class="inline">
+            <details class="row-menu-sub">
               <summary class="button">Tag…</summary>
               <form class="tag-form" method="post" action="/images/tag" hx-post="/images/tag" hx-target="#images" hx-swap="outerHTML">
                 <input type="hidden" name="csrf" value="{{$csrf}}">
@@ -212,7 +227,7 @@
               {{if .Containers}}<input type="hidden" name="force" value="true">{{end}}
               <button type="submit" class="danger">Delete</button>
             </form>
-          </div>
+          {{template "row_menu_close"}}
         </td>
       </tr>
     {{else}}
@@ -221,21 +236,45 @@
     </tbody>
   </table></div>
 </section>
-{{if .Partial}}{{template "images_scan" .}}{{end}}
+{{if and .Partial .Scan}}{{template "images_scan_state" .}}{{end}}
 {{end}}
 
-{{/* images_scan: state and button of the image update check in the page
-     head. Image partials replace it out of band. */}}
+{{/* images_scan: the "Check for updates" menu in the page head: the state
+     of the last check, the "Pull new images" switch and the Check button.
+     Image partials replace only the state (images_scan_state) out of band,
+     so the menu stays open while a check runs. */}}
 {{define "images_scan"}}
-<span id="images-scan" class="actions"{{if .Partial}} hx-swap-oob="true"{{end}}>
-  {{with .Scan}}
-  <span class="muted small">{{if .Scanning}}Checking for updates…{{else if .Err}}Update check failed: {{.Err}}{{else if not .Last.IsZero}}Updates checked {{ago .Last}}{{end}}</span>
-  <form method="post" action="/images/check-updates" hx-post="/images/check-updates" hx-target="#images" hx-swap="outerHTML" hx-disabled-elt="find button">
+{{with .Scan}}
+<details class="menu">
+  <summary class="button">Check for updates</summary>
+  <form method="post" action="/images/check-updates" hx-post="/images/check-updates" hx-target="#images" hx-swap="outerHTML" hx-disabled-elt="find button[type=submit]"
+        class="menu-panel stack">
     <input type="hidden" name="csrf" value="{{$.CSRF}}">
-    <button type="submit" {{if .Scanning}}disabled{{end}} title="Ask the registries of all local images for newer versions now (checked every {{.Interval}} anyway)">Check for updates</button>
+    {{template "images_scan_state" $}}
+    {{if $.Caps.Pull}}
+    <label class="switch">
+      <input type="checkbox" name="pull" value="true">
+      <span class="track" aria-hidden="true"></span>
+      <span>Pull new images</span>
+    </label>
+    {{end}}
+    <div><button type="submit" class="primary" title="Ask the registries of all local images for newer versions now">Check</button></div>
   </form>
+</details>
+{{end}}
+{{end}}
+
+{{/* images_scan_state: how the last update check went (imagesView). */}}
+{{define "images_scan_state"}}
+<div id="images-scan" class="scan-state"{{if .Partial}} hx-swap-oob="true"{{end}}>
+  {{with .Scan}}
+  {{if .Scanning}}<p><span class="badge warn">checking</span> Checking for updates…</p>
+  {{else if .Err}}<p class="error-text">Last update check failed: {{.Err}}</p>
+  {{else if not .Last.IsZero}}<p>Updates checked <span title="{{datetime .Last}}">{{ago .Last}}</span>: {{if $.UpdateCount}}<strong>{{$.UpdateCount}} {{if eq $.UpdateCount 1}}image has{{else}}images have{{end}} an update</strong>{{else}}all images are up to date{{end}}.</p>
+  {{else}}<p>Not checked yet.</p>{{end}}
+  <p class="muted small">Checked automatically every {{duration .Interval}}. Pulling new images fetches rebuilt tags and the newest newer version of each image.</p>
   {{end}}
-</span>
+</div>
 {{end}}
 
 {{/* image_update expects dict: Ref (image to pull), Label, Title, CSRF.
@@ -336,13 +375,14 @@
 {{/* ---------- volumes ---------- */}}
 {{define "volume_users"}}{{range $i, $c := .}}{{if $i}}, {{end}}<a href="/containers/{{$c}}">{{$c}}</a>{{else}}<span class="muted">–</span>{{end}}{{end}}
 
-{{/* volume_actions expects dict: V (volumeRow), View ("list"|"detail"), CSRF.
-     Force only skips the error for a missing volume; one in use is kept. */}}
+{{/* volume_actions expects dict: V (volumeRow), View ("list"|"detail"), CSRF,
+     optional Menu (render as a row menu). Force only skips the error for a
+     missing volume; one in use is kept. */}}
 {{define "volume_actions"}}
-<div class="actions">
+{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "v-%s" .V.Name) "Name" .V.Name)}}{{else}}<div class="actions">{{end}}
   {{template "volume_delete" (dict "P" . "Label" "Delete" "Force" false "Confirm" (printf "Delete volume %s? Its data is lost." .V.Name))}}
   {{template "volume_delete" (dict "P" . "Label" "Force delete" "Force" true "Confirm" (printf "Force delete volume %s? Its data is lost." .V.Name))}}
-</div>
+{{if .Menu}}{{template "row_menu_close"}}{{else}}</div>{{end}}
 {{end}}
 
 {{define "volume_delete"}}
@@ -372,7 +412,7 @@
         <td>{{.Scope}}</td>
         <td>{{template "volume_users" .UsedBy}}</td>
         <td class="mono small">{{.Mountpoint}}</td>
-        <td class="right">{{template "volume_actions" (dict "V" . "View" "list" "CSRF" $csrf)}}</td>
+        <td class="right">{{template "volume_actions" (dict "V" . "View" "list" "CSRF" $csrf "Menu" true)}}</td>
       </tr>
     {{else}}
       <tr><td colspan="6" class="empty">{{if .Err}}Could not load volumes.{{else}}No volumes yet. Use <em>Create volume</em> to add one.{{end}}</td></tr>
@@ -385,9 +425,10 @@
 {{/* ---------- compose ---------- */}}
 {{define "compose_status"}}<span class="badge {{if eq .Status "running"}}ok{{else if eq .Status "partial"}}warn{{else if eq .Status "stopped"}}muted{{else}}info{{end}}">{{.Status}}</span>{{if .Deployed}} <span class="muted small">{{.Running}}/{{.Total}} running</span>{{end}}{{end}}
 
-{{/* compose_actions expects dict: P (compose.Project), View ("list"|"detail"), CSRF */}}
+{{/* compose_actions expects dict: P (compose.Project), View ("list"|"detail"), CSRF,
+     optional Menu (render as a row menu). */}}
 {{define "compose_actions"}}
-<div class="actions">
+{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "p-%s" .P.Name) "Name" .P.Name)}}{{else}}<div class="actions">{{end}}
   {{if .P.Deployed}}
     {{if lt .P.Running .P.Total}}{{template "compose_action" (dict "A" . "Act" "start" "Label" "Start" "Class" "primary" "Confirm" "")}}{{end}}
     {{if gt .P.Running 0}}
@@ -402,7 +443,7 @@
     <a class="button" href="/compose/{{.P.Name}}/edit">Edit</a>
     {{if .P.Stored}}{{template "compose_action" (dict "A" . "Act" "delete" "Label" "Delete" "Class" "danger" "Confirm" (printf "Delete the stored compose file of project %s?" .P.Name))}}{{end}}
   {{end}}
-</div>
+{{if .Menu}}{{template "row_menu_close"}}{{else}}</div>{{end}}
 {{end}}
 
 {{define "compose_action"}}
@@ -429,7 +470,7 @@
         <td>{{template "compose_status" .}}</td>
         <td>{{with .ServiceNames}}{{join . ", "}}{{else}}<span class="muted">–</span>{{end}}</td>
         <td class="small">{{if .Stored}}<span class="badge info">stored</span>{{else if .ConfigFiles}}<span class="mono" title="Deployed outside ContainerUI">{{join .ConfigFiles ", "}}</span>{{else}}<span class="muted">unknown</span>{{end}}</td>
-        <td class="right">{{template "compose_actions" (dict "P" . "View" "list" "CSRF" $csrf)}}</td>
+        <td class="right">{{template "compose_actions" (dict "P" . "View" "list" "CSRF" $csrf "Menu" true)}}</td>
       </tr>
     {{else}}
       <tr><td colspan="5" class="empty">{{if .Err}}Could not load compose projects.{{else}}No compose projects yet. Use <em>Create compose</em> to add one.{{end}}</td></tr>
@@ -547,7 +588,7 @@
           <td class="mono">{{.Image}}</td>
           <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
           <td class="mono small">{{.Ports}}</td>
-          <td class="right">{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Return" (printf "/compose/%s" $p.Name))}}</td>
+          <td class="right">{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Return" (printf "/compose/%s" $p.Name) "Menu" true)}}</td>
         </tr>
         {{end}}
       {{end}}
@@ -585,9 +626,10 @@
 {{/* ---------- networks ---------- */}}
 {{define "kv_list"}}<ul class="kv">{{range $k, $val := .}}<li><span class="mono">{{$k}}</span>{{if $val}} = <span class="mono">{{$val}}</span>{{end}}</li>{{end}}</ul>{{end}}
 
-{{/* network_actions expects dict: N (networkRow), View ("list"|"detail"), CSRF. */}}
+{{/* network_actions expects dict: N (networkRow), View ("list"|"detail"), CSRF,
+     optional Menu (render as a row menu). */}}
 {{define "network_actions"}}
-<div class="actions">
+{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "n-%s" .N.Name) "Name" .N.Name)}}{{else}}<div class="actions">{{end}}
   <form method="post" action="/networks/delete" hx-post="/networks/delete"
         {{if eq .View "list"}}hx-target="#networks" hx-swap="outerHTML"{{else}}hx-swap="none"{{end}}
         hx-confirm="Delete network {{.N.Name}}?" hx-disabled-elt="find button">
@@ -596,7 +638,7 @@
     <input type="hidden" name="view" value="{{.View}}">
     <button type="submit" class="danger">Delete</button>
   </form>
-</div>
+{{if .Menu}}{{template "row_menu_close"}}{{else}}</div>{{end}}
 {{end}}
 
 {{define "networks_table"}}
@@ -615,7 +657,7 @@
         <td>{{if .Internal}}yes{{else}}<span class="muted">no</span>{{end}}</td>
         <td>{{template "volume_users" .UsedBy}}</td>
         <td class="id" title="{{.ID}}">{{shortID .ID}}</td>
-        <td class="right">{{if .Predefined}}<span class="muted small">–</span>{{else}}{{template "network_actions" (dict "N" . "View" "list" "CSRF" $csrf)}}{{end}}</td>
+        <td class="right">{{if .Predefined}}<span class="muted small">–</span>{{else}}{{template "network_actions" (dict "N" . "View" "list" "CSRF" $csrf "Menu" true)}}{{end}}</td>
       </tr>
     {{else}}
       <tr><td colspan="7" class="empty">{{if .Err}}Could not load networks.{{else}}No networks yet. Use <em>Create network</em> to add one.{{end}}</td></tr>

@@ -1,10 +1,7 @@
 {{define "head"}}<script src="/static/drawer.js" defer></script>{{end}}
 {{define "content"}}
 <div class="page-head">
-  <div>
-    <a class="back" href="/images">← Images</a>
-    <h1>Pull Image</h1>
-  </div>
+  <div class="title-row">{{template "back_button" "/images"}}<h1>Pull Image</h1></div>
 </div>
 <section class="panel">
   <form method="post" action="/images/pull" class="stack">

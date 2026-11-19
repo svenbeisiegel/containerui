@@ -3,8 +3,8 @@
 {{$e := .Data.Edit}}
 {{$opt := .Caps.CreateOptions}}
 <div class="page-head">
-  <div>
-    {{if $e}}<a class="back" href="/containers/{{$e.ID}}">← {{$e.Name}}</a>{{else}}<a class="back" href="/containers">← Containers</a>{{end}}
+  <div class="title-row">
+    {{if $e}}{{template "back_button" (printf "/containers/%s" $e.ID)}}{{else}}{{template "back_button" "/containers"}}{{end}}
     <h1>{{if $e}}Edit Container {{$e.Name}}{{else}}Create Container{{end}}</h1>
   </div>
 </div>

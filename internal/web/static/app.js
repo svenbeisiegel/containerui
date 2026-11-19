@@ -118,3 +118,114 @@ document.addEventListener("submit", function (e) {
     });
   });
 })();
+
+// Menus. A header menu (<details class="menu">, e.g. "Prune volumes") drops
+// down below its button. A row menu (<details class="row-menu">, the ⋮ of a
+// table row) is placed next to its button with fixed positioning, so the
+// table's scroll box does not clip it, and flips above it near the bottom
+// of the window. Both close on an outside click or Escape; a row menu also
+// closes when one of its actions is submitted, and stays open when htmx
+// refreshes its table.
+(function () {
+  var OPEN = "details.menu[open], details.row-menu[open]";
+
+  function closeMenus(except) {
+    document.querySelectorAll(OPEN).forEach(function (m) {
+      if (m !== except) m.open = false;
+    });
+  }
+  window.cuiCloseMenus = closeMenus; // drawer.js: an action started a job
+
+  function place(menu) {
+    var panel = menu.querySelector(".row-menu-panel");
+    var button = menu.querySelector("summary");
+    if (!panel || !button) return;
+    var r = button.getBoundingClientRect();
+    var w = panel.offsetWidth, h = panel.offsetHeight;
+    var vw = document.documentElement.clientWidth, vh = window.innerHeight;
+    var left = Math.max(8, Math.min(r.right - w, vw - w - 8));
+    var top = r.bottom + 4;
+    if (top + h > vh - 8 && r.top - h - 4 >= 8) top = r.top - h - 4;
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+    menu.classList.add("placed");
+  }
+
+  function placeAll() {
+    document.querySelectorAll("details.row-menu[open]").forEach(place);
+  }
+
+  // toggle does not bubble; listen while capturing.
+  document.addEventListener("toggle", function (e) {
+    var el = e.target;
+    if (!el.matches) return;
+    if (el.matches("details.menu, details.row-menu")) {
+      if (el.open) {
+        closeMenus(el);
+        if (el.matches(".row-menu")) place(el);
+      } else {
+        el.classList.remove("placed");
+      }
+    } else if (el.matches("details.row-menu-sub")) {
+      var menu = el.closest("details.row-menu");
+      if (menu && menu.open) place(menu);
+      var input = el.open && el.querySelector("input:not([type=hidden])");
+      if (input) input.focus();
+    }
+  }, true);
+
+  document.addEventListener("click", function (e) {
+    if (e.target.closest) closeMenus(e.target.closest("details.menu, details.row-menu"));
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape") return;
+    var menu = document.querySelector(OPEN);
+    if (!menu) return;
+    menu.open = false;
+    var s = menu.querySelector("summary");
+    if (s) s.focus();
+    e.stopImmediatePropagation(); // the drawer stays open
+  }, true);
+
+  document.addEventListener("submit", function (e) {
+    var menu = e.target.closest && e.target.closest("details.row-menu");
+    if (menu) setTimeout(function () { menu.open = false; }, 0);
+  });
+
+  window.addEventListener("scroll", placeAll, true);
+  window.addEventListener("resize", placeAll);
+
+  // Polling replaces the whole table: reopen the row menu that was open,
+  // with the Tag… form as it was.
+  var saved = null;
+  document.addEventListener("htmx:beforeSwap", function (e) {
+    var t = e.detail.target;
+    var m = t && t.querySelector && t.querySelector("details.row-menu[open]");
+    if (!m) return;
+    var sub = m.querySelector("details.row-menu-sub");
+    var input = m.querySelector("details.row-menu-sub input:not([type=hidden])");
+    saved = {
+      key: m.getAttribute("data-menu"),
+      focus: m.contains(document.activeElement),
+      sub: !!(sub && sub.open),
+      value: input ? input.value : "",
+      inInput: !!input && document.activeElement === input
+    };
+  });
+  document.addEventListener("htmx:afterSwap", function () {
+    var s = saved;
+    saved = null;
+    if (!s || !s.key) return;
+    var m = document.querySelector('details.row-menu[data-menu="' + CSS.escape(s.key) + '"]');
+    if (!m) return;
+    m.open = true;
+    place(m);
+    var sub = m.querySelector("details.row-menu-sub");
+    var input = m.querySelector("details.row-menu-sub input:not([type=hidden])");
+    if (sub && s.sub) sub.open = true;
+    if (input) input.value = s.value;
+    if (s.inInput && input) input.focus();
+    else if (s.focus) m.querySelector("summary").focus();
+  });
+})();

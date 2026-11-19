@@ -12,6 +12,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -126,7 +127,8 @@ func (s *Scanner) Run(ctx context.Context) {
 // CheckNow starts a scan that asks every registry again, unless one is
 // running. It reports whether it started one.
 func (s *Scanner) CheckNow() bool {
-	if !s.begin() {
+	run, ok := s.BeginCheck()
+	if !ok {
 		return false
 	}
 	s.mu.Lock()
@@ -135,9 +137,19 @@ func (s *Scanner) CheckNow() bool {
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
-		s.scan(ctx, true)
+		_ = run(ctx)
 	}()
 	return true
+}
+
+// BeginCheck reserves a scan that asks every registry again, unless one
+// is running: State reports it as running from now on. The caller must
+// call run, which scans and returns why the scan failed.
+func (s *Scanner) BeginCheck() (run func(ctx context.Context) error, ok bool) {
+	if !s.begin() {
+		return nil, false
+	}
+	return func(ctx context.Context) error { return s.scan(ctx, true) }, true
 }
 
 // Wait waits for scans started by CheckNow.
@@ -147,7 +159,7 @@ func (s *Scanner) Wait() { s.wg.Wait() }
 // since the last scan. It does nothing while another scan runs.
 func (s *Scanner) Scan(ctx context.Context, force bool) {
 	if s.begin() {
-		s.scan(ctx, force)
+		_ = s.scan(ctx, force)
 	}
 }
 
@@ -161,7 +173,7 @@ func (s *Scanner) begin() bool {
 	return true
 }
 
-func (s *Scanner) scan(ctx context.Context, force bool) {
+func (s *Scanner) scan(ctx context.Context, force bool) error {
 	ctx, cancel := context.WithTimeout(ctx, scanTimeout)
 	defer cancel()
 	started := time.Now()
@@ -173,7 +185,7 @@ func (s *Scanner) scan(ctx context.Context, force bool) {
 	if err != nil {
 		s.lastErr = err.Error()
 		s.log.Warn("image update check failed", "error", err)
-		return
+		return err
 	}
 	s.images, s.containers, s.last, s.lastErr = images, containers, time.Now(), ""
 	s.markNewerLocal()
@@ -184,6 +196,7 @@ func (s *Scanner) scan(ctx context.Context, force bool) {
 		}
 	}
 	s.log.Info("image update check finished", "images", len(s.images), "updates", n, "duration", time.Since(started).Round(time.Millisecond))
+	return nil
 }
 
 func (s *Scanner) collect(ctx context.Context, force bool) (map[string]*Image, map[string]containerImage, error) {
@@ -315,6 +328,20 @@ func (s *Scanner) State() State {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return State{Scanning: s.scanning, Last: s.last, Err: s.lastErr, Interval: s.interval}
+}
+
+// Updates lists the local images that have a newer image, by reference.
+func (s *Scanner) Updates() []Image {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []Image
+	for _, img := range s.images {
+		if img.Available() {
+			out = append(out, *img)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Ref < out[j].Ref })
+	return out
 }
 
 // Image returns what is known about a local image reference.

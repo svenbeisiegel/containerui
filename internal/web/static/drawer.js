@@ -4,9 +4,7 @@
 // opens it when an action starts a job or records an entry, and keeps the
 // log scrolled to the end while it runs. Only the drawer's body is
 // refreshed by htmx, so its open state survives the polling.
-//
-// Also closes an open header menu (<details class="menu">) on an outside
-// click or Escape.
+// Opening it closes any open menu (app.js).
 (function () {
   function drawer() { return document.querySelector("aside.drawer"); }
 
@@ -41,15 +39,8 @@
     }
   }
 
-  function closeMenus(except) {
-    document.querySelectorAll("details.menu[open]").forEach(function (m) {
-      if (m !== except) m.open = false;
-    });
-  }
-
   document.addEventListener("click", function (e) {
     if (!e.target.closest) return;
-    closeMenus(e.target.closest("details.menu"));
     if (e.target.closest("[data-output-toggle]")) {
       var d = drawer();
       setOpen(d && d.hidden, true);
@@ -60,13 +51,6 @@
 
   document.addEventListener("keydown", function (e) {
     if (e.key !== "Escape") return;
-    var menu = document.querySelector("details.menu[open]");
-    if (menu) {
-      menu.open = false;
-      var s = menu.querySelector("summary");
-      if (s) s.focus();
-      return;
-    }
     var d = drawer();
     if (d && !d.hidden) setOpen(false, d.contains(document.activeElement));
   });
@@ -74,7 +58,7 @@
   // An action started a job or recorded an entry (HX-Trigger from the server).
   ["compose-job-started", "activity-changed"].forEach(function (name) {
     document.body.addEventListener(name, function () {
-      closeMenus(null);
+      if (window.cuiCloseMenus) window.cuiCloseMenus(null);
       setOpen(true, false);
     });
   });

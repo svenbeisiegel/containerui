@@ -1,7 +1,7 @@
 {{define "content"}}
 {{$v := .Data}}
 <div class="page-head">
-  <h1>{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}{{if $v.Update}} <a class="badge warn update-tag" href="#update" title="A newer image is available">update</a>{{end}}</h1>
+  <div class="title-row">{{template "back_button" "/containers"}}<h1 class="wrap">{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}{{if $v.Update}} <a class="badge warn update-tag" href="#update" title="A newer image is available">update</a>{{end}}</h1></div>
   <div class="actions">
     {{if $v.CanEdit}}<a class="button" href="/containers/{{$v.Container.ID}}/edit">Edit</a>{{end}}
     {{if and $v.Container $v.Caps.Logs}}
@@ -9,7 +9,6 @@
     {{if $v.Container.State.IsRunning}}<a class="button" href="/containers/{{$v.Container.ID}}/logs/watch" target="_blank" rel="noopener">Watch logs</a>{{end}}
     {{end}}
     {{with $v.Terminal}}{{template "terminal_connect" .}}{{end}}
-    <a class="button" href="/containers">Back to containers</a>
   </div>
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
