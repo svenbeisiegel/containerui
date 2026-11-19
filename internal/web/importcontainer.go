@@ -3,8 +3,8 @@ package web
 import (
 	"fmt"
 	"html/template"
-	"path"
 	"net/http"
+	"path"
 	"strings"
 
 	"github.com/svenbeisiegel/containerui/internal/compose"
