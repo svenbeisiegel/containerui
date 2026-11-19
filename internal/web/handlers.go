@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/svenbeisiegel/containerui/internal/registry"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 	"github.com/svenbeisiegel/containerui/internal/updates"
 )
@@ -663,6 +664,9 @@ func (s *Server) loadImages(r *http.Request, f *flash) imagesView {
 	if err != nil {
 		v.Err = userError(err)
 	}
+	// A failed container list leaves InUse to the engine's count.
+	cs, _ := s.rt.ListContainers(r.Context(), runtime.ListContainersOpts{All: true})
+	markImageUse(imgs, cs)
 	v.Images = imgs
 	if s.updates != nil {
 		st := s.updates.State()
@@ -678,6 +682,65 @@ func (s *Server) loadImages(r *http.Request, f *flash) imagesView {
 		}
 	}
 	return v
+}
+
+// markImageUse sets InUse on each image row to the containers created
+// from that reference. The engine's Containers count is per image ID, so
+// it would mark every tag of an image (0.13.0 and latest) as used.
+//
+// A container listed by image ID (its tag has moved on or was removed)
+// counts for the rows of that ID, one listed by digest for the rows of
+// that repository and digest. An image the engine counts as used but
+// that no container could be matched to keeps the engine's count on all
+// its rows: never call an image unused that the engine says is used.
+func markImageUse(imgs []runtime.Image, cs []runtime.Container) {
+	byRef := map[string][]int{}
+	for i, img := range imgs {
+		imgs[i].InUse = 0
+		if img.Repository == "" || img.Repository == "<none>" || img.Tag == "" || img.Tag == "<none>" {
+			continue
+		}
+		if r, err := registry.ParseRef(img.Ref()); err == nil {
+			byRef[r.String()] = append(byRef[r.String()], i)
+		}
+	}
+	for _, c := range cs {
+		r, err := registry.ParseRef(c.Image)
+		switch {
+		case errors.Is(err, registry.ErrNotRegistry):
+			id := strings.TrimPrefix(c.Image, "sha256:")
+			for i, img := range imgs {
+				if strings.HasPrefix(strings.TrimPrefix(img.ID, "sha256:"), id) {
+					imgs[i].InUse++
+				}
+			}
+		case err != nil:
+		case r.Digest != "":
+			for i, img := range imgs {
+				if img.Digest != r.Digest {
+					continue
+				}
+				if ir, err := registry.ParseRef(img.Repository); err == nil && ir.Name() == r.Name() {
+					imgs[i].InUse++
+				}
+			}
+		default:
+			for _, i := range byRef[r.String()] {
+				imgs[i].InUse++
+			}
+		}
+	}
+	matched := map[string]bool{}
+	for _, img := range imgs {
+		if img.InUse > 0 {
+			matched[img.ID] = true
+		}
+	}
+	for i, img := range imgs {
+		if img.Containers > 0 && !matched[img.ID] {
+			imgs[i].InUse = img.Containers
+		}
+	}
 }
 
 // handleImageCheckUpdates starts checking all local images right away.

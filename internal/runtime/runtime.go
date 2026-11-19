@@ -219,7 +219,12 @@ type Image struct {
 	Digest     string
 	Size       string // human-readable as reported by the runtime
 	Created    time.Time
+	// Containers is the engine's count, per image ID: every tag of the
+	// image reports the same number.
 	Containers int
+	// InUse counts the containers created from this reference (filled in
+	// by the web layer, see markImageUse).
+	InUse int
 }
 
 // Ref returns the most specific reference usable to address the image.

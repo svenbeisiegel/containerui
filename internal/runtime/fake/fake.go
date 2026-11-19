@@ -373,8 +373,10 @@ func (f *Runtime) ListImages(context.Context) ([]runtime.Image, error) {
 	for _, img := range f.images {
 		i := *img
 		i.Containers = 0
+		// Like the engines, the count is per image ID: every tag of an
+		// image counts the containers of all its tags.
 		for _, c := range f.containers {
-			if c.Image == i.Ref() {
+			if id, ok := f.imageIDs[c.ID]; ok && id == i.ID || !ok && c.Image == i.Ref() {
 				i.Containers++
 			}
 		}
