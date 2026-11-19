@@ -184,7 +184,7 @@ jobs:
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deploy.outputs.page_url }}
+      url: ${{ steps.deploy.outputs.page_url || steps.deploy-retry.outputs.page_url }}
     steps:
       - uses: actions/checkout@v7
 
@@ -207,5 +207,17 @@ jobs:
         with:
           path: site
 
+      # The artifact service at times leaves a just-uploaded github-pages
+      # artifact out of its listing ("No artifacts named github-pages were
+      # found"), so a failed deploy is tried once more after a pause.
       - id: deploy
+        uses: actions/deploy-pages@v5
+        continue-on-error: true
+
+      - name: wait before retrying the deploy
+        if: steps.deploy.outcome == 'failure'
+        run: sleep 60
+
+      - id: deploy-retry
+        if: steps.deploy.outcome == 'failure'
         uses: actions/deploy-pages@v5
