@@ -332,7 +332,7 @@ the `PACKAGE_SIGNING_KEY` secret (an armored PGP private key, `-----BEGIN PGP
 PRIVATE KEY BLOCK-----`), `PACKAGE_SIGNING_PASSPHRASE` if the key has one,
 and Pages set to deploy from GitHub Actions. The rpms are signed with the
 key, and so are the repositories' metadata. The **Test** workflow installs,
-upgrades and removes the rpm in Rocky Linux 9, the deb in Ubuntu 24.04 and
+upgrades and removes the rpm in Rocky Linux 10, the deb in Ubuntu 26.04 and
 the msi on Windows on every push.
 
 ## Quick start

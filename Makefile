@@ -20,7 +20,7 @@ PLATFORMS := linux/amd64 linux/arm64 windows/amd64 windows/arm64
 # the build. The binaries and configs are built into PKG; the packages land in
 # DIST.
 PKG  := build/pkg
-NFPM := go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.47.0
+NFPM := go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.49.0
 
 .PHONY: all build test race vet fmt lint clean packages rpm deb msi-inputs checksums version
 

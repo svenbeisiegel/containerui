@@ -61,7 +61,7 @@ jobs:
       # unit's command line and the fake runtime.
       - name: install the rpm
         run: |
-          docker run --rm -v "$PWD/dist:/dist:ro" rockylinux:9 sh -euxc '
+          docker run --rm -v "$PWD/dist:/dist:ro" rockylinux:10 sh -euxc '
             version=$(ls /dist/containerui-*.x86_64.rpm | sort -V | head -1)
             update=$(ls /dist/containerui-*.x86_64.rpm | sort -V | tail -1)
             dnf install -y "$version"
@@ -102,7 +102,7 @@ jobs:
       # rpm job does
       - name: install the deb
         run: |
-          docker run --rm -v "$PWD/dist:/dist:ro" -e DEBIAN_FRONTEND=noninteractive ubuntu:24.04 bash -euxc '
+          docker run --rm -v "$PWD/dist:/dist:ro" -e DEBIAN_FRONTEND=noninteractive ubuntu:26.04 bash -euxc '
             apt-get update
             apt-get install -y curl
             version=$(ls /dist/containerui_*_amd64.deb | sort -V | head -1)

@@ -14,14 +14,14 @@ into the binary differ from this list.
 
 | Component | Version | License | Platforms | Source |
 |---|---|---|---|---|
-| Go standard library and runtime | go1.27.1 | BSD-3-Clause | all | https://go.dev |
-| golang.org/x/crypto | v0.57.0 | BSD-3-Clause | all | https://go.googlesource.com/crypto |
-| golang.org/x/sys | v0.48.0 | BSD-3-Clause | all | https://go.googlesource.com/sys |
+| Go standard library and runtime | go1.27.4 | BSD-3-Clause | all | https://go.dev |
+| golang.org/x/crypto | v0.59.0 | BSD-3-Clause | all | https://go.googlesource.com/crypto |
+| golang.org/x/sys | v0.50.0 | BSD-3-Clause | all | https://go.googlesource.com/sys |
 | github.com/aymanbagabas/go-pty | v0.2.3 | MIT | all | https://github.com/aymanbagabas/go-pty |
 | github.com/coder/websocket | v1.8.15 | ISC | all | https://github.com/coder/websocket |
 | gopkg.in/yaml.v3 | v3.0.1 | MIT and Apache-2.0 | all | https://github.com/go-yaml/yaml |
 | github.com/creack/pty | v1.1.24 | MIT | linux | https://github.com/creack/pty |
-| github.com/ebitengine/purego | v0.11.1 | Apache-2.0 | linux | https://github.com/ebitengine/purego |
+| github.com/ebitengine/purego | v0.11.3 | Apache-2.0 | linux | https://github.com/ebitengine/purego |
 | github.com/u-root/u-root (pkg/termios only) | v0.16.0 | BSD-3-Clause | linux | https://github.com/u-root/u-root |
 
 ### Web assets embedded in the binary
