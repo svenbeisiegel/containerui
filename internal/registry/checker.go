@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 )
@@ -19,6 +20,10 @@ type Status struct {
 	// DigestUnknown: the local image has no registry digest to compare
 	// (built or loaded locally), so a rebuilt tag cannot be detected.
 	DigestUnknown bool
+	// TagGone: the registry no longer has the tag, though it still has
+	// the repository (the tag was deleted there). Newer tags are still
+	// looked for.
+	TagGone bool
 	// NewerTags are higher version tags of the same shape.
 	NewerTags []Tag
 	CheckedAt time.Time
@@ -51,6 +56,7 @@ const errorTTL = time.Minute
 
 type remote struct {
 	digest string
+	gone   bool // the tag is not in the registry, the repository is
 	tags   []string
 	err    error
 	at     time.Time
@@ -78,6 +84,11 @@ func (c *Checker) Check(ctx context.Context, refStr string, localDigests []strin
 		return s
 	}
 	s.NewerTags = NewerTags(ref.Tag, r.tags)
+	if r.gone {
+		// Nothing to compare the local image with.
+		s.TagGone = true
+		return s
+	}
 	s.DigestUnknown = true
 	for _, ld := range localDigests {
 		l, err := ParseRef(ld)
@@ -107,10 +118,17 @@ func (c *Checker) lookup(ctx context.Context, ref Reference, force bool) remote 
 	}
 	r = remote{at: c.now()}
 	r.digest, r.err = c.Client.Digest(ctx, ref)
-	if r.err == nil {
+	switch {
+	case r.err == nil:
 		// Some registries do not allow listing tags; the digest check
 		// still works then.
 		r.tags, _ = c.Client.Tags(ctx, ref)
+	case errors.Is(r.err, ErrNotFound):
+		// The tag may have been deleted while newer ones were pushed: the
+		// tag list tells, and fails too when the repository is unknown.
+		if tags, err := c.Client.Tags(ctx, ref); err == nil {
+			r.tags, r.gone, r.err = tags, true, nil
+		}
 	}
 	// Answers to cancelled requests are not cached.
 	if ctx.Err() == nil {

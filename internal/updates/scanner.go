@@ -276,16 +276,38 @@ func (s *Scanner) Refresh(ctx context.Context, refs ...string) {
 // markNewerLocal notes for each image the newest local newer version.
 // Callers hold s.mu.
 func (s *Scanner) markNewerLocal() {
+	local := s.localTags()
 	for _, img := range s.images {
 		img.NewerLocal = ""
-		repo := img.Repo()
-		for _, t := range img.Status.NewerTags { // newest first
-			if _, ok := s.images[key(repo+":"+t.Name)]; ok {
-				img.NewerLocal = t.Name
-				break
-			}
+		if newer := local.newer(img.Ref); len(newer) > 0 {
+			img.NewerLocal = newer[0].Name
 		}
 	}
+}
+
+// localTags indexes the tags of the local images by repository.
+// Callers hold s.mu.
+func (s *Scanner) localTags() localTags {
+	l := localTags{}
+	for _, img := range s.images {
+		if r, err := registry.ParseRef(img.Ref); err == nil {
+			l[r.Name()] = append(l[r.Name()], r.Tag)
+		}
+	}
+	return l
+}
+
+// localTags are the tags of local images by repository name.
+type localTags map[string][]string
+
+// newer lists the local versions of ref's repository that are newer than
+// its tag, newest first: they need no registry to be found.
+func (l localTags) newer(ref string) []registry.Tag {
+	r, err := registry.ParseRef(ref)
+	if err != nil {
+		return nil
+	}
+	return registry.NewerTags(r.Tag, l[r.Name()])
 }
 
 // State reports whether a scan runs and how the last one went.
@@ -308,7 +330,9 @@ func (s *Scanner) Image(ref string) (Image, bool) {
 
 // ForContainer lists the images container c can be updated to: its own
 // tag when that has a newer image (in the registry, or already pulled),
-// and newer versions, newest first.
+// and newer versions, newest first: those the registry has and those
+// already pulled, which are offered even when the registry cannot be
+// asked or no longer has the container's tag.
 func (s *Scanner) ForContainer(c runtime.Container) []Candidate {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -316,8 +340,7 @@ func (s *Scanner) ForContainer(c runtime.Container) []Candidate {
 	if ci, ok := s.containers[c.ID]; ok {
 		ref, imageID = ci.ref, ci.imageID
 	}
-	img, ok := s.images[key(ref)]
-	if !ok {
+	if !checkable(ref) {
 		return nil
 	}
 	repo, tag := runtime.SplitRef(ref)
@@ -325,13 +348,27 @@ func (s *Scanner) ForContainer(c runtime.Container) []Candidate {
 		tag = "latest"
 	}
 	var out []Candidate
-	switch {
-	case img.Status.DigestChanged:
-		out = append(out, Candidate{Ref: ref, Label: tag + " (rebuilt in the registry)", Pull: true})
-	case imageID != "" && img.ID != "" && imageID != img.ID:
-		out = append(out, Candidate{Ref: ref, Label: tag + " (newer image already pulled)"})
+	// The container's image may have lost its tag locally (removed or
+	// retagged): newer local versions still count.
+	img, ok := s.images[key(ref)]
+	if ok {
+		switch {
+		case img.Status.DigestChanged:
+			out = append(out, Candidate{Ref: ref, Label: tag + " (rebuilt in the registry)", Pull: true})
+		case imageID != "" && img.ID != "" && imageID != img.ID:
+			out = append(out, Candidate{Ref: ref, Label: tag + " (newer image already pulled)"})
+		}
 	}
-	for _, t := range img.Status.NewerTags {
+	var names []string
+	if ok {
+		for _, t := range img.Status.NewerTags {
+			names = append(names, t.Name)
+		}
+	}
+	for _, t := range s.localTags().newer(ref) {
+		names = append(names, t.Name)
+	}
+	for _, t := range registry.NewerTags(tag, names) {
 		r := repo + ":" + t.Name
 		local, ok := s.images[key(r)]
 		out = append(out, Candidate{Ref: r, Label: t.Name + " (" + t.Kind + ")", Pull: !ok || local.Status.DigestChanged})

@@ -74,9 +74,11 @@ Features:
     `1.27-alpine` only sees `-alpine` tags; `latest` only gets the digest
     check). The Images page then marks those images with *update* and
     offers *Update* (pull the rebuilt tag) or *Pull 1.28* (the newest
-    version) on the latest local version of the repository. A container
-    whose image has a newer version, also one already pulled, gets an
-    *update* tag after its name; its page offers *Update container*, which
+    version) on the latest local version of the repository. A tag that was
+    deleted in the registry is marked *not in registry*, and its higher
+    versions are still looked up. A container whose image has a newer
+    version, in the registry or already pulled (offered even when the
+    registry cannot be reached), gets an *update* tag after its name; its page offers *Update container*, which
     pulls the chosen image if needed and recreates the container with the
     same settings, like *Edit*. Public registries work anonymously; private
     ones with the logins in the runtime's auth file (`docker login` /

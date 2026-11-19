@@ -93,3 +93,42 @@ func TestCheckNow(t *testing.T) {
 		t.Errorf("failed scan: state %+v, kept %d images", st, len(s.images))
 	}
 }
+
+// The registry deleted the tag a container runs, and a newer version was
+// pulled by hand: the container is offered the pulled version.
+func TestNewerLocalVersion(t *testing.T) {
+	ctx := context.Background()
+	rt := fake.New()
+	now := time.Now()
+	rt.AddImage(runtime.Image{ID: "sha256:a1", Repository: "ghcr.io/team/app", Tag: "0.20.0", Created: now})
+	rt.AddImage(runtime.Image{ID: "sha256:a2", Repository: "ghcr.io/team/app", Tag: "0.21.0", Created: now})
+	rt.AddContainer(runtime.Container{ID: "c1", Name: "app", Image: "ghcr.io/team/app:0.20.0"})
+	checks := stub{
+		"ghcr.io/team/app:0.20.0": {TagGone: true, NewerTags: []registry.Tag{{Name: "0.21.0", Kind: "minor"}}},
+	}
+	s := New(rt, checks, time.Hour, nil)
+	s.Scan(ctx, false)
+
+	old, _ := s.Image("ghcr.io/team/app:0.20.0")
+	if old.NewerLocal != "0.21.0" || old.Available() {
+		t.Errorf("0.20.0 = %+v", old)
+	}
+	want := []Candidate{{Ref: "ghcr.io/team/app:0.21.0", Label: "0.21.0 (minor)"}}
+	if got := s.ForContainer(runtime.Container{ID: "c1", Image: "ghcr.io/team/app:0.20.0"}); !reflect.DeepEqual(got, want) {
+		t.Errorf("candidates =\n %+v\nwant\n %+v", got, want)
+	}
+
+	// The registry cannot be asked: pulled versions are still offered.
+	checks["ghcr.io/team/app:0.20.0"] = registry.Status{Err: "cannot reach ghcr.io"}
+	s.Scan(ctx, true)
+	if got := s.ForContainer(runtime.Container{ID: "c1", Image: "ghcr.io/team/app:0.20.0"}); !reflect.DeepEqual(got, want) {
+		t.Errorf("offline candidates =\n %+v\nwant\n %+v", got, want)
+	}
+	// Registry and local versions merge, newest first.
+	checks["ghcr.io/team/app:0.20.0"] = registry.Status{NewerTags: []registry.Tag{{Name: "0.22.0", Kind: "minor"}}}
+	s.Scan(ctx, true)
+	want = []Candidate{{Ref: "ghcr.io/team/app:0.22.0", Label: "0.22.0 (minor)", Pull: true}, want[0]}
+	if got := s.ForContainer(runtime.Container{ID: "c1", Image: "ghcr.io/team/app:0.20.0"}); !reflect.DeepEqual(got, want) {
+		t.Errorf("merged candidates =\n %+v\nwant\n %+v", got, want)
+	}
+}

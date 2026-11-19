@@ -72,6 +72,7 @@ type fakeRegistry struct {
 	noHead   bool // HEAD without Docker-Content-Digest
 	tokens   atomic.Int32
 	requests atomic.Int32
+	other    atomic.Int32 // requests for unknown repositories
 }
 
 func newFakeRegistry(t *testing.T) *fakeRegistry {
@@ -117,6 +118,10 @@ func newFakeRegistry(t *testing.T) *fakeRegistry {
 		default:
 			http.NotFound(w, r)
 		}
+	})
+	mux.HandleFunc("/v2/", func(w http.ResponseWriter, r *http.Request) {
+		f.other.Add(1)
+		http.NotFound(w, r)
 	})
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
@@ -234,20 +239,27 @@ func TestChecker(t *testing.T) {
 	if s = c.Check(ctx, "sha256:"+strings.Repeat("a", 64), nil, false); s.Err == "" {
 		t.Errorf("image ID = %+v", s)
 	}
-	if s = c.Check(ctx, f.host()+"/team/app:9.9", nil, false); !strings.Contains(s.Err, "not found") {
-		t.Errorf("missing tag = %+v", s)
+	// A tag deleted in the registry: newer tags are still found.
+	if s = c.Check(ctx, f.host()+"/team/app:0.5", []string{f.host() + "/team/app@" + f.digest}, false); s.Err != "" || !s.TagGone || s.DigestChanged || s.DigestUnknown ||
+		!slices.Equal(s.NewerTags, []Tag{{"2.0", "major"}, {"1.1", "major"}, {"1.0", "major"}, {"0.9", "minor"}}) {
+		t.Errorf("deleted tag = %+v", s)
+	}
+	missing := f.host() + "/team/gone:1.0"
+	if s = c.Check(ctx, missing, nil, false); !strings.Contains(s.Err, "not found") || s.TagGone {
+		t.Errorf("missing repository = %+v", s)
 	}
 	// Failures are only reused for a minute.
 	now := time.Now()
 	c.now = func() time.Time { return now.Add(30 * time.Second) }
-	before = f.requests.Load()
-	c.Check(ctx, f.host()+"/team/app:9.9", nil, false)
-	if f.requests.Load() != before {
+	reqs := func() int32 { return f.requests.Load() + f.other.Load() }
+	before = reqs()
+	c.Check(ctx, missing, nil, false)
+	if reqs() != before {
 		t.Error("failure not reused within a minute")
 	}
 	c.now = func() time.Time { return now.Add(2 * time.Minute) }
-	c.Check(ctx, f.host()+"/team/app:9.9", nil, false)
-	if f.requests.Load() == before {
+	c.Check(ctx, missing, nil, false)
+	if reqs() == before {
 		t.Error("failure reused after a minute")
 	}
 }

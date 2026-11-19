@@ -183,7 +183,7 @@
       {{$u := index $upd .Ref}}
       <tr>
         <td class="mono">{{.Repository}}{{if .Containers}}<span class="in-use" title="In use by {{.Containers}} container(s)">*</span>{{end}}</td>
-        <td class="mono">{{.Tag}}{{if $u.Available}} <span class="badge warn update-tag" title="{{if $u.DigestChanged}}The registry has a newer image for this tag. {{end}}{{with $u.NewerTags}}Newer versions: {{range $i, $t := .}}{{if $i}}, {{end}}{{$t.Name}}{{end}}{{end}}">update</span>{{else if $u.Status.Err}} <span class="muted small" title="{{$u.Status.Err}}">not checked</span>{{end}}</td>
+        <td class="mono">{{.Tag}}{{if $u.Available}} <span class="badge warn update-tag" title="{{if $u.DigestChanged}}The registry has a newer image for this tag. {{end}}{{with $u.NewerTags}}Newer versions: {{range $i, $t := .}}{{if $i}}, {{end}}{{$t.Name}}{{end}}{{end}}">update</span>{{else if $u.Status.Err}} <span class="muted small" title="{{$u.Status.Err}}">not checked</span>{{else if $u.Status.TagGone}} <span class="muted small" title="The registry no longer has this tag{{with $u.NewerLocal}}; version {{.}} is already pulled{{end}}">not in registry</span>{{end}}</td>
         <td class="id" title="{{.ID}}">{{shortID .ID}}</td>
         <td>{{.Size}}</td>
         <td title="{{datetime .Created}}">{{ago .Created}}</td>
