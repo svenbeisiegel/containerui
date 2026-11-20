@@ -40,8 +40,10 @@
     <div class="fields">
       <label class="field">
         <span class="field-label">Image <span class="req" aria-hidden="true">*</span></span>
-        <input name="image" list="image-list" required value="{{$f.Image}}" placeholder="nginx:1.27" autocomplete="off" spellcheck="false">
-        <datalist id="image-list">{{range .Data.Images}}<option value="{{.Ref}}">{{end}}</datalist>
+        <div class="combo" data-image-picker>
+          <input name="image" list="image-list" required value="{{$f.Image}}" placeholder="nginx:1.27" autocomplete="off" spellcheck="false">
+          <datalist id="image-list">{{range .Data.Images}}<option value="{{.Ref}}">{{end}}</datalist>
+        </div>
         <small class="hint">A local image or a registry reference, e.g. <code>docker.io/library/nginx:latest</code>.</small>
       </label>
       <label class="field">
