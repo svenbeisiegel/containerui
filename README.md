@@ -125,7 +125,8 @@ Features:
   which opens the container's main process (`<cli> container attach`) in a
   new tab, e.g. to answer prompts of an image's first start. A stopped
   container is offered *Start and attach* (`<cli> container start --attach`),
-  so no output is missed. Input is forwarded only if the container keeps
+  so no output is missed. The tab first shows the container's last 500
+  lines of output (dimmed header), then the live output. Input is forwarded only if the container keeps
   STDIN open (`--interactive`). *Detach*, `ctrl-p ctrl-q` (with a TTY),
   closing the tab or signing out detach; the container keeps running.
   *Attach again* re-attaches. On the create form, *Create and attach*

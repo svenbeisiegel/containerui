@@ -97,7 +97,12 @@ func TestAttachWebSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	readUntil(t, c, "attached to web")
+	// The earlier output comes first, then the live output.
+	got := readUntil(t, c, "attached to web")
+	logs, marker := strings.Index(got, "[fake] web log line 5\r\n"), strings.Index(got, "── attached ──")
+	if !strings.Contains(got, "── earlier output (last 500 lines) ──") || logs < 0 || marker < logs || strings.Index(got, "attached to web") < marker {
+		t.Errorf("attach output = %q; want the log lines, then the marker, then the attach output", got)
+	}
 	_ = c.Write(ctx, websocket.MessageBinary, []byte("exit 3\r"))
 	c.Close(websocket.StatusNormalClosure, "")
 	time.Sleep(100 * time.Millisecond)
@@ -122,7 +127,9 @@ func TestAttachWebSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	readUntil(t, c, "first start of setup")
+	if got := readUntil(t, c, "first start of setup"); !strings.Contains(got, "── starting ──") {
+		t.Errorf("start attached output = %q; want the starting marker", got)
+	}
 	if err := c.Write(ctx, websocket.MessageBinary, []byte("echo configured\r")); err != nil {
 		t.Fatal(err)
 	}
@@ -165,5 +172,32 @@ func TestCreateAndAttachButton(t *testing.T) {
 	w := e.post("/containers", url.Values{"image": {"alpine:latest"}, "name": {"bad name!"}, "tty": {"on"}})
 	if !strings.Contains(w.Body.String(), "data-attach-create hidden") {
 		t.Error("attach button shown without STDIN")
+	}
+}
+
+func TestHistoryFrame(t *testing.T) {
+	got := string(historyFrame([]byte("one\ntwo\r\nthree"), false))
+	want := "\x1b[2m── earlier output (last 500 lines) ──\x1b[0m\r\n" +
+		"one\r\ntwo\r\nthree\r\n" +
+		"\x1b[2m── attached ──\x1b[0m\r\n"
+	if got != want {
+		t.Errorf("historyFrame = %q\nwant %q", got, want)
+	}
+	if got := string(historyFrame([]byte("ready\n"), true)); !strings.HasSuffix(got, "ready\r\n\x1b[2m── starting ──\x1b[0m\r\n") {
+		t.Errorf("historyFrame start = %q", got)
+	}
+}
+
+func TestTailBuffer(t *testing.T) {
+	b := &tailBuffer{max: 5}
+	for _, p := range []string{"abc", "def", "g"} {
+		_, _ = b.Write([]byte(p))
+	}
+	if got := b.b.String(); got != "cdefg" {
+		t.Errorf("tail = %q; want cdefg", got)
+	}
+	_, _ = b.Write([]byte("0123456789"))
+	if got := b.b.String(); got != "56789" {
+		t.Errorf("tail = %q; want 56789", got)
 	}
 }

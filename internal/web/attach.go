@@ -1,9 +1,11 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/coder/websocket"
@@ -123,6 +125,15 @@ func (s *Server) handleAttachWS(w http.ResponseWriter, r *http.Request) {
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	if s.caps().Logs {
+		// Attach only shows output written from now on, so a prompt the
+		// container already printed would be invisible: show the recent
+		// output first. Output written between this read and the start of
+		// the attach below can be missed.
+		if out := s.attachHistory(ctx, c.ID); len(out) > 0 {
+			_ = conn.Write(ctx, websocket.MessageBinary, historyFrame(out, start))
+		}
+	}
 	opts := runtime.AttachOpts{Start: start, Stdin: t.Stdin, TTY: t.TTY,
 		Cols: sizeParam(q.Get("cols"), 80, 10, 500), Rows: sizeParam(q.Get("rows"), 24, 5, 300)}
 	term, err := s.rt.OpenAttach(ctx, c.ID, opts)
@@ -147,4 +158,69 @@ func (s *Server) handleAttachWS(w http.ResponseWriter, r *http.Request) {
 	conn.Close(websocket.StatusNormalClosure, reason)
 	s.log.Info("container detached", "id", c.ID, "name", c.Name, "user", sess.Username, "reason", reason,
 		"duration", time.Since(begin).Round(time.Second))
+}
+
+// attachHistory is how many lines of earlier output the attach terminal
+// shows before the live output.
+const attachHistory = 500
+
+// attachHistoryMax caps the earlier output (its end is kept).
+const attachHistoryMax = 1 << 20
+
+// attachHistory returns the container's last attachHistory lines of output.
+// Errors are only logged: the attach goes on without them.
+func (s *Server) attachHistory(ctx context.Context, id string) []byte {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	buf := &tailBuffer{max: attachHistoryMax}
+	if err := s.rt.ContainerLogs(ctx, id, runtime.LogsOpts{Tail: attachHistory}, buf); err != nil {
+		s.log.Warn("attach history failed", "id", id, "error", err)
+	}
+	return buf.b.Bytes()
+}
+
+// tailBuffer keeps the last max bytes written to it.
+type tailBuffer struct {
+	b   bytes.Buffer
+	max int
+}
+
+func (t *tailBuffer) Write(p []byte) (int, error) {
+	n := len(p)
+	if len(p) >= t.max {
+		t.b.Reset()
+		t.b.Write(p[len(p)-t.max:])
+		return n, nil
+	}
+	if over := t.b.Len() + len(p) - t.max; over > 0 {
+		rest := append([]byte(nil), t.b.Bytes()[over:]...)
+		t.b.Reset()
+		t.b.Write(rest)
+	}
+	t.b.Write(p)
+	return n, nil
+}
+
+// historyFrame frames the earlier output for the terminal: a dim header,
+// the output with lone \n turned into \r\n (logs come without a TTY's
+// line discipline) and a dim marker where the live output begins.
+func historyFrame(out []byte, start bool) []byte {
+	const dim, reset = "\x1b[2m", "\x1b[0m"
+	var b bytes.Buffer
+	b.WriteString(dim + "── earlier output (last " + strconv.Itoa(attachHistory) + " lines) ──" + reset + "\r\n")
+	for i, ch := range out {
+		if ch == '\n' && (i == 0 || out[i-1] != '\r') {
+			b.WriteByte('\r')
+		}
+		b.WriteByte(ch)
+	}
+	if len(out) > 0 && out[len(out)-1] != '\n' {
+		b.WriteString("\r\n")
+	}
+	marker := "attached"
+	if start {
+		marker = "starting"
+	}
+	b.WriteString(dim + "── " + marker + " ──" + reset + "\r\n")
+	return b.Bytes()
 }
