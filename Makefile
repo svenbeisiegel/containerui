@@ -15,9 +15,10 @@ BUILDENV := CGO_ENABLED=0
 
 PLATFORMS := linux/amd64 linux/arm64 windows/amd64 windows/arm64
 
-# The packages ship binaries stamped with the package that owns them, and a
-# configuration written by the binary's own init-config, so it always matches
-# the build. The binaries and configs are built into PKG; the packages land in
+# The packages ship binaries stamped with the package that owns them. The msi
+# also ships the default configuration, written by the binary's own
+# init-config so it always matches the build; the rpm and deb run init-config
+# on the server when they are installed. The binaries and configs are built into PKG; the packages land in
 # DIST.
 PKG  := build/pkg
 NFPM := go run github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.49.0
@@ -76,8 +77,6 @@ packages: rpm deb msi-inputs
 # the target names the packager and the package stamped into the binary.
 rpm deb:
 	@mkdir -p $(PKG)/linux $(DIST)
-	@rm -f $(PKG)/linux/config.yaml
-	go run $(MAIN) init-config -compose-dir /var/lib/containerui/compose -events-dir /var/lib/containerui/events $(PKG)/linux/config.yaml
 	@for arch in amd64 arm64; do \
 		echo "building $(PKG)/linux/$(BINARY) for $$arch"; \
 		GOOS=linux GOARCH=$$arch $(BUILDENV) go build $(GOFLAGS) \

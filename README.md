@@ -252,17 +252,23 @@ sudo dnf install ./containerui-<version>-1.x86_64.rpm
 |---|---|
 | Binary | `/usr/bin/containerui` |
 | Service | `containerui.service` (`/usr/lib/systemd/system`), runs as **root**, enabled and started on install, restarted on upgrade |
-| Configuration | `/etc/containerui/config.yaml` (`%config(noreplace)`: an upgrade keeps your file and puts the new default beside it as `.rpmnew`); the self-signed certificate is generated next to it |
+| Data folder | `/var/lib/containerui` (root, 0750): everything but the binary |
+| Configuration | `/var/lib/containerui/config.yaml` (0600), the default written on the first install; no file of the package, so an upgrade or a removal never touches it. The self-signed certificate and the activity history (`activity.json`) are generated next to it |
 | Compose projects | `/var/lib/containerui/compose` |
 | Error events | `/var/lib/containerui/events`, see [Events](#events) |
-| Log | the journal: `journalctl -u containerui` |
+| Log | the journal: `journalctl -u containerui` (`/var/lib/containerui/logs` is reserved for log files) |
+
+Upgrading from a package before 0.14, which kept the configuration in
+`/etc/containerui`, moves `config.yaml`, the certificate and key and any
+other file of that folder to `/var/lib/containerui` and removes the empty
+`/etc/containerui`. Absolute paths in the old file (`compose_dir:
+/var/lib/containerui/compose`) keep working.
 
 The service listens on `0.0.0.0:8443`, so other machines can reach it; set
 `server.listen` to `127.0.0.1:8443` and `systemctl restart containerui` to
 allow local access only. Users sign in with their system account if they may use the
 docker or podman socket, see [Linux sign-in](#linux-sign-in). `dnf remove
-containerui` stops and removes the service and keeps the configuration
-(changed files as `.rpmsave`).
+containerui` stops and removes the service and keeps `/var/lib/containerui`.
 
 ### Linux (deb)
 
@@ -270,10 +276,10 @@ containerui` stops and removes the service and keeps the configuration
 sudo apt install ./containerui_<version>-1_amd64.deb
 ```
 
-The deb installs the same files and service as the rpm. The configuration is
-a conffile: an upgrade keeps your changes (dpkg asks if the default changed
-too), `apt remove containerui` keeps it and `apt purge containerui` deletes
-it.
+The deb installs the same files and service as the rpm and handles the
+configuration the same way: written on the first install, moved over from
+`/etc/containerui` on an upgrade, and kept by `apt remove` and `apt purge`
+alike (delete `/var/lib/containerui` to remove it).
 
 ### Windows (msi)
 
@@ -286,9 +292,11 @@ msiexec /i containerui-<version>-x64.msi /qn FIREWALL=0  # quietly, firewall lef
 |---|---|
 | Binary | `C:\Program Files\ContainerUI\containerui.exe` |
 | Service | `ContainerUI`, runs as **LocalSystem**, starts with Windows, restarted after a crash |
-| Configuration | `C:\ProgramData\ContainerUI\config.yaml` (SYSTEM and Administrators only; never overwritten by an update, kept by an uninstall) |
+| Data folder | `C:\ProgramData\ContainerUI` (SYSTEM and Administrators only): everything but the binary, kept by an uninstall |
+| Configuration | `C:\ProgramData\ContainerUI\config.yaml`, the default copied there on the first install and never overwritten by an update; the self-signed certificate and `activity.json` are generated next to it |
 | Compose projects | `C:\ProgramData\ContainerUI\compose` |
 | Log | `C:\ProgramData\ContainerUI\logs\containerui.log` (rotated by size) |
+| Events | `C:\ProgramData\ContainerUI\events` (unused: events come from the Linux journal) |
 
 The msi allows `containerui.exe` through the Windows firewall, so other
 machines can reach the service on `0.0.0.0:8443`. With `FIREWALL=0` nothing is
@@ -351,8 +359,10 @@ the msi on Windows on every push.
 ```
 
 No config file is needed. Without `-config`, ContainerUI uses `config.yaml`
-next to the executable and, if it does not exist, writes the default
-configuration there (every setting commented). Missing settings always use
+next to the executable (for the rpm, deb and msi builds: in their data
+folder, `/var/lib/containerui` or `C:\ProgramData\ContainerUI`) and, if it
+does not exist, writes the default configuration there (every setting
+commented). Missing settings always use
 the built-in defaults.
 
 - **Windows**: users sign in with their Windows account, see
@@ -403,7 +413,7 @@ The default file is [internal/config/default.yaml](internal/config/default.yaml)
 | `metrics.dashboard_interval` | `10s` | Sampling interval while a dashboard is open (at least `2s`, at most `metrics.interval`) |
 | `metrics.disk_interval` | `1h` | How often the disk usage is measured (at least `5m`); opening the dashboard measures it once more |
 | `events.dir` | `events` | Linux: folder for the journal's error events and their read state (relative to the config file), see [Events](#events) |
-| `activity.file` | `""` | File that keeps the newest 100 entries of the activity side bar across restarts (relative to the config file); empty = `activity.json` in the folder that holds `runtime.compose_dir` (`/var/lib/containerui` for the Linux packages) |
+| `activity.file` | `""` | File that keeps the newest 100 entries of the activity side bar across restarts (relative to the config file); empty = `activity.json` in the folder that holds `runtime.compose_dir` (the data folder `/var/lib/containerui` or `C:\ProgramData\ContainerUI` for the packages) |
 | `users[]` | — | Windows: additional accounts, `username` plus `password_hash` (bcrypt) or `password` (plaintext, warns). Ignored on Linux |
 
 Configs using the earlier `runtime.wslc:` block (`path`, `session`,

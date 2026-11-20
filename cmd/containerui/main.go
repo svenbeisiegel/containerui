@@ -5,8 +5,10 @@
 //	containerui init-config [-listen addr] [-compose-dir dir] [-events-dir dir] <path|->
 //	containerui hash-password
 //
-// Without -config it uses config.yaml next to the executable and writes the
-// default configuration there if the file does not exist.
+// Without -config it uses config.yaml in the data folder of the package
+// (/var/lib/containerui, C:\ProgramData\ContainerUI), or next to the
+// executable for a development build, and writes the default configuration
+// there if the file does not exist.
 package main
 
 import (
@@ -22,6 +24,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	goruntime "runtime"
 	"strings"
 	"syscall"
@@ -91,8 +94,10 @@ func main() {
 func usage() {
 	fmt.Fprint(os.Stderr, `Usage:
   containerui [serve] [-config config.yaml] [-driver name] [-debug] [-logfile path]
-      Start the web UI. Without -config, config.yaml next to the executable
-      is used (and created with the defaults if missing).
+      Start the web UI. Without -config, config.yaml in the package's data
+      folder (/var/lib/containerui, C:\ProgramData\ContainerUI), or next to
+      the executable of a development build, is used (and created with the
+      defaults if missing).
   containerui version
       Print the version.
   containerui init-config [-listen addr] [-compose-dir dir] [-events-dir dir] <path|->
@@ -110,7 +115,7 @@ type serveOptions struct {
 func serve(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	var o serveOptions
-	fs.StringVar(&o.configPath, "config", "", "path to the YAML config file (default: "+config.FileName+" next to the executable, created if missing)")
+	fs.StringVar(&o.configPath, "config", "", "path to the YAML config file (default: "+config.FileName+" in the package's data folder, or next to the executable of a development build; created if missing)")
 	fs.StringVar(&o.driver, "driver", "", "override runtime.driver from the config (available: "+strings.Join(runtime.Drivers(), ", ")+")")
 	fs.BoolVar(&o.debug, "debug", false, "enable debug logging")
 	fs.StringVar(&o.logFile, "logfile", "", "write the log to this file, rotated by size, instead of standard error")
@@ -424,14 +429,15 @@ func displayURL(scheme, listen string) string {
 	return fmt.Sprintf("%s://%s/", scheme, net.JoinHostPort(host, port))
 }
 
-// loadConfig loads the config at path. An empty path means config.yaml
-// next to the executable, which is created with the defaults if missing.
+// loadConfig loads the config at path. An empty path means config.yaml in
+// the package's data folder for a packaged build, and next to the executable
+// otherwise; that file is created with the defaults if missing.
 func loadConfig(path string, log *slog.Logger) (*config.Config, string, error) {
 	if path != "" {
 		cfg, err := config.Load(path)
 		return cfg, path, err
 	}
-	path, err := config.DefaultPath()
+	path, err := defaultConfigPath()
 	if err != nil {
 		return nil, "", err
 	}
@@ -445,6 +451,16 @@ func loadConfig(path string, log *slog.Logger) (*config.Config, string, error) {
 		log.Info("using config", "path", path)
 	}
 	return cfg, path, nil
+}
+
+// defaultConfigPath is the config used without -config: the one the package
+// installed in its data folder (/var/lib/containerui, ProgramData\ContainerUI),
+// or config.yaml next to the executable for a development build.
+func defaultConfigPath() (string, error) {
+	if packaging != "" {
+		return filepath.Join(config.DataDir(goruntime.GOOS, os.Getenv("ProgramData")), config.FileName), nil
+	}
+	return config.DefaultPath()
 }
 
 // initConfig writes the default configuration, with the listen address and

@@ -10,7 +10,7 @@ Type=simple
 # runtime's socket is reachable; who may sign in is decided by who may use
 # that socket (root, or e.g. a member of the docker group).
 User=root
-ExecStart=/usr/bin/containerui serve -config /etc/containerui/config.yaml
+ExecStart=/usr/bin/containerui serve -config /var/lib/containerui/config.yaml
 Restart=on-failure
 RestartSec=2
 

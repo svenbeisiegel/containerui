@@ -138,6 +138,18 @@ func TestLoadOrCreate(t *testing.T) {
 	}
 }
 
+func TestDataDir(t *testing.T) {
+	for _, c := range []struct{ goos, programData, want string }{
+		{"linux", "", "/var/lib/containerui"},
+		{"windows", `D:\Data`, `D:\Data\ContainerUI`},
+		{"windows", "", `C:\ProgramData\ContainerUI`},
+	} {
+		if got := DataDir(c.goos, c.programData); got != c.want {
+			t.Errorf("DataDir(%q, %q) = %q, want %q", c.goos, c.programData, got, c.want)
+		}
+	}
+}
+
 func TestAddUser(t *testing.T) {
 	path := filepath.Join(t.TempDir(), FileName)
 	if err := os.WriteFile(path, DefaultYAML, 0o600); err != nil {

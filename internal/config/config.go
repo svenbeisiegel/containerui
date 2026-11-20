@@ -184,6 +184,20 @@ func DefaultPath() (string, error) {
 	return filepath.Join(filepath.Dir(exe), FileName), nil
 }
 
+// DataDir is the folder the rpm, deb and msi packages keep everything but
+// the binary in: the configuration, the TLS certificate, the activity
+// history and the compose, logs and events folders. programData is the
+// value of %ProgramData% on Windows, C:\ProgramData if empty.
+func DataDir(goos, programData string) string {
+	if goos == "windows" {
+		if programData == "" {
+			programData = `C:\ProgramData`
+		}
+		return programData + `\ContainerUI`
+	}
+	return "/var/lib/containerui"
+}
+
 // Template is DefaultYAML with the listen address, the compose folder and
 // the events folder replaced where they are set (empty keeps the default),
 // which is how the installers write a configuration that fits the folders

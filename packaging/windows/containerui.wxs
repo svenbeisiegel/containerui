@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
   The Windows installer: containerui.exe in Program Files, run by the
-  ContainerUI service as LocalSystem, which starts with Windows, and the
-  configuration in ProgramData. Built on Windows by the WiX Toolset, once for
-  each architecture:
+  ContainerUI service as LocalSystem, which starts with Windows, and
+  everything else in ProgramData\ContainerUI: the configuration, the TLS
+  certificate, the activity history and the compose, logs and events
+  folders. Built on Windows by the WiX Toolset, once for each architecture:
 
     wix build packaging/windows/containerui.wxs -arch x64 -ext WixToolset.Util.wixext
       -ext WixToolset.Firewall.wixext -ext WixToolset.UI.wixext -d Version=1.0.0
@@ -100,6 +101,7 @@
       <Directory Id="DATAFOLDER" Name="ContainerUI">
         <Directory Id="COMPOSEFOLDER" Name="compose" />
         <Directory Id="LOGFOLDER" Name="logs" />
+        <Directory Id="EVENTSFOLDER" Name="events" />
       </Directory>
     </StandardDirectory>
 
@@ -110,6 +112,7 @@
       <ComponentRef Id="DataFolder" />
       <ComponentRef Id="ComposeFolder" />
       <ComponentRef Id="LogFolder" />
+      <ComponentRef Id="EventsFolder" />
       <ComponentRef Id="Configuration" />
       <ComponentRef Id="Firewall" />
     </Feature>
@@ -162,6 +165,9 @@
       <CreateFolder />
     </Component>
     <Component Id="LogFolder" Directory="LOGFOLDER" Guid="58152F34-C2E0-4543-B523-5C547AC4DB8D" Permanent="yes">
+      <CreateFolder />
+    </Component>
+    <Component Id="EventsFolder" Directory="EVENTSFOLDER" Guid="CB3E1F7B-1CDA-4538-BFAD-B5DE646D98EB" Permanent="yes">
       <CreateFolder />
     </Component>
 

@@ -1,9 +1,8 @@
 # The rpm and deb packages, built by make rpm and make deb with nfpm, which expands VERSION, the
 # released version, and ARCH, the Go architecture, from its environment. The
 # files are relative to the repository root, where make runs nfpm, and make
-# puts them in build/pkg/linux for each architecture in turn: the binary built
-# with -X main.packaging=rpm, and the config written by init-config with the
-# compose and events folders in /var/lib/containerui.
+# puts the binary, built with -X main.packaging=rpm or deb, in build/pkg/linux
+# for each architecture in turn.
 name: containerui
 arch: ${ARCH}
 platform: linux
@@ -45,25 +44,22 @@ contents:
     file_info:
       mode: 0644
 
-  # The configuration and the generated TLS certificate and key. noreplace
-  # keeps the file as it is on an upgrade, and puts the new template beside
-  # it as config.yaml.rpmnew.
-  - dst: /etc/containerui
-    type: dir
-    file_info:
-      mode: 0750
-  - src: build/pkg/linux/config.yaml
-    dst: /etc/containerui/config.yaml
-    type: config|noreplace
-    file_info:
-      mode: 0600
-
-  # compose projects deployed through the UI
+  # Everything but the binary: the configuration, which the postinstall
+  # script writes with the defaults (or moves over from /etc/containerui) and
+  # which is no file of the package, so an upgrade or a removal leaves it
+  # alone, the generated TLS certificate and key, the activity history, and
+  # the folders below.
   - dst: /var/lib/containerui
     type: dir
     file_info:
       mode: 0750
+  # compose projects deployed through the UI
   - dst: /var/lib/containerui/compose
+    type: dir
+    file_info:
+      mode: 0750
+  # log files; the service logs to the journal
+  - dst: /var/lib/containerui/logs
     type: dir
     file_info:
       mode: 0750
@@ -84,6 +80,7 @@ overrides:
     depends:
       - libpam0g
     scripts:
+      preinstall: packaging/linux/deb/preinst.sh
       postinstall: packaging/linux/deb/postinst.sh
       preremove: packaging/linux/deb/prerm.sh
       postremove: packaging/linux/postremove.sh

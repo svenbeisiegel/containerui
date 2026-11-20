@@ -65,23 +65,39 @@ jobs:
             version=$(ls /dist/containerui-*.x86_64.rpm | sort -V | head -1)
             update=$(ls /dist/containerui-*.x86_64.rpm | sort -V | tail -1)
             dnf install -y "$version"
-            test "$(stat -c %U:%a /etc/containerui/config.yaml)" = root:600
-            test -d /var/lib/containerui/compose
-            grep -q "compose_dir: /var/lib/containerui/compose" /etc/containerui/config.yaml
+            test "$(stat -c %U:%a /var/lib/containerui/config.yaml)" = root:600
+            for d in compose logs events; do test -d /var/lib/containerui/$d; done
+            grep -q "compose_dir: compose" /var/lib/containerui/config.yaml
+            test ! -e /etc/containerui
             test -f /usr/lib/systemd/system/containerui.service
+            grep -q -- "-config /var/lib/containerui/config.yaml" /usr/lib/systemd/system/containerui.service
             /usr/bin/containerui version | grep -q "^containerui "
-            /usr/bin/containerui serve -config /etc/containerui/config.yaml -driver fake > /tmp/containerui.log 2>&1 &
+            /usr/bin/containerui serve -config /var/lib/containerui/config.yaml -driver fake > /tmp/containerui.log 2>&1 &
             pid=$!
             for i in $(seq 1 30); do curl -fsSk -o /dev/null https://127.0.0.1:8443/login && break; sleep 0.5; done
             curl -fsSk -o /dev/null https://127.0.0.1:8443/login
             grep -q "installer=rpm" /tmp/containerui.log
+            test -f /var/lib/containerui/containerui-cert.pem
             kill $pid; wait $pid || true
-            echo "# changed" >> /etc/containerui/config.yaml
+            echo "# changed" >> /var/lib/containerui/config.yaml
             dnf install -y "$update"
-            grep -q "^# changed" /etc/containerui/config.yaml
+            grep -q "^# changed" /var/lib/containerui/config.yaml
             dnf remove -y containerui
             test ! -e /usr/bin/containerui
-            test -e /etc/containerui/config.yaml.rpmsave
+            grep -q "^# changed" /var/lib/containerui/config.yaml
+
+            # an install that kept its configuration in /etc/containerui, as
+            # the packages before 0.14 did, has it moved to /var/lib/containerui
+            rm -rf /var/lib/containerui
+            mkdir -p /etc/containerui
+            printf "# old\nruntime:\n  compose_dir: /var/lib/containerui/compose\n" > /etc/containerui/config.yaml
+            echo cert > /etc/containerui/containerui-cert.pem
+            chmod 600 /etc/containerui/config.yaml
+            dnf install -y "$update"
+            grep -q "^# old" /var/lib/containerui/config.yaml
+            test "$(stat -c %U:%a /var/lib/containerui/config.yaml)" = root:600
+            test "$(cat /var/lib/containerui/containerui-cert.pem)" = cert
+            test ! -e /etc/containerui/config.yaml
           '
 
   deb:
@@ -108,23 +124,39 @@ jobs:
             version=$(ls /dist/containerui_*_amd64.deb | sort -V | head -1)
             update=$(ls /dist/containerui_*_amd64.deb | sort -V | tail -1)
             apt-get install -y "$version"
-            test "$(stat -c %U:%a /etc/containerui/config.yaml)" = root:600
-            test -d /var/lib/containerui/compose
-            grep -q "compose_dir: /var/lib/containerui/compose" /etc/containerui/config.yaml
+            test "$(stat -c %U:%a /var/lib/containerui/config.yaml)" = root:600
+            for d in compose logs events; do test -d /var/lib/containerui/$d; done
+            grep -q "compose_dir: compose" /var/lib/containerui/config.yaml
+            test ! -e /etc/containerui
             test -f /usr/lib/systemd/system/containerui.service
+            grep -q -- "-config /var/lib/containerui/config.yaml" /usr/lib/systemd/system/containerui.service
             /usr/bin/containerui version | grep -q "^containerui "
-            /usr/bin/containerui serve -config /etc/containerui/config.yaml -driver fake > /tmp/containerui.log 2>&1 &
+            /usr/bin/containerui serve -config /var/lib/containerui/config.yaml -driver fake > /tmp/containerui.log 2>&1 &
             pid=$!
             for i in $(seq 1 30); do curl -fsSk -o /dev/null https://127.0.0.1:8443/login && break; sleep 0.5; done
             curl -fsSk -o /dev/null https://127.0.0.1:8443/login
             grep -q "installer=deb" /tmp/containerui.log
+            test -f /var/lib/containerui/containerui-cert.pem
             kill $pid; wait $pid || true
-            echo "# changed" >> /etc/containerui/config.yaml
-            apt-get install -y -o Dpkg::Options::=--force-confold "$update"
-            grep -q "^# changed" /etc/containerui/config.yaml
+            echo "# changed" >> /var/lib/containerui/config.yaml
+            apt-get install -y "$update"
+            grep -q "^# changed" /var/lib/containerui/config.yaml
             apt-get remove -y containerui
             test ! -e /usr/bin/containerui
-            test -e /etc/containerui/config.yaml
+            grep -q "^# changed" /var/lib/containerui/config.yaml
+
+            # an install that kept its configuration in /etc/containerui, as
+            # the packages before 0.14 did, has it moved to /var/lib/containerui
+            rm -rf /var/lib/containerui
+            mkdir -p /etc/containerui
+            printf "# old\nruntime:\n  compose_dir: /var/lib/containerui/compose\n" > /etc/containerui/config.yaml
+            echo cert > /etc/containerui/containerui-cert.pem
+            chmod 600 /etc/containerui/config.yaml
+            apt-get install -y "$update"
+            grep -q "^# old" /var/lib/containerui/config.yaml
+            test "$(stat -c %U:%a /var/lib/containerui/config.yaml)" = root:600
+            test "$(cat /var/lib/containerui/containerui-cert.pem)" = cert
+            test ! -e /etc/containerui/config.yaml
           '
 
   msi:
@@ -195,3 +227,6 @@ jobs:
           if ($uninstall.ExitCode -ne 0) { Get-Content uninstall.log -Tail 80; exit $uninstall.ExitCode }
           if (Get-Service ContainerUI -ErrorAction SilentlyContinue) { throw "the service is still there" }
           if (-not (Test-Path "$env:ProgramData\ContainerUI\config.yaml")) { throw "the uninstall removed the configuration" }
+          foreach ($d in "compose", "logs", "events") {
+            if (-not (Test-Path "$env:ProgramData\ContainerUI\$d" -PathType Container)) { throw "the $d folder is missing" }
+          }
