@@ -42,6 +42,9 @@ type Flavor struct {
 
 	// stats: "container stats" and "system df" print JSON (not wslc).
 	stats bool
+	// attach: "container attach" and "container start --attach" with
+	// --sig-proxy and --detach-keys exist.
+	attach bool
 
 	// compose lists the compose tools to try, in order. None for wslc,
 	// which has no compose.
@@ -62,6 +65,8 @@ var (
 		// --help" and enable the ones wslc accepts. Additional networks
 		// only need "network connect".
 		createOptions: map[string]bool{runtime.OptMultiNetwork: true},
+		// TODO: verify "wslc container attach" and "wslc container start
+		// --attach" (with --sig-proxy and --detach-keys) and enable attach.
 	}
 	Docker = &Flavor{
 		Name:   "docker",
@@ -77,6 +82,7 @@ var (
 		aliasFlag:      "--alias",
 		createOptions:  runtime.AllOptions(),
 		stats:          true,
+		attach:         true,
 		compose:        []composeCandidate{{plugin: true}, {binary: "docker-compose"}},
 	}
 	Podman = &Flavor{
@@ -93,6 +99,7 @@ var (
 		aliasFlag:      "--alias",
 		createOptions:  runtime.AllOptions(),
 		stats:          true,
+		attach:         true,
 		compose:        []composeCandidate{{plugin: true}, {binary: "podman-compose"}},
 	}
 )

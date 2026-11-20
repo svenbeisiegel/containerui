@@ -171,9 +171,10 @@
   </details>
   {{end}}
   {{end}}
-  {{if or (and $running $caps.Terminal) $caps.Logs}}
+  {{if or (and $running $caps.Terminal) $caps.Attach $caps.Logs}}
   <hr class="row-menu-sep">
-  {{if and $running $caps.Terminal}}<a class="button" href="/containers/{{$c.ID}}/terminal" target="_blank" rel="noopener">Connect</a>{{end}}
+  {{if and $running $caps.Terminal}}<a class="button" href="/containers/{{$c.ID}}/terminal" target="_blank" rel="noopener" title="Open a shell in the container">Connect</a>{{end}}
+  {{if $caps.Attach}}<a class="button" href="/containers/{{$c.ID}}/attach" target="_blank" rel="noopener" title="Attach to the container's main process">Attach</a>{{end}}
   {{if $caps.Logs}}
   {{if $running}}<a class="button" href="/containers/{{$c.ID}}/logs/watch" target="_blank" rel="noopener">Watch logs</a>{{end}}
   <a class="button" href="/containers/{{$c.ID}}/logs/download" download>Download logs</a>

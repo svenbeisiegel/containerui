@@ -37,6 +37,11 @@ type Runtime interface {
 	// The terminal lives until it is closed or the shell exits; ctx only
 	// bounds starting it.
 	OpenTerminal(ctx context.Context, id string, opts TerminalOpts) (Terminal, error)
+	// OpenAttach attaches a pseudo terminal to the container's main
+	// process; with opts.Start it starts the stopped container attached,
+	// so its first output is not missed. Closing the terminal detaches and
+	// leaves the container running.
+	OpenAttach(ctx context.Context, id string, opts AttachOpts) (Terminal, error)
 
 	// ContainerLogs writes the container's output (stdout and stderr) to w.
 	// With opts.Follow it keeps streaming until ctx ends or the container
@@ -89,6 +94,7 @@ type Capabilities struct {
 	Volumes  bool
 	Networks bool
 	Terminal bool // interactive shell in running containers
+	Attach   bool // attach to the main process (OpenAttach)
 	Logs     bool // container output (download and follow)
 	Stats    bool // the driver implements Stater (CPU, memory, disk usage)
 

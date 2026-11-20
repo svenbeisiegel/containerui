@@ -16,6 +16,23 @@ document.addEventListener("submit", function (e) {
   if (msg && !window.confirm(msg)) e.preventDefault();
 });
 
+// Create form: "Create and attach" needs a TTY and STDIN. It submits into a
+// new tab, which ends on the attach page, so this tab moves on to the list.
+(function () {
+  var btn = document.querySelector("[data-attach-create]");
+  if (!btn || !btn.form) return;
+  var form = btn.form;
+  var tty = form.elements.namedItem("tty");
+  var stdin = form.elements.namedItem("interactive");
+  function sync() { btn.hidden = !(tty && tty.checked && stdin && stdin.checked); }
+  form.addEventListener("change", sync);
+  sync();
+  form.addEventListener("submit", function (e) {
+    if (e.submitter !== btn || e.defaultPrevented) return;
+    setTimeout(function () { window.location.href = "/containers"; }, 300);
+  });
+})();
+
 // Light/dark toggle. theme.js applied any stored choice already; a click
 // flips the effective theme and remembers it.
 (function () {

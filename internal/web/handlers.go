@@ -401,6 +401,12 @@ func (s *Server) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 	f := parseContainerForm(r)
 	opts, err := f.toOpts()
 	attempted := err == nil // the form parsed and reached the runtime
+	// "Create and attach": create stopped; the attach page starts the
+	// container attached so its first output is not missed.
+	attach := r.PostFormValue("attach") == "1" && s.caps().Attach
+	if attach {
+		opts.Start = false
+	}
 	if err == nil {
 		s.setPullLabel(&opts, opts.Pull)
 		var id string
@@ -416,6 +422,10 @@ func (s *Server) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 				msg = fmt.Sprintf("Container %s created and started.", name)
 			}
 			s.recordActivity(w, r, containerJobKind, "create "+name, msg, "", nil, true, false)
+			if attach {
+				http.Redirect(w, r, "/containers/"+id+"/attach?start=1", http.StatusSeeOther)
+				return
+			}
 			sessionFrom(r).SetFlash(msg)
 			http.Redirect(w, r, "/containers", http.StatusSeeOther)
 			return

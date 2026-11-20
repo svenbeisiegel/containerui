@@ -166,3 +166,41 @@ func (s *shell) Close() error {
 	}
 	return nil
 }
+
+func (f *Runtime) OpenAttach(_ context.Context, id string, opts runtime.AttachOpts) (runtime.Terminal, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	op := "attach"
+	if opts.Start {
+		op = "attach-start"
+	}
+	if err := f.record("%s %s stdin=%t tty=%t %dx%d", op, id, opts.Stdin, opts.TTY, opts.Cols, opts.Rows); err != nil {
+		return nil, err
+	}
+	c, err := f.find(id)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case opts.Start && c.State.IsRunning():
+		return nil, &runtime.CommandError{Op: "container start", Output: "container " + c.Name + " is already running", Kind: runtime.ErrConflict}
+	case opts.Start:
+		c.State, c.Status = runtime.StateRunning, "Up Less than a second"
+	case !c.State.IsRunning():
+		return nil, &runtime.CommandError{Op: "container attach", Output: "you cannot attach to a stopped container, start it first", Kind: runtime.ErrConflict}
+	}
+	t := newShell(opts.Cols, opts.Rows)
+	greeting := "attached to " + c.Name + "\r\n"
+	if opts.Start {
+		greeting = "first start of " + c.Name + "\r\n"
+	}
+	go t.print(greeting + t.prompt())
+	// "exit" ends the main process, and with it the container; Close
+	// (detach, code -1) leaves it running.
+	go func() {
+		if code, _ := t.Wait(); code != -1 {
+			_ = f.setState("exited", c.ID, runtime.StateExited, fmt.Sprintf("Exited (%d) Less than a second ago", code))
+		}
+	}()
+	return t, nil
+}

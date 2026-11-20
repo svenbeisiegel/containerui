@@ -93,6 +93,7 @@ type Server struct {
 
 	logsPage     *template.Template // standalone live log page
 	terminalPage *template.Template // standalone terminal page
+	attachPage   *template.Template // standalone attach page
 
 	version     string
 	installType string
@@ -189,6 +190,11 @@ func (s *Server) parseTemplates() error {
 		return fmt.Errorf("parse template terminal_page: %w", err)
 	}
 	s.terminalPage = t
+	t, err = template.New("attach_page").Funcs(funcs).ParseFS(assets, "templates/partials.html", "templates/attach.html")
+	if err != nil {
+		return fmt.Errorf("parse template attach_page: %w", err)
+	}
+	s.attachPage = t
 	return nil
 }
 
@@ -224,6 +230,8 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /partials/containers/{id}/job", s.handleRecreateJobPartial)
 	authed.HandleFunc("GET /containers/{id}/terminal", s.handleTerminalPage)
 	authed.HandleFunc("GET /containers/{id}/terminal/ws", s.handleTerminalWS)
+	authed.HandleFunc("GET /containers/{id}/attach", s.handleAttachPage)
+	authed.HandleFunc("GET /containers/{id}/attach/ws", s.handleAttachWS)
 	authed.HandleFunc("GET /containers/{id}/logs/download", s.handleLogsDownload)
 	authed.HandleFunc("GET /containers/{id}/logs/watch", s.handleLogsWatch)
 	authed.HandleFunc("GET /containers/{id}/logs/stream", s.handleLogsStream)

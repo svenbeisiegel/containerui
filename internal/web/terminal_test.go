@@ -20,7 +20,7 @@ func TestTerminalConnectInMenu(t *testing.T) {
 	e.login()
 
 	list := e.do("GET", "/partials/containers", nil, htmx).Body.String()
-	if !strings.Contains(list, `href="/containers/c0ffee000001/terminal" target="_blank" rel="noopener">Connect<`) {
+	if !strings.Contains(list, `href="/containers/c0ffee000001/terminal" target="_blank" rel="noopener" title="Open a shell in the container">Connect<`) {
 		t.Error("running container menu lacks Connect")
 	}
 	if strings.Contains(list, `/containers/c0ffee000002/terminal"`) {

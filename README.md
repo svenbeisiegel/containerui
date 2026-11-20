@@ -121,6 +121,17 @@ Features:
   checks that the container has a shell (bash, else sh) and shows the
   reason if no terminal can be opened. Up to 8 terminals can
   be open at once; *Disconnect*, closing the tab or signing out ends the shell.
+- **Attach** (docker and podman): the menu of every container has *Attach*,
+  which opens the container's main process (`<cli> container attach`) in a
+  new tab, e.g. to answer prompts of an image's first start. A stopped
+  container is offered *Start and attach* (`<cli> container start --attach`),
+  so no output is missed. Input is forwarded only if the container keeps
+  STDIN open (`--interactive`). *Detach*, `ctrl-p ctrl-q` (with a TTY),
+  closing the tab or signing out detach; the container keeps running.
+  *Attach again* re-attaches. On the create form, *Create and attach*
+  (shown while *Allocate a TTY* and *Keep STDIN open* are on) creates the
+  container and starts it attached in a new tab. Attach tabs count towards
+  the limit of 8 terminals.
 - **Logs**: the container menu offers *Download logs* (the container's complete
   output, stdout and stderr, as `<container-name>_<YYYYMMDD-HHMMSS>.log`)
   and, for a running container, *Watch logs*, which opens a new tab that
@@ -440,6 +451,7 @@ differ:
 | Network drivers | `bridge` | `bridge`, `macvlan`, `ipvlan`, `overlay` | `bridge`, `macvlan`, `ipvlan` |
 | IPv6 networks | — | `--ipv6` | `--ipv6` |
 | Container alias on connect | `--network-alias` | `--alias` | `--alias` |
+| Attach to a container | — (not verified yet) | yes | yes |
 | `--session` | yes | — | — |
 
 ## Compose
@@ -633,6 +645,15 @@ gets a random `CONTAINERUI_TERMINAL` environment tag, and closing a terminal
 sends SIGHUP (then SIGKILL) to all container processes carrying that tag.
 This needs `tr` and `grep` in the container, which every image with a shell
 has in practice.
+
+Attaching (`/containers/{id}/attach/ws`) uses the same page script and
+protocol, plus a `detached` control message. The server runs
+`<cli> container attach` (or `container start --attach [--interactive]` for
+a stopped container) with `--sig-proxy=false --detach-keys ctrl-p,ctrl-q` on
+a pseudo terminal. To detach it types the detach keys (with a TTY and STDIN)
+and then hangs up the pseudo terminal; `--sig-proxy=false` keeps that hangup
+away from the container's process. When the CLI ends, the server checks
+whether the container still runs to tell a detach from a stopped container.
 
 ### Logs
 

@@ -303,6 +303,10 @@
     <button type="submit" class="primary">Recreate container</button>
     {{else}}
     <a class="button" href="/containers">Cancel</a>
+    {{if .Caps.Attach}}
+    <button type="submit" name="attach" value="1" formtarget="_blank" data-attach-create {{if not (and $f.TTY $f.Interactive)}}hidden{{end}}
+            title="Create the container and start it attached in a new tab, to answer prompts of its first start">Create and attach</button>
+    {{end}}
     <button type="submit" class="primary">Create container</button>
     {{end}}
   </div>

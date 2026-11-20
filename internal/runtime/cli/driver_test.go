@@ -56,13 +56,20 @@ func (f *fakeRunner) StartPTY(args []string, cols, rows uint16) (runtime.Termina
 
 // stubTerminal stands in for a wslc process on a pseudo terminal.
 type stubTerminal struct {
-	done chan struct{}
-	once sync.Once
+	done    chan struct{}
+	once    sync.Once
+	written []byte
 }
 
-func (s *stubTerminal) exit()                       { s.once.Do(func() { close(s.done) }) }
-func (s *stubTerminal) Read([]byte) (int, error)    { <-s.done; return 0, io.EOF }
-func (s *stubTerminal) Write(b []byte) (int, error) { return len(b), nil }
+func (s *stubTerminal) exit()                    { s.once.Do(func() { close(s.done) }) }
+func (s *stubTerminal) Read([]byte) (int, error) { <-s.done; return 0, io.EOF }
+func (s *stubTerminal) Write(b []byte) (int, error) {
+	s.written = append(s.written, b...)
+	if string(b) == runtime.DetachSequence {
+		s.exit() // the CLI detaches and exits
+	}
+	return len(b), nil
+}
 func (s *stubTerminal) Resize(uint16, uint16) error { return nil }
 func (s *stubTerminal) Wait() (int, error)          { <-s.done; return 0, nil }
 func (s *stubTerminal) Close() error                { s.exit(); return nil }

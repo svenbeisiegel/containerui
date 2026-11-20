@@ -1,7 +1,8 @@
-// Browser terminal page (terminal.html): connects xterm.js to
-// /containers/{id}/terminal/ws as soon as the page opens. Binary WebSocket
+// Browser terminal pages: terminal.html connects xterm.js to a shell
+// (/containers/{id}/terminal/ws), attach.html (data-mode="attach") to the
+// container's main process (/containers/{id}/attach/ws). Binary WebSocket
 // messages carry raw terminal bytes; text messages carry JSON control
-// messages (resize, exit, error).
+// messages (resize, exit, detached, error).
 (function () {
   "use strict";
   var box = document.querySelector("[data-terminal]");
@@ -12,6 +13,11 @@
   var disconnectBtn = document.querySelector("[data-terminal-disconnect]");
   var session = null; // the open connection, if any
   var lastTerm = null; // kept after disconnect so its output stays readable
+  var attach = box.getAttribute("data-mode") === "attach";
+  var stdin = box.getAttribute("data-stdin") !== "false";
+  // Attach: the first connect starts a stopped container; later ones
+  // ("Attach again") attach to it while it runs.
+  var start = box.getAttribute("data-start") === "true";
 
   function setStatus(text, cls, message) {
     status.textContent = text;
@@ -54,7 +60,8 @@
 
     if (lastTerm) lastTerm.dispose();
     var term = new window.Terminal({
-      cursorBlink: true,
+      cursorBlink: stdin,
+      disableStdin: !stdin,
       fontFamily: 'ui-monospace, "Cascadia Mono", Consolas, monospace',
       fontSize: 14,
       scrollback: 5000,
@@ -67,7 +74,8 @@
     var proto = location.protocol === "https:" ? "wss:" : "ws:";
     var url = proto + "//" + location.host + box.getAttribute("data-url") +
       "?csrf=" + encodeURIComponent(box.getAttribute("data-csrf")) +
-      "&cols=" + term.cols + "&rows=" + term.rows;
+      "&cols=" + term.cols + "&rows=" + term.rows + (start ? "&start=1" : "");
+
     var ws = new WebSocket(url);
     ws.binaryType = "arraybuffer";
     var encoder = new TextEncoder();
@@ -97,7 +105,11 @@
 
     ws.onopen = function () {
       opened = true;
-      setStatus("Connected", "ok");
+      if (start) {
+        start = false;
+        connectBtn.textContent = connectBtn.getAttribute("data-again-label") || connectBtn.textContent;
+      }
+      setStatus(attach ? "Attached" : "Connected", "ok");
       sendResize();
       term.focus();
     };
@@ -108,7 +120,10 @@
       }
       var m;
       try { m = JSON.parse(e.data); } catch (err) { return; }
-      if (m.type === "exit") ended = "The shell exited with code " + m.code + ".";
+      if (m.type === "exit") {
+        ended = attach ? "The container stopped (exit code " + m.code + ")." : "The shell exited with code " + m.code + ".";
+      }
+      if (m.type === "detached") ended = "Detached. The container keeps running.";
       if (m.type === "error") { ended = m.message; failed = true; }
     };
     ws.onclose = function () {
@@ -118,14 +133,14 @@
       if (session === s) session = null;
       setConnected(false);
       if (ended) {
-        setStatus(failed ? "Error" : "Ended", failed ? "bad" : "info", ended);
+        setStatus(failed ? "Error" : (attach ? "Detached" : "Ended"), failed ? "bad" : "info", ended);
       } else if (!opened) {
         // The upgrade was refused (container stopped, no shell, too many
         // terminals, session ended, ...). The browser does not expose why.
         setStatus("Could not connect", "bad",
           "The container may have stopped, too many terminals may be open, or your session ended. Reload the page to see why.");
       } else {
-        setStatus("Disconnected", "info");
+        setStatus(attach ? "Detached" : "Disconnected", "info", attach ? "Detached. The container keeps running." : "");
       }
     };
   }
@@ -136,7 +151,7 @@
 
   connectBtn.addEventListener("click", connect);
   disconnectBtn.addEventListener("click", disconnect);
-  // Close the shell when the page goes away.
+  // Close the shell (or detach) when the page goes away.
   window.addEventListener("pagehide", disconnect);
-  connect();
+  if (box.getAttribute("data-autoconnect") !== "false") connect();
 })();

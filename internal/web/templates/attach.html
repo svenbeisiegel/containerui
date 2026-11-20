@@ -1,0 +1,50 @@
+{{define "attach_page"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Attach · {{if .C}}{{.C.Name}}{{else}}{{.ID}}{{end}} · ContainerUI</title>
+  {{if .Favicon}}<link rel="icon" href="{{.Favicon}}" type="{{.FaviconType}}">{{else}}<link rel="icon" href="data:,">{{end}}
+  <script src="/static/theme.js"></script>
+  <link rel="stylesheet" href="/static/app.css">
+  {{if .WSURL}}
+  <link rel="stylesheet" href="/static/vendor/xterm/xterm.css">
+  <script src="/static/vendor/xterm/xterm.js" defer></script>
+  <script src="/static/terminal.js" defer></script>
+  {{end}}
+</head>
+<body class="logwatch termwatch">
+  <header class="logwatch-head">
+    <div class="logwatch-title">
+      {{with .C}}
+      <strong>{{.Name}}</strong>
+      <span class="mono muted small">{{shortID .ID}}</span>
+      {{template "state" .State}}
+      {{else}}<strong>{{.ID}}</strong>{{end}}
+    </div>
+    <dl class="logwatch-meta">
+      {{with .C}}<div><dt>Image</dt><dd class="mono">{{.Image}}</dd></div>{{end}}
+      {{if .C}}
+      <div><dt>TTY</dt><dd>{{if .TTY}}yes{{else}}no{{end}}</dd></div>
+      <div><dt>Input</dt><dd>{{if .Stdin}}STDIN open{{else}}read-only (STDIN not open){{end}}</dd></div>
+      {{end}}
+      <div><dt>Opened</dt><dd>{{datetime .Opened}}</dd></div>
+    </dl>
+    {{if .WSURL}}
+    <div class="logwatch-controls">
+      <span class="badge" data-terminal-status>{{if .AutoConnect}}Connecting…{{else}}Not running{{end}}</span>
+      <button type="button" data-terminal-disconnect hidden title="Detach; the container keeps running">Detach</button>
+      <button type="button" class="primary" data-terminal-connect {{if .AutoConnect}}hidden{{end}}
+              data-again-label="Attach again">{{if .Start}}Start and attach{{else}}Attach again{{end}}</button>
+    </div>
+    <p class="logwatch-note" data-terminal-note {{if .AutoConnect}}hidden{{end}}>{{if not .AutoConnect}}The container is not running. Start it attached to see its output from the first line.{{end}}</p>
+    <p class="logwatch-note muted small">{{if and .TTY .Stdin}}Detach with the Detach button or <kbd>{{.DetachKeys}}</kbd>. {{end}}Closing this tab detaches; the container keeps running.</p>
+    {{else}}
+    <p class="logwatch-note error-text">{{.Err}}</p>
+    {{end}}
+  </header>
+  {{if .WSURL}}<div class="terminal-box" data-terminal data-mode="attach" data-url="{{.WSURL}}" data-csrf="{{.CSRF}}"
+       data-stdin="{{.Stdin}}" data-start="{{.Start}}" data-autoconnect="{{.AutoConnect}}"></div>{{end}}
+</body>
+</html>
+{{end}}

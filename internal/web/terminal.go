@@ -11,6 +11,7 @@ import (
 
 	"github.com/coder/websocket"
 
+	"github.com/svenbeisiegel/containerui/internal/auth"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 )
 
@@ -131,41 +132,73 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer s.terminals.Add(-1)
 
-	// The server's read/write timeouts would cut a long-lived connection.
-	rc := http.NewResponseController(w)
-	_ = rc.SetReadDeadline(time.Time{})
-	_ = rc.SetWriteDeadline(time.Time{})
-	conn, err := websocket.Accept(w, r, nil)
+	conn, err := s.acceptTerminal(w, r)
 	if err != nil {
 		s.log.Warn("terminal upgrade failed", "id", c.ID, "user", sess.Username, "error", err)
 		return
 	}
 	defer conn.CloseNow()
-	conn.SetReadLimit(terminalReadLimit)
 
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
-	sendControl := func(m terminalControl) {
-		b, _ := json.Marshal(m)
-		_ = conn.Write(ctx, websocket.MessageText, b)
-	}
 
 	cols := sizeParam(q.Get("cols"), 80, 10, 500)
 	rows := sizeParam(q.Get("rows"), 24, 5, 300)
 	term, err := s.rt.OpenTerminal(ctx, c.ID, runtime.TerminalOpts{Shell: shell, Cols: cols, Rows: rows})
 	if err != nil {
 		s.log.Warn("terminal open failed", "id", c.ID, "user", sess.Username, "error", err)
-		sendControl(terminalControl{Type: "error", Message: userError(err)})
+		sendControl(ctx, conn, terminalControl{Type: "error", Message: userError(err)})
 		conn.Close(websocket.StatusInternalError, "open failed")
 		return
 	}
 	start := time.Now()
 	s.log.Info("terminal opened", "id", c.ID, "name", c.Name, "shell", shell, "user", sess.Username)
+	reason, code := s.pumpTerminal(ctx, cancel, conn, term, sess, true, c.ID)
+	if reason == "exited" {
+		sendControl(ctx, conn, terminalControl{Type: "exit", Code: &code})
+		conn.Close(websocket.StatusNormalClosure, "shell exited")
+	} else {
+		conn.Close(websocket.StatusNormalClosure, reason)
+	}
+	s.log.Info("terminal closed", "id", c.ID, "name", c.Name, "user", sess.Username, "reason", reason,
+		"exit_code", code, "duration", time.Since(start).Round(time.Second))
+}
+
+// sendControl writes a terminalControl message to the browser.
+func sendControl(ctx context.Context, conn *websocket.Conn, m terminalControl) {
+	b, _ := json.Marshal(m)
+	_ = conn.Write(ctx, websocket.MessageText, b)
+}
+
+// acceptTerminal upgrades a terminal WebSocket request. The server's
+// read/write timeouts would cut the long-lived connection, so they are
+// lifted first.
+func (s *Server) acceptTerminal(w http.ResponseWriter, r *http.Request) (*websocket.Conn, error) {
+	rc := http.NewResponseController(w)
+	_ = rc.SetReadDeadline(time.Time{})
+	_ = rc.SetWriteDeadline(time.Time{})
+	conn, err := websocket.Accept(w, r, nil)
+	if err != nil {
+		return nil, err
+	}
+	conn.SetReadLimit(terminalReadLimit)
+	return conn, nil
+}
+
+// pumpTerminal connects a browser terminal to term until the process
+// exits ("exited", with its exit code), the browser goes away
+// ("disconnected") or the login session ends ("session ended"). Binary
+// messages carry raw terminal bytes, text messages terminalControl JSON;
+// without input, typed bytes are dropped. term is closed and its remaining
+// output flushed before pumpTerminal returns; conn stays open. cancel
+// cancels ctx.
+func (s *Server) pumpTerminal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, term runtime.Terminal,
+	sess *auth.Session, input bool, id string) (reason string, code int) {
 	var closeOnce sync.Once
 	closeTerm := func() {
 		closeOnce.Do(func() {
 			if err := term.Close(); err != nil {
-				s.log.Warn("terminal close", "id", c.ID, "error", err)
+				s.log.Warn("terminal close", "id", id, "error", err)
 			}
 		})
 	}
@@ -200,6 +233,9 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if typ == websocket.MessageBinary {
+				if !input {
+					continue
+				}
 				lastInput.Store(time.Now().UnixNano())
 				if _, err := term.Write(data); err != nil {
 					return
@@ -222,8 +258,7 @@ func (s *Server) handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	ticker := time.NewTicker(terminalSessionCheck)
 	defer ticker.Stop()
 	lastCheck := time.Now()
-	reason := ""
-	code := -1
+	code = -1
 loop:
 	for {
 		select {
@@ -243,7 +278,7 @@ loop:
 			lastCheck = time.Now()
 			if !alive {
 				reason = "session ended"
-				sendControl(terminalControl{Type: "error", Message: "Your session has ended. Sign in again to reconnect."})
+				sendControl(ctx, conn, terminalControl{Type: "error", Message: "Your session has ended. Sign in again to reconnect."})
 				break loop
 			}
 		}
@@ -255,14 +290,7 @@ loop:
 	case <-outDone:
 	case <-time.After(2 * time.Second):
 	}
-	if reason == "exited" {
-		sendControl(terminalControl{Type: "exit", Code: &code})
-		conn.Close(websocket.StatusNormalClosure, "shell exited")
-	} else {
-		conn.Close(websocket.StatusNormalClosure, reason)
-	}
-	s.log.Info("terminal closed", "id", c.ID, "name", c.Name, "user", sess.Username, "reason", reason,
-		"exit_code", code, "duration", time.Since(start).Round(time.Second))
+	return reason, code
 }
 
 // sizeParam parses a terminal dimension, falling back to def.

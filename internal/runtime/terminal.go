@@ -12,6 +12,21 @@ type TerminalOpts struct {
 	Cols, Rows uint16 // initial terminal size
 }
 
+// AttachOpts configures attaching to a container's main process.
+type AttachOpts struct {
+	Start      bool   // start the (stopped) container attached
+	Stdin      bool   // forward input; the container must keep STDIN open
+	TTY        bool   // the container has a TTY (detach keys work)
+	Cols, Rows uint16 // initial terminal size
+}
+
+// DetachKeys is the key sequence that detaches from an attached container
+// (the docker and podman default, passed explicitly).
+const DetachKeys = "ctrl-p,ctrl-q"
+
+// DetachSequence is what typing DetachKeys sends.
+const DetachSequence = "\x10\x11"
+
 // Terminal is an interactive process attached to a pseudo terminal. Reads
 // and writes carry raw terminal bytes (VT sequences included).
 type Terminal interface {

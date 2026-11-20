@@ -117,7 +117,7 @@ func (f *Runtime) record(format string, args ...any) error {
 func (f *Runtime) Name() string { return "fake" }
 
 func (f *Runtime) Capabilities() runtime.Capabilities {
-	c := runtime.Capabilities{Restart: true, Inspect: true, Pull: true, Tag: true, Volumes: true, Networks: true, Terminal: true, Logs: true,
+	c := runtime.Capabilities{Restart: true, Inspect: true, Pull: true, Tag: true, Volumes: true, Networks: true, Terminal: true, Attach: true, Logs: true,
 		VolumeDrivers: volumeDrivers, PruneAnonymous: true, NetworkDrivers: networkDrivers, NetworkIPv6: true, Stats: !f.NoStats,
 		CreateOptions: runtime.AllOptions()}
 	if f.NoNetworks {
