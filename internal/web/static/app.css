@@ -769,3 +769,25 @@ th.check, td.check { width: 1%; white-space: nowrap; }
 .actions.start { justify-content: flex-start; }
 .upload-progress { display: flex; flex-direction: column; gap: .35rem; }
 .upload-progress progress { width: 100%; accent-color: var(--accent); }
+
+/* ---------- volume files (volume_files.html, volume_edit.html) ---------- */
+.crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: 0 0 .75rem; font-size: .9rem; }
+.crumbs span { color: var(--muted); }
+table.files td { vertical-align: middle; }
+table.files td:first-child { min-width: 12rem; }
+.file-name { display: inline-flex; align-items: flex-start; gap: .45rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.file-icon { flex: none; margin-top: .15rem; color: var(--muted); }
+.file-icon.dir { color: var(--accent); }
+.upload-progress { display: flex; align-items: center; gap: .5rem; }
+.upload-progress progress { flex: 1; }
+.edit-title { display: inline-flex; align-items: center; gap: .4rem; }
+.dirty-dot { color: var(--accent); font-size: .9em; }
+.edit-meta { display: flex; flex-wrap: wrap; gap: .2rem 1.5rem; margin: 0 0 .75rem; }
+.edit-meta div { display: flex; gap: .4rem; min-width: 0; }
+.edit-meta dt { color: var(--muted); }
+.edit-meta dd { margin: 0; overflow-wrap: anywhere; }
+.file-editor {
+  height: max(20rem, calc(100vh - 20rem)); margin-bottom: .6rem;
+  border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+}
+.file-editor.read-only { opacity: .92; }

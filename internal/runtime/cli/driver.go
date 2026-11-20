@@ -117,7 +117,7 @@ func (d *Driver) Capabilities() runtime.Capabilities {
 	c := runtime.Capabilities{Restart: true, Inspect: true, Pull: true, Tag: true, Volumes: true, Networks: true, Terminal: true, Logs: true,
 		VolumeDrivers: d.flavor.volumeDrivers, PruneAnonymous: d.flavor.pruneAnonymous,
 		NetworkDrivers: d.flavor.networkDrivers, NetworkIPv6: d.flavor.networkIPv6, Stats: d.flavor.stats,
-		CreateOptions: d.flavor.createOptions, Attach: d.flavor.attach, VolumeBackup: d.flavor.volumeArchive}
+		CreateOptions: d.flavor.createOptions, Attach: d.flavor.attach, VolumeBackup: d.flavor.volumeArchive, VolumeFiles: d.flavor.volumeArchive}
 	if d.compose != nil {
 		c.Compose, c.ComposeVersion = true, d.compose.name+" "+d.compose.version
 	}

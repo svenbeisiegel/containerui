@@ -25,13 +25,19 @@ const (
 // helperArgs runs the helper image with the volume mounted at /data. The
 // tar stream must not end up in the container's log, so logging is off.
 func (d *Driver) helperArgs(volume string, readOnly bool, script string) []string {
+	return d.helperRunArgs(helperLabel, volume, readOnly, script)
+}
+
+// helperRunArgs runs the helper image with a label, the volume at /data and
+// a shell script.
+func (d *Driver) helperRunArgs(label, volume string, readOnly bool, script string) []string {
 	mount := volume + ":/data"
 	if readOnly {
 		mount += ":ro"
 	}
 	return []string{"container", "run", "--rm", "--interactive", "--quiet",
 		"--network", "none", "--log-driver", "none", "--user", "0:0",
-		"--label", helperLabel, "--volume", mount,
+		"--label", label, "--volume", mount,
 		"--entrypoint", "sh", d.helperImage, "-c", script}
 }
 

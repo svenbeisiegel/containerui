@@ -174,7 +174,7 @@ func (s *Server) Close() {
 }
 
 func (s *Server) parseTemplates() error {
-	pages := []string{"login", "dashboard", "containers", "container_choose", "container_import", "container_new", "container_detail", "images", "image_pull", "volumes", "volume_new", "volume_detail", "volume_restore", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events"}
+	pages := []string{"login", "dashboard", "containers", "container_choose", "container_import", "container_new", "container_detail", "images", "image_pull", "volumes", "volume_new", "volume_detail", "volume_restore", "volume_files", "volume_edit", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events"}
 	for _, p := range pages {
 		t, err := template.New(p).Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/partials.html", "templates/"+p+".html")
 		if err != nil {
@@ -264,6 +264,16 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /volumes/restore/{id}", s.handleVolumeRestoreChoose)
 	authed.HandleFunc("POST /volumes/restore/{id}", s.handleVolumeRestore)
 	authed.HandleFunc("POST /volumes/restore/{id}/discard", s.handleVolumeRestoreDiscard)
+	authed.HandleFunc("GET /volumes/files/{name}", s.handleVolumeFiles)
+	authed.HandleFunc("GET /partials/volume-files/{name}", s.handleVolumeFilesPartial)
+	authed.HandleFunc("GET /volumes/files/{name}/raw", s.handleVolumeFileRaw)
+	authed.HandleFunc("GET /volumes/files/{name}/edit", s.handleVolumeFileEdit)
+	authed.HandleFunc("POST /volumes/files/{name}/save", s.handleVolumeFileSave)
+	authed.HandleFunc("POST /volumes/files/{name}/upload", s.handleVolumeUpload)
+	authed.HandleFunc("POST /volumes/files/{name}/mkdir", s.handleVolumeMkdir)
+	authed.HandleFunc("POST /volumes/files/{name}/newfile", s.handleVolumeNewFile)
+	authed.HandleFunc("POST /volumes/files/{name}/rename", s.handleVolumeRename)
+	authed.HandleFunc("POST /volumes/files/{name}/delete", s.handleVolumeRemovePath)
 	authed.HandleFunc("GET /networks", s.handleNetworks)
 	authed.HandleFunc("GET /partials/networks", s.handleNetworksPartial)
 	authed.HandleFunc("GET /networks/new", s.handleNetworkNew)

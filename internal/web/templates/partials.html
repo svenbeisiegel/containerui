@@ -403,6 +403,7 @@
      A volume in use is never deleted. */}}
 {{define "volume_actions"}}
 {{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "v-%s" .V.Name) "Name" .V.Name)}}{{else}}<div class="actions">{{end}}
+  {{if .Files}}<a class="button" href="/volumes/files/{{.V.Name}}" title="Browse and edit the files of the volume">Browse files</a>{{end}}
   {{if .Backup}}
   <form method="post" action="/volumes/backup">
     <input type="hidden" name="csrf" value="{{.CSRF}}">
@@ -433,7 +434,7 @@
   <div class="table-wrap"><table>
     <thead><tr>{{if .Backup}}<th class="check"><input type="checkbox" data-select-all aria-label="Select all volumes" title="Select all"></th>{{end}}<th>Name</th><th>Driver</th><th>Scope</th><th>Used by</th><th>Data location</th><th class="right">Actions</th></tr></thead>
     <tbody>
-    {{$csrf := .CSRF}}{{$backup := .Backup}}
+    {{$csrf := .CSRF}}{{$backup := .Backup}}{{$files := .Files}}
     {{range .Volumes}}
       <tr>
         {{if $backup}}<td class="check"><input type="checkbox" name="volume" value="{{.Name}}" form="volume-backup-form" aria-label="Select {{.Name}}"{{if .InUse}} data-in-use{{end}}></td>{{end}}
@@ -442,10 +443,72 @@
         <td>{{.Scope}}</td>
         <td>{{template "volume_users" .UsedBy}}</td>
         <td class="mono small"{{if ne .DataLocation .Mountpoint}} title="Mountpoint: {{.Mountpoint}}"{{end}}>{{.DataLocation}}</td>
-        <td class="right">{{template "volume_actions" (dict "V" . "View" "list" "CSRF" $csrf "Backup" $backup "Menu" true)}}</td>
+        <td class="right">{{template "volume_actions" (dict "V" . "View" "list" "CSRF" $csrf "Backup" $backup "Files" $files "Menu" true)}}</td>
       </tr>
     {{else}}
       <tr><td colspan="{{if .Backup}}7{{else}}6{{end}}" class="empty">{{if .Err}}Could not load volumes.{{else}}No volumes yet. Use <em>Create volume</em> to add one.{{end}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+{{end}}
+
+{{/* ---------- volume files ---------- */}}
+{{define "file_icon"}}{{if .IsDir}}<svg class="file-icon dir" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="currentColor" d="M3 6.5A1.5 1.5 0 0 1 4.5 5h4.6l2 2h8.4A1.5 1.5 0 0 1 21 8.5v9a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 17.5z"/></svg>{{else if .IsLink}}<svg class="file-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/></svg>{{else}}<svg class="file-icon" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" d="M6 3h8l4 4v14H6zM14 3v4h4"/></svg>{{end}}{{end}}
+
+{{/* volume_files_table expects volumeFilesView. */}}
+{{define "volume_files_table"}}
+<section id="volume-files" class="panel" data-volume-files hx-get="{{.PartialURL}}" hx-trigger="volume-files-changed from:body" hx-swap="outerHTML">
+  {{template "flash" .Flash}}
+  {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
+  <nav class="crumbs mono" aria-label="Folder">
+    <a href="/volumes/files/{{.Volume}}">{{.Volume}}</a>
+    {{range .Crumbs}}<span aria-hidden="true">/</span><a href="/volumes/files/{{$.Volume}}?path={{.Path}}">{{.Name}}</a>{{end}}
+  </nav>
+  <div class="table-wrap"><table class="files">
+    <thead><tr><th>Name</th><th class="num">Size</th><th>Permissions</th><th>Owner</th><th>Modified</th><th class="right">Actions</th></tr></thead>
+    <tbody>
+    {{if .Dir}}<tr><td colspan="6"><a class="file-name" href="/volumes/files/{{.Volume}}{{with .Parent}}?path={{.}}{{end}}" aria-label="Parent folder" title="Parent folder">{{template "file_icon" (dict "IsDir" true)}}<span>..</span></a></td></tr>{{end}}
+    {{range .Entries}}
+      <tr>
+        <td class="mono">
+          {{if .IsDir}}<a class="file-name" href="/volumes/files/{{$.Volume}}?path={{.Path}}">{{template "file_icon" .}}<span>{{.Name}}</span></a>
+          {{else if .IsRegular}}<a class="file-name" href="/volumes/files/{{$.Volume}}/edit?path={{.Path}}" title="Open in the editor">{{template "file_icon" .}}<span>{{.Name}}</span></a>
+          {{else}}<span class="file-name">{{template "file_icon" .}}<span>{{.Name}}</span></span>{{if .IsLink}} <span class="muted small">→ {{.Link}}</span>{{end}}{{end}}
+        </td>
+        <td class="num small">{{if .IsRegular}}<span title="{{.Size}} bytes">{{.HumanSize}}</span>{{end}}</td>
+        <td class="mono small" title="{{.Octal}}">{{.Perm}}</td>
+        <td class="mono small">{{.Owner}}</td>
+        <td class="small" title="{{datetime .ModTime}}">{{ago .ModTime}}</td>
+        <td class="right">
+          {{template "row_menu_open" (dict "Key" (printf "f-%s" .Path) "Name" .Name)}}
+            {{if .IsRegular}}
+            <a class="button" href="/volumes/files/{{$.Volume}}/edit?path={{.Path}}">Edit</a>
+            <a class="button" href="/volumes/files/{{$.Volume}}/raw?path={{.Path}}&amp;download=1" download>Download</a>
+            {{else if .IsDir}}
+            <a class="button" href="/volumes/files/{{$.Volume}}?path={{.Path}}">Open</a>
+            {{end}}
+            <details class="row-menu-sub">
+              <summary class="button">Rename…</summary>
+              <form class="tag-form" method="post" action="/volumes/files/{{$.Volume}}/rename" hx-post="/volumes/files/{{$.Volume}}/rename" hx-target="#volume-files" hx-swap="outerHTML" hx-disabled-elt="find button">
+                <input type="hidden" name="csrf" value="{{$.CSRF}}">
+                <input type="hidden" name="path" value="{{.Path}}">
+                <input name="name" value="{{.Name}}" required autocomplete="off" spellcheck="false" aria-label="New name for {{.Name}}">
+                <button type="submit" class="primary">Rename</button>
+              </form>
+            </details>
+            <hr class="row-menu-sep">
+            <form method="post" action="/volumes/files/{{$.Volume}}/delete" hx-post="/volumes/files/{{$.Volume}}/delete" hx-target="#volume-files" hx-swap="outerHTML" hx-disabled-elt="find button"
+                  hx-confirm="{{if .IsDir}}Delete folder {{.Name}} with all its content?{{else}}Delete {{.Name}}?{{end}} This cannot be undone.">
+              <input type="hidden" name="csrf" value="{{$.CSRF}}">
+              <input type="hidden" name="path" value="{{.Path}}">
+              <button type="submit" class="danger">Delete</button>
+            </form>
+          {{template "row_menu_close"}}
+        </td>
+      </tr>
+    {{else}}
+      <tr><td colspan="6" class="empty">{{if .Err}}Could not list this folder.{{else}}This folder is empty.{{end}}</td></tr>
     {{end}}
     </tbody>
   </table></div>

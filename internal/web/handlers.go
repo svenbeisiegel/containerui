@@ -998,6 +998,7 @@ type volumesView struct {
 	Flash   *flash
 	CSRF    string
 	Backup  bool // volumes can be selected for a backup
+	Files   bool // the file browser is available
 }
 
 type volumeForm struct {
@@ -1054,6 +1055,7 @@ type volumeDetailView struct {
 	Err     string
 	CSRF    string
 	Backup  bool
+	Files   bool
 }
 
 // volumesSupported answers 404 if the runtime has no volume support.
@@ -1088,7 +1090,7 @@ func (s *Server) volumeUsage(ctx context.Context) (users map[string][]string, ru
 }
 
 func (s *Server) loadVolumes(r *http.Request, f *flash) volumesView {
-	v := volumesView{Flash: f, CSRF: sessionFrom(r).CSRF, Backup: s.caps().VolumeBackup}
+	v := volumesView{Flash: f, CSRF: sessionFrom(r).CSRF, Backup: s.caps().VolumeBackup, Files: s.caps().VolumeFiles}
 	vols, err := s.rt.ListVolumes(r.Context())
 	if err != nil {
 		v.Err = userError(err)
@@ -1132,7 +1134,7 @@ func (s *Server) handleVolumeDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	v := volumeDetailView{Name: name, CSRF: sessionFrom(r).CSRF, Backup: s.caps().VolumeBackup}
+	v := volumeDetailView{Name: name, CSRF: sessionFrom(r).CSRF, Backup: s.caps().VolumeBackup, Files: s.caps().VolumeFiles}
 	for _, row := range s.loadVolumes(r, nil).Volumes {
 		if row.Name == name {
 			v.Volume = &row

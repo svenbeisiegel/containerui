@@ -58,6 +58,8 @@ type Runtime struct {
 	ComposeEnabled bool
 	// NoVolumeBackup hides volume backup (Capabilities.VolumeBackup).
 	NoVolumeBackup bool
+	// NoVolumeFiles hides the volume file browser (Capabilities.VolumeFiles).
+	NoVolumeFiles bool
 
 	content map[string]map[string]volumeFile // volume content by volume name
 }
@@ -125,7 +127,7 @@ func (f *Runtime) Name() string { return "fake" }
 func (f *Runtime) Capabilities() runtime.Capabilities {
 	c := runtime.Capabilities{Restart: true, Inspect: true, Pull: true, Tag: true, Volumes: true, Networks: true, Terminal: true, Attach: true, Logs: true,
 		VolumeDrivers: volumeDrivers, PruneAnonymous: true, NetworkDrivers: networkDrivers, NetworkIPv6: true, Stats: !f.NoStats,
-		CreateOptions: runtime.AllOptions(), VolumeBackup: !f.NoVolumeBackup}
+		CreateOptions: runtime.AllOptions(), VolumeBackup: !f.NoVolumeBackup, VolumeFiles: !f.NoVolumeFiles}
 	if f.NoNetworks {
 		c.Networks = false
 	}

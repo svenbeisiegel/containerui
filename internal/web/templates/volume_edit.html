@@ -1,0 +1,31 @@
+{{define "head"}}
+<script src="/static/vendor/ace/ace.js" defer></script>
+<script src="/static/fileedit.js" defer></script>
+{{end}}
+{{define "content"}}
+{{$v := .Data}}
+<div class="page-head">
+  <div class="title-row">
+    <a class="button" href="{{$v.BackURL}}" data-edit-close>Close</a>
+    <h1 class="wrap edit-title"><span class="mono">{{$v.Name}}</span><span class="dirty-dot" data-edit-dirty hidden title="Unsaved changes" aria-label="Unsaved changes">●</span></h1>
+  </div>
+  <div class="actions">
+    <a class="button" href="{{$v.DownloadURL}}" download>Download</a>
+    <button type="button" class="primary" data-edit-save disabled title="Save (Ctrl+S / ⌘S)">Save</button>
+  </div>
+</div>
+<section class="panel editor-panel">
+  <dl class="edit-meta small">
+    <div><dt>Volume</dt><dd class="mono"><a href="/volumes/{{$v.Volume}}">{{$v.Volume}}</a></dd></div>
+    <div><dt>Path</dt><dd class="mono">/{{$v.Path}}</dd></div>
+    <div><dt>Owner</dt><dd class="mono" data-edit-owner>…</dd></div>
+    <div><dt>Mode</dt><dd class="mono" data-edit-mode>…</dd></div>
+    <div><dt>Size</dt><dd data-edit-size>…</dd></div>
+    <div><dt>Encoding</dt><dd data-edit-encoding>…</dd></div>
+  </dl>
+  <div class="flash notice" data-edit-notice role="status" hidden></div>
+  <div class="flash error" data-edit-error role="alert" hidden></div>
+  <div class="file-editor" data-file-editor data-raw="{{$v.RawURL}}" data-save="{{$v.SaveURL}}" data-csrf="{{.CSRF}}" data-name="{{$v.Name}}" aria-label="Content of {{$v.Name}}"></div>
+  <p class="hint">Saving replaces the file in one step and keeps its owner and permissions. If someone changed the file since it was opened, you are asked before it is overwritten.</p>
+</section>
+{{end}}

@@ -45,6 +45,9 @@ func (s *Server) caps() runtime.Capabilities {
 	if _, ok := s.rt.(runtime.VolumeArchiver); !ok {
 		c.VolumeBackup = false
 	}
+	if _, ok := s.rt.(runtime.VolumeBrowser); !ok {
+		c.VolumeFiles = false
+	}
 	return c
 }
 

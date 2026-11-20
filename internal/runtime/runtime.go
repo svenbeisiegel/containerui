@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"path"
 	"strings"
 	"time"
 )
@@ -97,6 +99,81 @@ type VolumeArchiver interface {
 	ImportVolume(ctx context.Context, name string, r io.Reader, replace bool) error
 }
 
+// VolumeEntry is a file, folder or link in a volume.
+type VolumeEntry struct {
+	Name    string      // base name; the path given for ReadVolumeFile and WriteVolumeFile
+	Mode    fs.FileMode // type, permissions and setuid/setgid/sticky bits
+	Size    int64
+	UID     int
+	GID     int
+	ModTime time.Time // to the second
+	Link    string    // target of a symbolic link
+}
+
+// ExistRule says whether WriteVolumeFile may create or replace a file.
+type ExistRule int
+
+const (
+	ExistAny          ExistRule = iota // create or replace
+	ExistMustExist                     // replace only (ErrNotFound if missing)
+	ExistMustNotExist                  // create only (ErrConflict if present)
+)
+
+// WriteFileOpts tune WriteVolumeFile.
+type WriteFileOpts struct {
+	// ExpectModTime, when set, makes the write fail with ErrChanged if the
+	// file's modification time (seconds) differs: someone else changed it.
+	ExpectModTime time.Time
+	Exist         ExistRule
+}
+
+// VolumeBrowser is implemented by drivers that can list and change single
+// files in a volume. Paths are relative to the volume's root ("" or "." is
+// the root) and use slashes; nothing outside the volume is reachable, also
+// not through symbolic links. Capabilities.VolumeFiles reports whether it
+// works for this runtime.
+type VolumeBrowser interface {
+	// ListVolumeDir lists a folder (not recursively).
+	ListVolumeDir(ctx context.Context, volume, dir string) ([]VolumeEntry, error)
+	// ReadVolumeFile reads up to limit bytes (0: all) of a regular file.
+	// open is called with the file's metadata before any content and
+	// returns where the content goes.
+	ReadVolumeFile(ctx context.Context, volume, file string, limit int64, open func(VolumeEntry) (io.Writer, error)) error
+	// WriteVolumeFile replaces a file atomically with the size bytes r
+	// holds; when r ends early or fails, the file stays as it was. An
+	// existing file keeps its owner and permissions; a new one gets the
+	// owner of its folder and mode 0644.
+	WriteVolumeFile(ctx context.Context, volume, file string, r io.Reader, size int64, o WriteFileOpts) (VolumeEntry, error)
+	// MakeVolumeDir creates a folder owned like its parent, mode 0755.
+	MakeVolumeDir(ctx context.Context, volume, dir string) error
+	// RenameVolumePath renames an entry within its folder (ErrConflict if
+	// newName exists).
+	RenameVolumePath(ctx context.Context, volume, from, newName string) error
+	// RemoveVolumePath removes a file, link or folder with its content.
+	RemoveVolumePath(ctx context.Context, volume, p string) error
+}
+
+// VolumeRel cleans a path within a volume: "" for the root, otherwise a
+// slash-separated relative path without "." or ".." elements.
+func VolumeRel(p string) (string, error) {
+	if strings.ContainsRune(p, 0) {
+		return "", fmt.Errorf("%w: path contains a NUL byte", ErrInvalid)
+	}
+	p = strings.TrimPrefix(path.Clean("/"+p), "/")
+	return p, nil
+}
+
+// ValidVolumeName checks a new file or folder name.
+func ValidVolumeName(name string) error {
+	switch {
+	case name == "" || name == "." || name == "..":
+		return fmt.Errorf("%w: enter a name", ErrInvalid)
+	case strings.ContainsAny(name, "/\x00"):
+		return fmt.Errorf("%w: a name may not contain /", ErrInvalid)
+	}
+	return nil
+}
+
 // Capabilities tells the UI which optional features a driver supports, so
 // unsupported actions can be hidden instead of failing.
 type Capabilities struct {
@@ -120,6 +197,9 @@ type Capabilities struct {
 	// VolumeBackup: the driver implements VolumeArchiver (backup and
 	// restore of volume content).
 	VolumeBackup bool
+	// VolumeFiles: the driver implements VolumeBrowser (file browser and
+	// editor for volume content).
+	VolumeFiles bool
 
 	// NetworkDrivers lists the drivers CreateNetwork accepts; the first is
 	// the runtime's default.
@@ -307,6 +387,8 @@ var (
 	ErrConflict    = errors.New("conflict")
 	ErrUnsupported = errors.New("not supported by this runtime")
 	ErrInvalid     = errors.New("invalid argument")
+	// ErrChanged: a file changed since it was read (WriteFileOpts.ExpectModTime).
+	ErrChanged = errors.New("changed since it was read")
 )
 
 // CommandError describes a failed backend command (CLI invocation, API call).

@@ -149,7 +149,9 @@ Features:
   delete the container first. **Backup and restore** (docker and podman,
   see [Volume backup and restore](#volume-backup-and-restore)): select
   volumes in the list and download them as one file, then restore them
-  later, here or on another host.
+  later, here or on another host. **Browse files** (docker and podman, see
+  [Volume file browser](#volume-file-browser)): browse a volume's folders,
+  edit text files, upload, download, create, rename and delete files.
 - **Networks**: list (with the containers attached to each network),
   create (name, driver, and optionally subnet, gateway, IP range,
   `--internal`, `--ipv6` on docker/podman, driver options, labels), delete,
@@ -498,6 +500,43 @@ manifest.json              format, version, creation time, host, runtime and
 volumes/<name>/...         the content of volume <name>, one volume after the other
 ```
 
+
+## Volume file browser
+
+On docker and podman, *Browse files* in a volume's row menu (or on its
+detail page) lists the volume's folders with size, permissions
+(`-rw-r--r--`, octal on hover), numeric owner `uid:gid` and modification
+time. Symbolic links are shown with their target and not followed. From
+the toolbar you create an empty file (opened in the editor) or a folder, and
+**upload** files; the row menu edits, downloads, renames or deletes an
+entry (a folder with all its content, after a confirmation).
+
+The **editor** is [Ace](https://ace.c9.io) 1.45.2 (BSD-3-Clause, vendored
+in `internal/web/static/vendor/ace/` with the modes for common config and
+source files), with syntax colouring by file name, search (Ctrl+F) and
+Ctrl+S / ⌘S to save. A file is saved in the encoding it was read in (UTF-8,
+or UTF-16 with a byte order mark), with its byte order mark and line
+endings. Files up to 10 MiB that are valid text can be edited; other files
+are shown read only. Saving is refused when the file changed since it was
+opened (its modification time differs), and the editor asks before
+overwriting the other change.
+
+**Owners and permissions are kept.** A saved or replaced file is written to
+a temporary file in the same folder, given the old file's uid, gid and mode
+(including setuid, setgid and sticky bits) and then renamed over it, so a
+container never reads a half-written file. When the upload or save arrives
+incomplete, the file stays as it was. New files and folders belong to the
+owner of the folder they are created in, with mode 644 and 755. An upload
+only replaces an existing file with *Replace files that exist*.
+
+Each action runs the same short-lived helper container as backup and
+restore (`runtime.volume_helper_image`, no network, no log, label
+`containerui.helper=volume-files`), with the volume mounted read only for
+listing and reading. Paths are passed to it as arguments, never as part of
+its script, and every path is resolved inside the helper: a link that
+leads out of the volume is refused. Changes take effect at once, also for
+running containers that use the volume.
+
 ## Compose
 
 The Compose section uses the runtime's **native compose tool**. ContainerUI
@@ -815,9 +854,12 @@ classification, volume drivers) and an entry in `Flavors`.
 - Every state-changing request needs a per-session CSRF token and must come
   from the same origin.
 - A strict Content-Security-Policy is set; all assets, including htmx 2.0.4
-  and xterm.js, are embedded in the binary. The terminal page alone
-  also allows inline *styles* (`style-src 'unsafe-inline'`), which xterm.js
-  needs for its renderer; scripts stay restricted to `'self'`.
+  xterm.js and Ace, are embedded in the binary. The terminal page and the
+  volume file editor alone also allow inline *styles*
+  (`style-src 'unsafe-inline'`), which xterm.js and Ace need for their
+  renderers; scripts stay restricted to `'self'`. Volume files are sent to
+  the browser as `application/octet-stream` with `nosniff` and a `sandbox`
+  policy, so a file is never shown as a page of ContainerUI.
 - The terminal WebSocket requires a signed-in session, the session's CSRF
   token and a same-origin `Origin` header. The server repeats the shell check
   itself; nothing the browser sends selects the command that runs. Open

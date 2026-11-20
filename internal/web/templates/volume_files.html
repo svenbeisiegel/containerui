@@ -1,0 +1,56 @@
+{{define "head"}}<script src="/static/volumefiles.js" defer></script>{{end}}
+{{define "content"}}
+{{$v := .Data}}
+<div class="page-head">
+  <div class="title-row">{{template "back_button" (printf "/volumes/%s" $v.Volume)}}<h1 class="wrap">Files of {{$v.Volume}}</h1></div>
+  <div class="actions">
+    <details class="menu">
+      <summary class="button">New file</summary>
+      <form method="post" action="/volumes/files/{{$v.Volume}}/newfile" hx-post="/volumes/files/{{$v.Volume}}/newfile" hx-target="#volume-files" hx-swap="outerHTML" hx-disabled-elt="find button" class="menu-panel stack">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <input type="hidden" name="path" value="{{$v.Dir}}">
+        <label class="field">
+          <span class="field-label">File name</span>
+          <input name="name" required autocomplete="off" spellcheck="false" placeholder="config.yaml">
+        </label>
+        <p class="hint">The empty file opens in the editor. It belongs to the owner of this folder and gets mode 644.</p>
+        <div><button type="submit" class="primary">Create file</button></div>
+      </form>
+    </details>
+    <details class="menu">
+      <summary class="button">New folder</summary>
+      <form method="post" action="/volumes/files/{{$v.Volume}}/mkdir" hx-post="/volumes/files/{{$v.Volume}}/mkdir" hx-target="#volume-files" hx-swap="outerHTML" hx-disabled-elt="find button" class="menu-panel stack">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <input type="hidden" name="path" value="{{$v.Dir}}">
+        <label class="field">
+          <span class="field-label">Folder name</span>
+          <input name="name" required autocomplete="off" spellcheck="false">
+        </label>
+        <p class="hint">The folder belongs to the owner of this folder and gets mode 755.</p>
+        <div><button type="submit" class="primary">Create folder</button></div>
+      </form>
+    </details>
+    <details class="menu">
+      <summary class="button">Upload</summary>
+      <form class="menu-panel stack" data-volume-file-upload data-url="{{$v.UploadURL}}" data-csrf="{{.CSRF}}">
+        <label class="field">
+          <span class="field-label">Files</span>
+          <input type="file" name="files" multiple required>
+        </label>
+        <label class="switch">
+          <input type="checkbox" name="overwrite">
+          <span class="track" aria-hidden="true"></span>
+          <span>Replace files that exist</span>
+        </label>
+        <p class="hint">A replaced file keeps its owner and permissions. New files belong to the owner of this folder and get mode 644.</p>
+        <div class="upload-progress" data-upload-progress hidden><progress></progress> <span class="small muted" data-upload-status></span></div>
+        <div class="small error-text" data-upload-error role="alert" hidden></div>
+        <div><button type="submit" class="primary">Upload</button></div>
+      </form>
+    </details>
+    <a class="button" href="/volumes/files/{{$v.Volume}}{{with $v.Dir}}?path={{.}}{{end}}" hx-get="{{$v.PartialURL}}" hx-target="#volume-files" hx-swap="outerHTML">Refresh</a>
+  </div>
+</div>
+{{template "volume_files_table" $v}}
+<p class="hint">Changes take effect at once, also for running containers that use the volume. Each action runs a short-lived helper container with the volume mounted.</p>
+{{end}}
