@@ -56,8 +56,11 @@ type shell struct {
 	cols, rows uint16
 	exited     bool
 
-	done      chan struct{}
-	code      int
+	done chan struct{}
+	code int
+	// onExit runs (with mu held) when the process ends, before its end is
+	// visible to readers and Wait, so callers see its effects right away.
+	onExit    func(code int)
 	closeOnce sync.Once
 }
 
@@ -140,6 +143,9 @@ func (s *shell) run(cmd string) (out string, exit bool, code int) {
 // exit ends the shell; it is called with s.mu held.
 func (s *shell) exit(code int) {
 	s.exited, s.code = true, code
+	if s.onExit != nil {
+		s.onExit(code)
+	}
 	_ = s.outW.Close()
 	s.closeOnce.Do(func() { close(s.done) })
 }
@@ -194,13 +200,15 @@ func (f *Runtime) OpenAttach(_ context.Context, id string, opts runtime.AttachOp
 	if opts.Start {
 		greeting = "first start of " + c.Name + "\r\n"
 	}
-	go t.print(greeting + t.prompt())
 	// "exit" ends the main process, and with it the container; Close
-	// (detach, code -1) leaves it running.
-	go func() {
-		if code, _ := t.Wait(); code != -1 {
+	// (detach, code -1) leaves it running. The state is set before the
+	// output ends, as with the real CLI, so the caller sees the stopped
+	// container as soon as the attach ends.
+	t.onExit = func(code int) {
+		if code != -1 {
 			_ = f.setState("exited", c.ID, runtime.StateExited, fmt.Sprintf("Exited (%d) Less than a second ago", code))
 		}
-	}()
+	}
+	go t.print(greeting + t.prompt())
 	return t, nil
 }
