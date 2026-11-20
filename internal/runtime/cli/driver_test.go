@@ -23,6 +23,8 @@ type fakeRunner struct {
 	stderr string
 	code   int
 	lines  []string
+	// queue: stdout for the next Run calls, one per call, before stdout.
+	queue []string
 
 	ptySize [2]uint16
 	pty     *stubTerminal
@@ -30,6 +32,11 @@ type fakeRunner struct {
 
 func (f *fakeRunner) Run(_ context.Context, args []string) ([]byte, []byte, int, error) {
 	f.calls = append(f.calls, args)
+	if len(f.queue) > 0 {
+		out := f.queue[0]
+		f.queue = f.queue[1:]
+		return []byte(out), []byte(f.stderr), f.code, nil
+	}
 	return []byte(f.stdout), []byte(f.stderr), f.code, nil
 }
 
@@ -556,5 +563,42 @@ func TestOpenTerminal(t *testing.T) {
 		if _, err := d.OpenTerminal(context.Background(), "web", runtime.TerminalOpts{Shell: shell}); !errors.Is(err, runtime.ErrInvalid) {
 			t.Errorf("shell %q: err = %v; want ErrInvalid", shell, err)
 		}
+	}
+}
+
+func TestListVolumesOptions(t *testing.T) {
+	// docker: volume list has no options, one volume inspect fills them.
+	r := &fakeRunner{queue: []string{
+		`{"Name":"nfs","Driver":"local","Mountpoint":"/var/lib/docker/volumes/nfs/_data","Labels":""}` + "\n" +
+			`{"Name":"plain","Driver":"local","Mountpoint":"/var/lib/docker/volumes/plain/_data","Labels":""}`,
+		`[{"Name":"nfs","Options":{"type":"nfs","device":":/export/data","o":"addr=10.0.0.1"}},{"Name":"plain","Options":null}]`,
+	}}
+	d := NewWithRunner(r, Docker, config.Runtime{})
+	vols, err := d.ListVolumes(context.Background())
+	if err != nil || len(vols) != 2 {
+		t.Fatalf("volumes = %+v, %v", vols, err)
+	}
+	if got := vols[0].DataLocation(); got != ":/export/data" {
+		t.Errorf("nfs data location = %q", got)
+	}
+	if got := vols[1].DataLocation(); got != "/var/lib/docker/volumes/plain/_data" || vols[1].Options == nil {
+		t.Errorf("plain = %+v (%q)", vols[1], got)
+	}
+	if r.last() != "volume inspect nfs plain" || len(r.calls) != 2 {
+		t.Errorf("calls = %q", r.calls)
+	}
+
+	// podman: the list has the options, no inspect.
+	r = &fakeRunner{stdout: `[{"Name":"bind","Driver":"local","Mountpoint":"/m","Options":{"device":"/srv/x","o":"bind"}}]`}
+	vols, err = NewWithRunner(r, Podman, config.Runtime{}).ListVolumes(context.Background())
+	if err != nil || len(vols) != 1 || vols[0].DataLocation() != "/srv/x" || len(r.calls) != 1 {
+		t.Errorf("podman volumes = %+v, %v, calls %q", vols, err, r.calls)
+	}
+
+	// A failed inspect keeps the list, with the mountpoint as data location.
+	r = &fakeRunner{queue: []string{`{"Name":"v","Driver":"local","Mountpoint":"/m"}`, "not json"}}
+	vols, err = NewWithRunner(r, Docker, config.Runtime{}).ListVolumes(context.Background())
+	if err != nil || len(vols) != 1 || vols[0].DataLocation() != "/m" {
+		t.Errorf("failed inspect = %+v, %v", vols, err)
 	}
 }

@@ -10,6 +10,7 @@
     <dt>Name</dt><dd class="mono">{{.Name}}</dd>
     <dt>Driver</dt><dd>{{.Driver}}</dd>
     {{if .Scope}}<dt>Scope</dt><dd>{{.Scope}}</dd>{{end}}
+    {{with index .Options "device"}}<dt>Device</dt><dd class="mono">{{.}}</dd>{{end}}
     {{if .Mountpoint}}<dt>Mountpoint</dt><dd class="mono">{{.Mountpoint}}</dd>{{end}}
     <dt>Used by</dt><dd>{{template "volume_users" .UsedBy}}</dd>
   </dl>

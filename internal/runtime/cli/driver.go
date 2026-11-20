@@ -511,7 +511,54 @@ func (d *Driver) ListVolumes(ctx context.Context) ([]runtime.Volume, error) {
 	if err != nil {
 		return nil, err
 	}
-	return parseVolumes(out)
+	vols, err := parseVolumes(out)
+	if err != nil {
+		return nil, err
+	}
+	d.fillVolumeOptions(ctx, vols)
+	return vols, nil
+}
+
+// volumeInspectBatch is how many volumes one "volume inspect" call covers.
+const volumeInspectBatch = 100
+
+// fillVolumeOptions reads the driver options that "volume list" leaves out
+// (docker) with "volume inspect". It is best effort: on failure the options
+// stay unknown and DataLocation falls back to the mountpoint.
+func (d *Driver) fillVolumeOptions(ctx context.Context, vols []runtime.Volume) {
+	idx := map[string]int{}
+	var names []string
+	for i, v := range vols {
+		if v.Options == nil && runtime.ValidateVolumeName(v.Name) == nil {
+			idx[v.Name] = i
+			names = append(names, v.Name)
+		}
+	}
+	for len(names) > 0 {
+		batch := names[:min(len(names), volumeInspectBatch)]
+		names = names[len(batch):]
+		out, err := d.run(ctx, "volume inspect", append([]string{"volume", "inspect"}, batch...)...)
+		if err != nil {
+			continue // e.g. a volume removed in between
+		}
+		rows, err := parseVolumeInspect(out)
+		if err != nil {
+			continue
+		}
+		for _, r := range rows {
+			i, ok := idx[r.Name]
+			if !ok {
+				continue
+			}
+			vols[i].Options = r.Options
+			if vols[i].Options == nil {
+				vols[i].Options = map[string]string{}
+			}
+			if vols[i].Mountpoint == "" {
+				vols[i].Mountpoint = r.Mountpoint
+			}
+		}
+	}
 }
 
 func (d *Driver) InspectVolume(ctx context.Context, name string) (json.RawMessage, error) {

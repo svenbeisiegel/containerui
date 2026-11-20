@@ -262,6 +262,16 @@ type Volume struct {
 	Mountpoint string
 	Scope      string
 	Labels     map[string]string
+	Options    map[string]string // driver options (--opt), nil if unknown
+}
+
+// DataLocation is where the volume's data lives: the "device" driver option
+// (an NFS export, a bind path, ...) when set, otherwise the mountpoint.
+func (v Volume) DataLocation() string {
+	if d := v.Options["device"]; d != "" {
+		return d
+	}
+	return v.Mountpoint
 }
 
 type Network struct {

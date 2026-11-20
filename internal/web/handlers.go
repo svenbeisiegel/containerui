@@ -1000,10 +1000,35 @@ type volumesView struct {
 
 type volumeForm struct {
 	Name, Driver, Options, Labels string
+	// Type, Device and O are the common driver options (--opt type=… etc.),
+	// which have their own fields.
+	Type, Device, O string
 }
 
 // AdvancedChanged reports whether the collapsed options section has input.
 func (f volumeForm) AdvancedChanged() bool { return f.Options != "" || f.Labels != "" }
+
+// driverOpts joins the type/device/o fields and the additional options
+// textarea into key=value driver options. A key set both in its own field
+// and in the textarea is an error, not a silent override.
+func (f volumeForm) driverOpts() ([]string, error) {
+	var out []string
+	set := map[string]bool{}
+	for _, kv := range [][2]string{{"type", f.Type}, {"device", f.Device}, {"o", f.O}} {
+		if v := strings.TrimSpace(kv[1]); v != "" {
+			out = append(out, kv[0]+"="+v)
+			set[kv[0]] = true
+		}
+	}
+	for _, l := range lines(f.Options) {
+		k, _, _ := strings.Cut(l, "=")
+		if k = strings.TrimSpace(k); set[k] {
+			return nil, fmt.Errorf("%w: driver option %q is set twice", runtime.ErrInvalid, k)
+		}
+		out = append(out, l)
+	}
+	return out, nil
+}
 
 type volumesPage struct {
 	Volumes volumesView
@@ -1122,9 +1147,16 @@ func (s *Server) handleVolumeCreate(w http.ResponseWriter, r *http.Request) {
 		Driver:  r.PostFormValue("driver"),
 		Options: r.PostFormValue("options"),
 		Labels:  r.PostFormValue("labels"),
+		Type:    strings.TrimSpace(r.PostFormValue("opt_type")),
+		Device:  strings.TrimSpace(r.PostFormValue("opt_device")),
+		O:       strings.TrimSpace(r.PostFormValue("opt_o")),
 	}
-	opts := runtime.CreateVolumeOpts{Name: f.Name, Driver: f.Driver, Options: lines(f.Options), Labels: lines(f.Labels)}
-	name, err := s.rt.CreateVolume(r.Context(), opts)
+	driverOpts, err := f.driverOpts()
+	var name string
+	opts := runtime.CreateVolumeOpts{Name: f.Name, Driver: f.Driver, Options: driverOpts, Labels: lines(f.Labels)}
+	if err == nil {
+		name, err = s.rt.CreateVolume(r.Context(), opts)
+	}
 	if err != nil {
 		s.log.Warn("volume create failed", "name", f.Name, "user", sessionFrom(r).Username, "error", err)
 		w.WriteHeader(http.StatusUnprocessableEntity)

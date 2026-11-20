@@ -161,6 +161,9 @@ type volumeJSON struct {
 	Mountpoint string     `json:"Mountpoint"`
 	Scope      string     `json:"Scope"`
 	Labels     labelsJSON `json:"Labels"`
+	// Options is in podman's volume list and in volume inspect, not in
+	// docker's volume list (nil there).
+	Options map[string]string `json:"Options"`
 }
 
 func parseVolumes(data []byte) ([]runtime.Volume, error) {
@@ -170,9 +173,19 @@ func parseVolumes(data []byte) ([]runtime.Volume, error) {
 	}
 	out := make([]runtime.Volume, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, runtime.Volume{Name: r.Name, Driver: r.Driver, Mountpoint: r.Mountpoint, Scope: r.Scope, Labels: r.Labels})
+		out = append(out, runtime.Volume{Name: r.Name, Driver: r.Driver, Mountpoint: r.Mountpoint, Scope: r.Scope, Labels: r.Labels, Options: r.Options})
 	}
 	return out, nil
+}
+
+// parseVolumeInspect reads the array "volume inspect" prints for several
+// volumes.
+func parseVolumeInspect(data []byte) ([]volumeJSON, error) {
+	var rows []volumeJSON
+	if err := json.Unmarshal(normalize(data), &rows); err != nil {
+		return nil, fmt.Errorf("parse volume inspect: %w", err)
+	}
+	return rows, nil
 }
 
 type networkJSON struct {

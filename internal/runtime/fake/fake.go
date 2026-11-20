@@ -483,7 +483,7 @@ func (f *Runtime) ListVolumes(context.Context) ([]runtime.Volume, error) {
 }
 
 func volume(name, driver string) runtime.Volume {
-	return runtime.Volume{Name: name, Driver: driver, Mountpoint: "/var/lib/docker/volumes/" + name + "/_data", Scope: "local"}
+	return runtime.Volume{Name: name, Driver: driver, Mountpoint: "/var/lib/docker/volumes/" + name + "/_data", Scope: "local", Options: map[string]string{}}
 }
 
 // findVolume returns the index of the named volume or -1.
@@ -545,7 +545,12 @@ func (f *Runtime) CreateVolume(_ context.Context, opts runtime.CreateVolumeOpts)
 	if driver == "" {
 		driver = volumeDrivers[0]
 	}
-	f.volumes = append(f.volumes, volume(name, driver))
+	v := volume(name, driver)
+	for _, kv := range opts.Options {
+		k, val, _ := strings.Cut(kv, "=")
+		v.Options[k] = val
+	}
+	f.volumes = append(f.volumes, v)
 	return name, nil
 }
 

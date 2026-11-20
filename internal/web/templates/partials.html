@@ -425,7 +425,7 @@
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
-    <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Used by</th><th>Mountpoint</th><th class="right">Actions</th></tr></thead>
+    <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Used by</th><th>Data location</th><th class="right">Actions</th></tr></thead>
     <tbody>
     {{$csrf := .CSRF}}
     {{range .Volumes}}
@@ -434,7 +434,7 @@
         <td>{{.Driver}}</td>
         <td>{{.Scope}}</td>
         <td>{{template "volume_users" .UsedBy}}</td>
-        <td class="mono small">{{.Mountpoint}}</td>
+        <td class="mono small"{{if ne .DataLocation .Mountpoint}} title="Mountpoint: {{.Mountpoint}}"{{end}}>{{.DataLocation}}</td>
         <td class="right">{{template "volume_actions" (dict "V" . "View" "list" "CSRF" $csrf "Menu" true)}}</td>
       </tr>
     {{else}}

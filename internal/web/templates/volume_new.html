@@ -22,6 +22,23 @@
         {{with .Data.Drivers}}<small class="hint">The runtime's default is <code>{{index . 0}}</code>.</small>{{end}}
       </label>
     </div>
+    <div class="fields">
+      <label class="field">
+        <span class="field-label">Type <span class="opt flag">--opt type</span></span>
+        <input name="opt_type" value="{{$f.Type}}" placeholder="nfs" autocomplete="off" spellcheck="false">
+        <small class="hint">Filesystem type, e.g. <code>nfs</code>, <code>cifs</code>, <code>tmpfs</code>, <code>none</code></small>
+      </label>
+      <label class="field">
+        <span class="field-label">Device <span class="opt flag">--opt device</span></span>
+        <input name="opt_device" value="{{$f.Device}}" placeholder=":/export/data" autocomplete="off" spellcheck="false">
+        <small class="hint">Device or remote path to mount</small>
+      </label>
+      <label class="field">
+        <span class="field-label">Mount options <span class="opt flag">--opt o</span></span>
+        <input name="opt_o" value="{{$f.O}}" placeholder="addr=10.0.0.1,rw" autocomplete="off" spellcheck="false">
+        <small class="hint">Comma-separated, e.g. <code>addr=10.0.0.1,rw</code></small>
+      </label>
+    </div>
     {{/* Inputs inside a closed <details> are still submitted. */}}
     <details class="section advanced"{{if $f.AdvancedChanged}} open{{end}}>
       <summary>
@@ -31,7 +48,7 @@
       <div class="advanced-body">
         <div class="fields">
           <label class="field">
-            <span class="field-label">Driver options <span class="opt flag">--opt</span></span>
+            <span class="field-label">Additional driver options <span class="opt flag">--opt</span></span>
             <textarea name="options" rows="3" placeholder="key=value" spellcheck="false">{{$f.Options}}</textarea>
             <small class="hint">One per line: <code>key=value</code></small>
           </label>

@@ -3,6 +3,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -249,7 +250,7 @@ func TestPagesRender(t *testing.T) {
 		"/partials/images":         {`id="images"`},
 		"/partials/activity":       {`id="activity-jobs"`},
 		"/volumes":                 {`href="/volumes/new"`, "Prune volumes", "--all", "cache", `href="/volumes/data"`, `href="/containers/web"`, "Force delete", activityTitle},
-		"/volumes/new":             {"Create Volume", `action="/volumes"`, `name="driver"`, activityTitle},
+		"/volumes/new":             {"Create Volume", `action="/volumes"`, `name="driver"`, `name="opt_type"`, `name="opt_device"`, `name="opt_o"`, activityTitle},
 		"/partials/volumes":        {`id="volumes"`, "cache"},
 		"/volumes/data":            {"Inspect", "/var/lib/docker/volumes/data/_data", "web", "Force delete"},
 	}
@@ -438,6 +439,20 @@ func TestVolumeActions(t *testing.T) {
 	if body := w.Body.String(); w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, "volume name") || !strings.Contains(body, `value="bad name"`) || !strings.Contains(body, "size=1G") || !strings.Contains(body, "Create Volume") {
 		t.Errorf("invalid create = %d\n%s", w.Code, body)
 	}
+	w = e.post("/volumes", url.Values{"name": {"nfs"}, "opt_type": {"nfs"}, "options": {"type=cifs"}})
+	if body := w.Body.String(); w.Code != http.StatusUnprocessableEntity || !strings.Contains(body, "set twice") || !strings.Contains(body, `value="nfs"`) || !strings.Contains(body, "type=cifs") {
+		t.Errorf("duplicate option create = %d\n%s", w.Code, body)
+	}
+	w = e.post("/volumes", url.Values{"name": {"share"}, "opt_type": {"nfs"}, "opt_device": {":/data"}, "opt_o": {"addr=1.2.3.4"}})
+	if w.Code != http.StatusSeeOther {
+		t.Errorf("create with options = %d\n%s", w.Code, w.Body.String())
+	}
+	if body := e.do("GET", "/volumes", nil).Body.String(); !strings.Contains(body, "Data location") || !strings.Contains(body, `title="Mountpoint: /var/lib/docker/volumes/share/_data">:/data</td>`) || !strings.Contains(body, ">/var/lib/docker/volumes/data/_data</td>") {
+		t.Errorf("data location not shown:\n%s", body)
+	}
+	if body := e.do("GET", "/volumes/share", nil).Body.String(); !strings.Contains(body, "<dt>Device</dt><dd class=\"mono\">:/data</dd>") {
+		t.Errorf("device not on detail page:\n%s", body)
+	}
 
 	// "data" is mounted by the web container: neither delete nor force delete removes it.
 	for _, force := range []string{"", "true"} {
@@ -466,7 +481,7 @@ func TestVolumeActions(t *testing.T) {
 		t.Errorf("prune all: %s", a)
 	}
 
-	want := []string{"create-volume logs", "rmv data force=false", "rmv data force=true", "rmv logs force=false", "rmv data force=false", "prune-volumes all=false", "prune-volumes all=true"}
+	want := []string{"create-volume logs", "create-volume share", "inspect-volume share", "rmv data force=false", "rmv data force=true", "rmv logs force=false", "rmv data force=false", "prune-volumes all=false", "prune-volumes all=true"}
 	if !reflect.DeepEqual(e.rt.Calls, want) {
 		t.Errorf("calls = %v", e.rt.Calls)
 	}
@@ -495,5 +510,21 @@ func TestImagePrune(t *testing.T) {
 	}
 	if act := e.do("GET", "/partials/activity", nil, htmx).Body.String(); !strings.Contains(act, "prune --all") || !strings.Contains(act, "busybox:1") {
 		t.Errorf("activity:\n%s", act)
+	}
+}
+
+func TestVolumeDriverOpts(t *testing.T) {
+	f := volumeForm{Type: "nfs", Device: " :/data ", O: "addr=1.2.3.4,rw", Options: "foo=bar\n\n device2=x\n"}
+	got, err := f.driverOpts()
+	want := []string{"type=nfs", "device=:/data", "o=addr=1.2.3.4,rw", "foo=bar", "device2=x"}
+	if err != nil || !slices.Equal(got, want) {
+		t.Errorf("driverOpts = %q, %v; want %q", got, err, want)
+	}
+	// A key only in the textarea still works.
+	if got, err := (volumeForm{Options: "type=tmpfs"}).driverOpts(); err != nil || !slices.Equal(got, []string{"type=tmpfs"}) {
+		t.Errorf("textarea only = %q, %v", got, err)
+	}
+	if _, err := (volumeForm{O: "rw", Options: "o = ro"}).driverOpts(); !errors.Is(err, runtime.ErrInvalid) {
+		t.Errorf("duplicate o: err = %v", err)
 	}
 }
