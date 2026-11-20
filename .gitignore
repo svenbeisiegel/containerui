@@ -9,3 +9,5 @@
 /build/
 # Personal Claude Code settings.
 .claude/settings.local.json
+# Activity history of a local run (activity.file).
+/activity.json

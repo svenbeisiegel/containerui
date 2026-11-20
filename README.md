@@ -151,13 +151,22 @@ Features:
   project by pasting, opening or dropping a compose file (checked live as you
   type), start, stop, restart, pull, take it down, and edit it. When the
   original file is not available, it is rebuilt from the containers.
-  The output of the last compose action (of any user; on a project's page,
-  of that project) is shown in an **output drawer** on the right. It is
-  closed when the page opens, opens by itself when you start an action, and
-  can be closed with × or Esc and reopened with the handle on the right
-  edge of the window, whose dot shows whether the action is running
-  (yellow), succeeded (green) or failed (red). *Clear* hides the output for
-  you until the next action.
+  Compose actions run in the background; follow them in the activity side
+  bar.
+- **Activity side bar**: the Compose, Containers, Images, Volumes and
+  Networks pages (not Dashboard, System and Events) share a side bar on the
+  right that lists what was done through ContainerUI, by any user, newest
+  first: image pulls and update checks, compose actions, container start,
+  stop, restart, delete, create and recreate (edit, update), and image,
+  volume and network actions, each with who did it, when, and its output or
+  error. It is closed when the page opens, opens by itself when you start a
+  pull, a compose action or an image, volume or network action (quick
+  container actions only add their entry and keep their message on the
+  page), and can be closed with × or Esc and reopened with the handle on
+  the right edge of the window, whose dot shows whether the newest entry is
+  running (yellow), succeeded (green) or failed (red). The newest 100
+  entries are kept, also across restarts, in `activity.file`. *Clear* hides
+  the listed entries for you until the next action.
 - **System**: the version and installation of ContainerUI and the **host** it
   runs on: hostname, operating system (with kernel on Linux, build on
   Windows), architecture, virtualization, uptime, CPU, memory, load average
@@ -394,6 +403,7 @@ The default file is [internal/config/default.yaml](internal/config/default.yaml)
 | `metrics.dashboard_interval` | `10s` | Sampling interval while a dashboard is open (at least `2s`, at most `metrics.interval`) |
 | `metrics.disk_interval` | `1h` | How often the disk usage is measured (at least `5m`); opening the dashboard measures it once more |
 | `events.dir` | `events` | Linux: folder for the journal's error events and their read state (relative to the config file), see [Events](#events) |
+| `activity.file` | `""` | File that keeps the newest 100 entries of the activity side bar across restarts (relative to the config file); empty = `activity.json` in the folder that holds `runtime.compose_dir` (`/var/lib/containerui` for the Linux packages) |
 | `users[]` | — | Windows: additional accounts, `username` plus `password_hash` (bcrypt) or `password` (plaintext, warns). Ignored on Linux |
 
 Configs using the earlier `runtime.wslc:` block (`path`, `session`,

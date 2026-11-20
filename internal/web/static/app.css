@@ -544,9 +544,9 @@ ul.kv { list-style: none; margin: 0; padding: 0; display: grid; gap: .15rem; ove
 .problems ul { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; }
 .problem { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; font-size: .88rem; }
 .problem button.link { font-family: var(--mono); font-size: .8rem; }
-/* Compose output drawer (partials.html "compose_output"): fixed on the
-   right over the content, closed by default; the handle on the right edge
-   opens it (compose_output.js). */
+/* Activity side bar (partials.html "activity_drawer", rendered by the
+   layout): fixed on the right over the content, closed by default; the
+   handle on the right edge opens it (drawer.js). */
 .output-handle {
   position: fixed; right: 0; top: 50%; transform: translateY(-50%); z-index: 19;
   width: 28px; height: 84px; padding: 0; min-height: 0;
@@ -558,7 +558,7 @@ ul.kv { list-style: none; margin: 0; padding: 0; display: grid; gap: .15rem; ove
 .output-handle:hover { color: var(--accent); border-color: var(--accent); width: 32px; }
 .output-handle .chev { font-size: 1.4rem; line-height: 1; }
 .drawer:not([hidden]) + .output-handle { display: none; }
-main:has(.output-handle) { padding-right: calc(1.25rem + 28px); } /* keep content clear of the handle */
+body:has(> .output-handle) main { padding-right: calc(1.25rem + 28px); } /* keep content clear of the handle */
 .status-dot { display: block; width: 9px; height: 9px; border-radius: 50%; background: var(--bad); }
 .status-dot.running { background: var(--mitel-yellow); }
 .status-dot.succeeded { background: var(--ok); }
@@ -588,6 +588,7 @@ main:has(.output-handle) { padding-right: calc(1.25rem + 28px); } /* keep conten
 .activity-list .job:first-child { margin-top: 0; }
 .activity-list .job .flash { margin-top: .5rem; }
 .activity-list .job pre.log { min-height: 0; max-height: 320px; }
+.activity-list .job-kind { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
 .down-form { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: .9rem; padding-top: .9rem; border-top: 1px solid var(--border); }
 
 @media (max-width: 720px) {

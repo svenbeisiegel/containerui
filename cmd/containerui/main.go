@@ -224,6 +224,14 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		return nil // interrupted during warm-up
 	}
 	jm := jobs.NewManager(ctx)
+	activityFile := cfg.ActivityFile()
+	if err := jm.Persist(activityFile, func(err error) {
+		log.Warn("activity history not saved", "file", activityFile, "error", err)
+	}); err != nil {
+		log.Warn("activity history not loaded; starting empty", "file", activityFile, "error", err)
+	} else {
+		log.Info("activity history", "file", activityFile, "kept", jobs.MaxHistory)
+	}
 	if caps := rt.Capabilities(); caps.Compose {
 		log.Info("compose available", "tool", caps.ComposeVersion, "dir", cfg.Resolve(cfg.Runtime.ComposeDir))
 	} else {

@@ -293,7 +293,7 @@ func TestImageCheckUpdatesPull(t *testing.T) {
 	if want := []string{"pull alpine:latest", "pull nginx:1.28"}; !slices.Equal(got, want) {
 		t.Errorf("pulls = %v, want %v", got, want)
 	}
-	drawer := e.do("GET", "/partials/activity/images", nil, htmx).Body.String()
+	drawer := e.do("GET", "/partials/activity", nil, htmx).Body.String()
 	for _, want := range []string{"check for updates and pull", "Pulling nginx:1.28 (newest minor version of nginx:1.27)", "Pulled 2 images."} {
 		if !strings.Contains(drawer, want) {
 			t.Errorf("activity misses %q:\n%s", want, drawer)

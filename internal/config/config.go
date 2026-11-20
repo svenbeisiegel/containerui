@@ -29,6 +29,7 @@ type Config struct {
 	Server   Server   `yaml:"server"`
 	Runtime  Runtime  `yaml:"runtime"`
 	Events   Events   `yaml:"events"`
+	Activity Activity `yaml:"activity"`
 	Registry Registry `yaml:"registry"`
 	Metrics  Metrics  `yaml:"metrics"`
 	Users    []User   `yaml:"users"`
@@ -102,6 +103,13 @@ type Events struct {
 	// Dir holds the events and their read state (relative to the config
 	// file).
 	Dir string `yaml:"dir"`
+}
+
+// Activity configures the history of the activity side bar.
+type Activity struct {
+	// File keeps the history across restarts (relative to the config
+	// file); empty = activity.json next to the compose folder.
+	File string `yaml:"file"`
 }
 
 // Registry configures the background check of local images for updates.
@@ -420,6 +428,21 @@ func (s Server) ListenIsLoopback() bool {
 	}
 	ip := net.ParseIP(host)
 	return ip != nil && ip.IsLoopback()
+}
+
+// ActivityFile is the file the activity history is kept in: activity.file,
+// or activity.json in the folder that holds the compose folder, which is
+// the data folder of the Linux and Windows packages (/var/lib/containerui,
+// ProgramData\ContainerUI) and the config folder otherwise.
+func (c *Config) ActivityFile() string {
+	if c.Activity.File != "" {
+		return c.Resolve(c.Activity.File)
+	}
+	compose := c.Runtime.ComposeDir
+	if compose == "" {
+		compose = "compose"
+	}
+	return filepath.Join(filepath.Dir(c.Resolve(compose)), "activity.json")
 }
 
 // Resolve returns p made absolute relative to the config directory.

@@ -1,9 +1,9 @@
-// Output drawer on the right edge: the compose output (partials.html
-// "compose_output") and the activity of the Images, Volumes and Networks
-// tabs ("activity_drawer"). A page has at most one. Opens and closes it,
-// opens it when an action starts a job or records an entry, and keeps the
-// log scrolled to the end while it runs. Only the drawer's body is
-// refreshed by htmx, so its open state survives the polling.
+// Activity side bar on the right edge (partials.html "activity_drawer"),
+// which the layout renders on the Compose, Containers, Images, Volumes and
+// Networks pages. Opens and closes it, opens it when an action starts a
+// job or records an entry that should be followed, and keeps the log
+// scrolled to the end while it runs. Only the drawer's body is refreshed
+// by htmx, so its open state survives the polling.
 // Opening it closes any open menu (app.js).
 (function () {
   function drawer() { return document.querySelector("aside.drawer"); }
@@ -55,12 +55,11 @@
     if (d && !d.hidden) setOpen(false, d.contains(document.activeElement));
   });
 
-  // An action started a job or recorded an entry (HX-Trigger from the server).
-  ["compose-job-started", "activity-changed"].forEach(function (name) {
-    document.body.addEventListener(name, function () {
-      if (window.cuiCloseMenus) window.cuiCloseMenus(null);
-      setOpen(true, false);
-    });
+  // An action started a job or recorded an entry to follow (HX-Trigger
+  // from the server); "activity-recorded" only refreshes the list.
+  document.body.addEventListener("activity-changed", function () {
+    if (window.cuiCloseMenus) window.cuiCloseMenus(null);
+    setOpen(true, false);
   });
 
   // Follow the log unless the user scrolled up to read.

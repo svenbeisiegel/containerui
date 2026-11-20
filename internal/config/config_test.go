@@ -247,3 +247,21 @@ func TestMetricsDefaultsAndLimits(t *testing.T) {
 		t.Errorf("metrics = %+v, %v", cfg.Metrics, err)
 	}
 }
+
+func TestActivityFile(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "etc")
+	cases := []struct {
+		compose, file, want string
+	}{
+		{"compose", "", filepath.Join(dir, "activity.json")},
+		{filepath.Join(dir, "..", "lib", "compose"), "", filepath.Join(dir, "..", "lib", "activity.json")},
+		{"compose", "state/history.json", filepath.Join(dir, "state", "history.json")},
+		{"", "", filepath.Join(dir, "activity.json")},
+	}
+	for _, c := range cases {
+		cfg := &Config{Dir: dir, Runtime: Runtime{ComposeDir: c.compose}, Activity: Activity{File: c.file}}
+		if got := cfg.ActivityFile(); got != filepath.Clean(c.want) {
+			t.Errorf("compose %q file %q: got %q, want %q", c.compose, c.file, got, c.want)
+		}
+	}
+}

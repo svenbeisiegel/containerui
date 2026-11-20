@@ -1,4 +1,3 @@
-{{define "head"}}<script src="/static/drawer.js" defer></script>{{end}}
 {{define "content"}}
 {{$f := .Data.Form}}
 <div class="page-head">
@@ -47,5 +46,4 @@
     <div><button type="submit" class="primary">Create volume</button></div>
   </form>
 </section>
-{{template "activity_drawer" .Data.Activity}}
 {{end}}

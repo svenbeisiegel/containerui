@@ -41,16 +41,14 @@ func (f networkForm) AdvancedChanged() bool {
 
 type networksPage struct {
 	Networks networksView
-	Activity activityView
 }
 
 // networkNewView is the "Create network" page.
 type networkNewView struct {
-	Form     networkForm
-	Err      string // error from the create form
-	Drivers  []string
-	IPv6     bool // the runtime can create IPv6 networks
-	Activity activityView
+	Form    networkForm
+	Err     string // error from the create form
+	Drivers []string
+	IPv6    bool // the runtime can create IPv6 networks
 }
 
 // networkContainer is a container attached to a network.
@@ -78,7 +76,6 @@ type networkDetailView struct {
 	Err       string
 	CSRF      string
 	Available []runtime.Container // containers not attached, for "Connect"
-	Activity  activityView
 }
 
 // networksSupported answers 404 if the runtime has no network support.
@@ -128,13 +125,13 @@ func (s *Server) handleNetworks(w http.ResponseWriter, r *http.Request) {
 	if !s.networksSupported(w, r) {
 		return
 	}
-	data := networksPage{Networks: s.loadNetworks(r, nil), Activity: s.loadActivity(r, "networks")}
+	data := networksPage{Networks: s.loadNetworks(r, nil)}
 	s.render(w, "networks", s.newPage(r, "Networks", "networks", data))
 }
 
 func (s *Server) renderNetworkNew(w http.ResponseWriter, r *http.Request, f networkForm, formErr string) {
 	caps := s.caps()
-	v := networkNewView{Form: f, Err: formErr, Drivers: caps.NetworkDrivers, IPv6: caps.NetworkIPv6, Activity: s.loadActivity(r, "networks")}
+	v := networkNewView{Form: f, Err: formErr, Drivers: caps.NetworkDrivers, IPv6: caps.NetworkIPv6}
 	s.render(w, "network_new", s.newPage(r, "Create network", "networks", v))
 }
 
@@ -174,14 +171,14 @@ func (s *Server) handleNetworkCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.log.Info("network created", "name", f.Name, "driver", f.Driver, "subnet", f.Subnet, "user", sessionFrom(r).Username)
-	s.recordActivity(w, r, networkJobKind, "create "+f.Name, fmt.Sprintf("Network %s created.", f.Name), "", nil, true)
+	s.recordActivity(w, r, networkJobKind, "create "+f.Name, fmt.Sprintf("Network %s created.", f.Name), "", nil, true, true)
 	redirect(w, r, "/networks")
 }
 
-// networkResult records a network action in the Networks drawer and answers
+// networkResult records a network action in the activity side bar and answers
 // with a fresh table (htmx) or a redirect to the list.
 func (s *Server) networkResult(w http.ResponseWriter, r *http.Request, target, msg, errMsg string, out []string) {
-	s.recordActivity(w, r, networkJobKind, target, msg, errMsg, out, !isHTMX(r))
+	s.recordActivity(w, r, networkJobKind, target, msg, errMsg, out, !isHTMX(r), true)
 	if !isHTMX(r) {
 		http.Redirect(w, r, "/networks", http.StatusSeeOther)
 		return
@@ -208,7 +205,7 @@ func (s *Server) handleNetworkDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.PostFormValue("view") == "detail" {
 		// Back to the detail page on failure, to the list once it is gone.
-		s.recordActivity(w, r, networkJobKind, "delete "+name, msg, errMsg, nil, true)
+		s.recordActivity(w, r, networkJobKind, "delete "+name, msg, errMsg, nil, true, true)
 		to := "/networks"
 		if err != nil {
 			to = "/networks/" + url.PathEscape(name)
@@ -242,7 +239,7 @@ func (s *Server) handleNetworkDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	v := networkDetailView{Name: name, CSRF: sessionFrom(r).CSRF, Activity: s.loadActivity(r, "networks")}
+	v := networkDetailView{Name: name, CSRF: sessionFrom(r).CSRF}
 	for _, row := range s.loadNetworks(r, nil).Networks {
 		if row.Name == name || row.ID == name {
 			v.Network = &row
@@ -354,10 +351,10 @@ func (s *Server) handleNetworkConnect(w http.ResponseWriter, r *http.Request) {
 		sessionFrom(r).SetFlash("Choose a container to connect.")
 	} else if err := s.rt.ConnectNetwork(r.Context(), network, container, opts); err != nil {
 		s.log.Warn("network connect failed", "network", network, "container", container, "user", user, "error", err)
-		s.recordActivity(w, r, networkJobKind, target, "", userError(err), nil, true)
+		s.recordActivity(w, r, networkJobKind, target, "", userError(err), nil, true, true)
 	} else {
 		s.log.Info("network connected", "network", network, "container", container, "user", user)
-		s.recordActivity(w, r, networkJobKind, target, fmt.Sprintf("Connected %s to network %s.", container, network), "", nil, true)
+		s.recordActivity(w, r, networkJobKind, target, fmt.Sprintf("Connected %s to network %s.", container, network), "", nil, true, true)
 	}
 	redirect(w, r, "/networks/"+url.PathEscape(network))
 }
@@ -373,10 +370,10 @@ func (s *Server) handleNetworkDisconnect(w http.ResponseWriter, r *http.Request)
 	target := network + ": disconnect " + container
 	if err := s.rt.DisconnectNetwork(r.Context(), network, container); err != nil {
 		s.log.Warn("network disconnect failed", "network", network, "container", container, "user", user, "error", err)
-		s.recordActivity(w, r, networkJobKind, target, "", userError(err), nil, true)
+		s.recordActivity(w, r, networkJobKind, target, "", userError(err), nil, true, true)
 	} else {
 		s.log.Info("network disconnected", "network", network, "container", container, "user", user)
-		s.recordActivity(w, r, networkJobKind, target, fmt.Sprintf("Disconnected %s from network %s.", container, network), "", nil, true)
+		s.recordActivity(w, r, networkJobKind, target, fmt.Sprintf("Disconnected %s from network %s.", container, network), "", nil, true, true)
 	}
 	redirect(w, r, "/networks/"+url.PathEscape(network))
 }

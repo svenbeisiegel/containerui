@@ -3,114 +3,135 @@ package web
 import (
 	"errors"
 	"net/http"
+	"slices"
+	"strings"
 
 	"github.com/svenbeisiegel/containerui/internal/jobs"
 )
 
-// ---- activity drawers of the Images, Volumes and Networks tabs ----
+// ---- the activity side bar ----
 //
-// Each tab has a drawer on the right edge (like the compose output) that
-// lists what was done there recently, by any user: image pulls run as
-// background jobs, the other actions finish within the request and are
-// recorded as finished jobs.
+// The Compose, Containers, Images, Volumes and Networks pages share a
+// drawer on the right edge that lists what was done through ContainerUI
+// recently, by any user: image pulls, compose actions and container
+// recreates run as background jobs, the other actions finish within the
+// request and are recorded as finished jobs. The jobs manager keeps the
+// newest jobs.MaxHistory of them, also across restarts.
 
-// Job kinds of the recorded actions; image pulls use pullJobKind.
+// Job kinds of the recorded actions.
 const (
-	pullJobKind    = "pull"
-	imageJobKind   = "image"
-	volumeJobKind  = "volume"
-	networkJobKind = "network"
+	pullJobKind      = "pull"
+	imageJobKind     = "image"
+	volumeJobKind    = "volume"
+	networkJobKind   = "network"
+	containerJobKind = "container"
+	// composeJobKind (compose.go) and jobRecreate (recreate.go) are jobs too.
 )
 
-// maxActivity is how many entries a drawer shows.
-const maxActivity = 10
-
-type activityTab struct {
-	Name  string // URL segment and session key part
-	Title string
-	Kinds []string
+// activityKinds are the job kinds the side bar lists, with their labels.
+var activityKinds = []struct{ Kind, Label string }{
+	{pullJobKind, "Image pull"},
+	{imageJobKind, "Image"},
+	{volumeJobKind, "Volume"},
+	{networkJobKind, "Network"},
+	{containerJobKind, "Container"},
+	{jobRecreate, "Recreate"},
+	{composeJobKind, "Compose"},
 }
 
-var activityTabs = map[string]activityTab{
-	"images":   {Name: "images", Title: "Image activity", Kinds: []string{pullJobKind, imageJobKind}},
-	"volumes":  {Name: "volumes", Title: "Volume activity", Kinds: []string{volumeJobKind}},
-	"networks": {Name: "networks", Title: "Network activity", Kinds: []string{networkJobKind}},
-}
-
-// tabOfKind maps a job kind to the tab whose drawer shows it.
-func tabOfKind(kind string) string {
-	for name, t := range activityTabs {
-		for _, k := range t.Kinds {
-			if k == kind {
-				return name
-			}
-		}
+func allActivityKinds() []string {
+	out := make([]string, len(activityKinds))
+	for i, k := range activityKinds {
+		out[i] = k.Kind
 	}
-	return ""
+	return out
 }
 
-// activityView is a tab's drawer.
+// activityPages are the nav items (page.Active) whose pages show the side
+// bar; the Dashboard, System and Events pages do not.
+var activityPages = []string{"compose", "containers", "images", "volumes", "networks"}
+
+// activityEntry is a job shown in the side bar.
+type activityEntry struct {
+	jobs.Job
+	Label string // what kind of action it is
+}
+
+// activityView is the side bar.
 type activityView struct {
-	Tab        string
-	Title      string
-	Entries    []jobs.Job // newest first
-	AnyRunning bool       // an entry runs (keeps the body polling)
-	Open       bool       // render the drawer open
-	Partial    bool       // rendered as an htmx partial: update the toggle badge out of band
+	Entries    []activityEntry // newest first
+	AnyRunning bool            // an entry runs (keeps the body polling)
+	Open       bool            // render the drawer open
+	Partial    bool            // rendered as an htmx partial: update the toggle badge out of band
+	Return     string          // page to return to after Clear without JavaScript
 	CSRF       string
 }
 
 // Newest is the latest entry, for the status dot on the edge handle.
-func (v activityView) Newest() *jobs.Job {
+func (v activityView) Newest() *activityEntry {
 	if len(v.Entries) == 0 {
 		return nil
 	}
 	return &v.Entries[0]
 }
 
-// sessActivityCleared (uint64) holds the Seq of the newest entry when the
-// user cleared the drawer; older entries are not shown to them. A sequence
-// rather than a time, since the clock can give an action recorded right
-// after the clear the same time (Windows).
-func sessActivityCleared(tab string) string { return "activity-cleared-" + tab }
-func sessActivityOpen(tab string) string    { return "activity-open-" + tab }
+// Session keys of the side bar.
+const (
+	// sessActivityCleared (uint64) holds the Seq of the newest entry when
+	// the user cleared the list; older entries are not shown to them. A
+	// sequence rather than a time, since the clock can give an action
+	// recorded right after the clear the same time (Windows).
+	sessActivityCleared = "activity-cleared"
+	// sessActivityOpen: open the drawer on the next page, set when an
+	// action that opens it redirects.
+	sessActivityOpen = "activity-open"
+)
 
-// activityTabFor returns the tab of the request path, or answers 404 if it
-// is unknown or the runtime cannot do what the tab shows.
-func (s *Server) activityTabFor(w http.ResponseWriter, r *http.Request) (activityTab, bool) {
-	t, ok := activityTabs[r.PathValue("tab")]
-	caps := s.caps()
-	if !ok || (t.Name == "volumes" && !caps.Volumes) || (t.Name == "networks" && !caps.Networks) {
-		http.NotFound(w, r)
-		return activityTab{}, false
-	}
-	return t, true
-}
-
-// loadActivity builds a tab's drawer; it renders open once after an action
+// loadActivity builds the side bar; it renders open once after an action
 // redirected to the page.
-func (s *Server) loadActivity(r *http.Request, tab string) activityView {
-	t := activityTabs[tab]
+func (s *Server) loadActivity(r *http.Request) activityView {
 	sess := sessionFrom(r)
-	v := activityView{Tab: t.Name, Title: t.Title, CSRF: sess.CSRF}
-	v.Open = sess.Pop(sessActivityOpen(tab)) != nil
-	cleared, _ := sess.Get(sessActivityCleared(tab)).(uint64)
-	for _, j := range s.jobs.List(t.Kinds...) { // newest first
+	v := activityView{CSRF: sess.CSRF}
+	v.Open = sess.Pop(sessActivityOpen) != nil
+	cleared, _ := sess.Get(sessActivityCleared).(uint64)
+	for _, j := range s.jobs.List(allActivityKinds()...) { // newest first
 		if !j.Done() {
 			v.AnyRunning = true
 		}
-		if j.Seq() > cleared && len(v.Entries) < maxActivity {
-			v.Entries = append(v.Entries, j)
+		if j.Seq() > cleared {
+			v.Entries = append(v.Entries, activityEntry{Job: j, Label: activityLabel(j.Kind)})
 		}
 	}
 	return v
 }
 
-// recordActivity adds a finished action to its tab's drawer. msg is shown on
+func activityLabel(kind string) string {
+	for _, k := range activityKinds {
+		if k.Kind == kind {
+			return k.Label
+		}
+	}
+	return kind
+}
+
+// pageActivity is the side bar of a full page, nil on pages without one.
+func (s *Server) pageActivity(r *http.Request, active string) *activityView {
+	if sessionFrom(r) == nil || !slices.Contains(activityPages, active) {
+		return nil
+	}
+	v := s.loadActivity(r)
+	if r.Method == http.MethodGet {
+		v.Return = r.URL.RequestURI()
+	}
+	return &v
+}
+
+// recordActivity adds a finished action to the side bar. msg is shown on
 // success, errMsg (already user-facing) marks it failed; out holds output
-// lines. For htmx requests the drawer reloads and opens via HX-Trigger; set
-// redirecting when the response is a redirect, so the next page opens it.
-func (s *Server) recordActivity(w http.ResponseWriter, r *http.Request, kind, target, msg, errMsg string, out []string, redirecting bool) {
+// lines. With open, the side bar opens: for htmx requests right away (set
+// redirecting when the response is a redirect, so the next page opens it).
+// Without, an htmx page only refreshes the list.
+func (s *Server) recordActivity(w http.ResponseWriter, r *http.Request, kind, target, msg, errMsg string, out []string, redirecting, open bool) {
 	var err error
 	lines := out
 	if errMsg != "" {
@@ -119,31 +140,33 @@ func (s *Server) recordActivity(w http.ResponseWriter, r *http.Request, kind, ta
 		lines = append([]string{msg}, out...)
 	}
 	s.jobs.Record(kind, target, sessionFrom(r).Username, lines, err)
-	s.openActivity(w, r, tabOfKind(kind), redirecting)
+	switch {
+	case open:
+		s.openActivity(w, r, redirecting)
+	case isHTMX(r) && !redirecting:
+		w.Header().Set("HX-Trigger", "activity-recorded")
+	}
 }
 
-// openActivity opens a tab's drawer: right away for an htmx partial
+// openActivity opens the side bar: right away for an htmx partial
 // response, on the next page for a redirect.
-func (s *Server) openActivity(w http.ResponseWriter, r *http.Request, tab string, redirecting bool) {
+func (s *Server) openActivity(w http.ResponseWriter, r *http.Request, redirecting bool) {
 	if isHTMX(r) && !redirecting {
 		w.Header().Set("HX-Trigger", "activity-changed")
 		return
 	}
-	sessionFrom(r).Set(sessActivityOpen(tab), true)
+	sessionFrom(r).Set(sessActivityOpen, true)
 }
 
+// handleActivityPartial renders the list. The body polls with running=1
+// while an entry runs; the poll that finds them all finished lets the
+// image and compose views reload once to show the results.
 func (s *Server) handleActivityPartial(w http.ResponseWriter, r *http.Request) {
-	t, ok := s.activityTabFor(w, r)
-	if !ok {
-		return
-	}
-	v := s.loadActivity(r, t.Name)
+	v := s.loadActivity(r)
 	v.Open = false // the open state lives in the page, not the polled body
 	v.Partial = true
-	if t.Name == "images" && !v.AnyRunning && isHTMX(r) {
-		// The polling body stops after this response; let the image table
-		// reload once to show newly pulled images.
-		w.Header().Set("HX-Trigger", "images-changed")
+	if !v.AnyRunning && isHTMX(r) && r.URL.Query().Get("running") == "1" {
+		w.Header().Set("HX-Trigger", "images-changed, compose-changed")
 	}
 	s.renderPartial(w, "activity_body", v)
 }
@@ -151,21 +174,25 @@ func (s *Server) handleActivityPartial(w http.ResponseWriter, r *http.Request) {
 // handleActivityClear hides the shown entries for this user until newer
 // actions happen.
 func (s *Server) handleActivityClear(w http.ResponseWriter, r *http.Request) {
-	t, ok := s.activityTabFor(w, r)
-	if !ok {
-		return
-	}
 	var newest uint64
-	if l := s.jobs.List(t.Kinds...); len(l) > 0 {
+	if l := s.jobs.List(allActivityKinds()...); len(l) > 0 {
 		newest = l[0].Seq()
 	}
-	sessionFrom(r).Set(sessActivityCleared(t.Name), newest)
+	sessionFrom(r).Set(sessActivityCleared, newest)
 	if !isHTMX(r) {
-		redirect(w, r, "/"+t.Name)
+		redirect(w, r, localReturn(r.PostFormValue("return"), "/containers"))
 		return
 	}
-	v := s.loadActivity(r, t.Name)
+	v := s.loadActivity(r)
 	v.Open = false
 	v.Partial = true
 	s.renderPartial(w, "activity_body", v)
+}
+
+// localReturn is to if it is a path of this site, else def.
+func localReturn(to, def string) string {
+	if !strings.HasPrefix(to, "/") || strings.HasPrefix(to, "//") || strings.ContainsAny(to, "\\\r\n") {
+		return def
+	}
+	return to
 }

@@ -27,15 +27,15 @@ func TestNetworkPagesRender(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 	pages := map[string][]string{
-		"/networks":                   {`href="/networks/new"`, "Prune networks", `href="/networks/backend"`, "built-in", `href="/containers/shop-web-1"`, `id="activity"`, "Network activity"},
-		"/networks/new":               {"Create Network", `action="/networks"`, "macvlan", "--ipv6", "Network activity"},
-		"/partials/activity/networks": {`id="activity-jobs"`, "No recent activity."},
-		"/partials/networks":          {`id="networks"`, "backend"},
-		"/networks/backend":           {"172.30.0.0/16", "172.30.0.1", "team", "platform", "Connect a Container", "No containers are connected.", "Inspect", `action="/networks/delete"`},
-		"/networks/bridge":            {"built-in", "web", "Disconnect", "Inspect"},
-		"/networks/shop_default":      {"shop-web-1", "shop-db-1"},
-		"/containers/c0ffee000001":    {`<a href="/networks/bridge">bridge</a>`},
-		"/":                           {`href="/networks"`},
+		"/networks":                {`href="/networks/new"`, "Prune networks", `href="/networks/backend"`, "built-in", `href="/containers/shop-web-1"`, `id="activity"`, activityTitle},
+		"/networks/new":            {"Create Network", `action="/networks"`, "macvlan", "--ipv6", activityTitle},
+		"/partials/activity":       {`id="activity-jobs"`, "No recent activity."},
+		"/partials/networks":       {`id="networks"`, "backend"},
+		"/networks/backend":        {"172.30.0.0/16", "172.30.0.1", "team", "platform", "Connect a Container", "No containers are connected.", "Inspect", `action="/networks/delete"`},
+		"/networks/bridge":         {"built-in", "web", "Disconnect", "Inspect"},
+		"/networks/shop_default":   {"shop-web-1", "shop-db-1"},
+		"/containers/c0ffee000001": {`<a href="/networks/bridge">bridge</a>`},
+		"/":                        {`href="/networks"`},
 	}
 	for path, want := range pages {
 		w := e.do("GET", path, nil)
@@ -112,8 +112,8 @@ func TestNetworkDeleteAndPrune(t *testing.T) {
 	e.login()
 	// In use: the conflict hint, and the network stays.
 	w := e.post("/networks/delete", url.Values{"name": {"shop_default"}}, htmx)
-	if w.Header().Get("HX-Trigger") != "activity-changed" || !strings.Contains(e.activity("networks"), "disconnect them first") {
-		t.Errorf("delete in use: %v %s", w.Header(), e.activity("networks"))
+	if w.Header().Get("HX-Trigger") != "activity-changed" || !strings.Contains(e.activity(), "disconnect them first") {
+		t.Errorf("delete in use: %v %s", w.Header(), e.activity())
 	}
 	w = e.post("/networks/delete", url.Values{"name": {"backend"}, "view": {"detail"}}, htmx)
 	if w.Header().Get("HX-Redirect") != "/networks" {
@@ -129,11 +129,11 @@ func TestNetworkDeleteAndPrune(t *testing.T) {
 	if body := w.Body.String(); strings.Contains(body, `href="/networks/spare"`) || !strings.Contains(body, `id="networks"`) {
 		t.Errorf("prune: %s", body)
 	}
-	if a := e.activity("networks"); !strings.Contains(a, "Pruned unused networks.") || !strings.Contains(a, "Deleted Networks:") || !strings.Contains(a, "spare") {
+	if a := e.activity(); !strings.Contains(a, "Pruned unused networks.") || !strings.Contains(a, "Deleted Networks:") || !strings.Contains(a, "spare") {
 		t.Errorf("prune activity: %s", a)
 	}
 	e.post("/networks/prune", nil, htmx)
-	if !strings.Contains(e.activity("networks"), "No unused networks to prune.") {
+	if !strings.Contains(e.activity(), "No unused networks to prune.") {
 		t.Error("second prune")
 	}
 }

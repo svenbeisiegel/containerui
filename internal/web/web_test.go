@@ -236,22 +236,22 @@ func TestPagesRender(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 	pages := map[string][]string{
-		"/":                         {"Running Containers", "web", "nginx", "Container Metrics", "Disk Usage per Container", "Disk Usage by Category", "/static/metrics.js"},
-		"/partials/dashboard":       {`id="dashboard"`},
-		"/containers":               {"web", "job", ">Delete<", ">Start<", ">Recreate<"},
-		"/partials/containers":      {`id="containers"`},
-		"/containers/new":           {`href="/containers/new/scratch"`, `href="/containers/new/compose"`},
-		"/containers/new/scratch":   {`name="image"`, "alpine:latest", "bridge"},
-		"/containers/new?image=x":   {`value="x"`},
-		"/containers/c0ffee000001":  {"Inspect", "nginx:1.27", "Restart"},
-		"/images":                   {`href="/images/pull"`, "alpine", "nginx", "Tag…", `class="in-use"`, "Warning: this image is in use", "Image activity", "/static/drawer.js"},
-		"/images/pull":              {"Pull Image", `action="/images/pull"`, `name="ref"`, "Image activity"},
-		"/partials/images":          {`id="images"`},
-		"/partials/activity/images": {`id="activity-jobs"`},
-		"/volumes":                  {`href="/volumes/new"`, "Prune volumes", "--all", "cache", `href="/volumes/data"`, `href="/containers/web"`, "Force delete", "Volume activity"},
-		"/volumes/new":              {"Create Volume", `action="/volumes"`, `name="driver"`, "Volume activity"},
-		"/partials/volumes":         {`id="volumes"`, "cache"},
-		"/volumes/data":             {"Inspect", "/var/lib/docker/volumes/data/_data", "web", "Force delete"},
+		"/":                        {"Running Containers", "web", "nginx", "Container Metrics", "Disk Usage per Container", "Disk Usage by Category", "/static/metrics.js"},
+		"/partials/dashboard":      {`id="dashboard"`},
+		"/containers":              {"web", "job", ">Delete<", ">Start<", ">Recreate<"},
+		"/partials/containers":     {`id="containers"`},
+		"/containers/new":          {`href="/containers/new/scratch"`, `href="/containers/new/compose"`},
+		"/containers/new/scratch":  {`name="image"`, "alpine:latest", "bridge"},
+		"/containers/new?image=x":  {`value="x"`},
+		"/containers/c0ffee000001": {"Inspect", "nginx:1.27", "Restart"},
+		"/images":                  {`href="/images/pull"`, "alpine", "nginx", "Tag…", `class="in-use"`, "Warning: this image is in use", activityTitle, "/static/drawer.js"},
+		"/images/pull":             {"Pull Image", `action="/images/pull"`, `name="ref"`, activityTitle},
+		"/partials/images":         {`id="images"`},
+		"/partials/activity":       {`id="activity-jobs"`},
+		"/volumes":                 {`href="/volumes/new"`, "Prune volumes", "--all", "cache", `href="/volumes/data"`, `href="/containers/web"`, "Force delete", activityTitle},
+		"/volumes/new":             {"Create Volume", `action="/volumes"`, `name="driver"`, activityTitle},
+		"/partials/volumes":        {`id="volumes"`, "cache"},
+		"/volumes/data":            {"Inspect", "/var/lib/docker/volumes/data/_data", "web", "Force delete"},
 	}
 	for path, want := range pages {
 		w := e.do("GET", path, nil)
@@ -369,8 +369,8 @@ func TestImageActions(t *testing.T) {
 	if body := e.do("GET", "/images", nil).Body.String(); !drawerOpen(body) || !strings.Contains(body, "busybox:1.36") {
 		t.Errorf("images after pull: drawer open = %v", drawerOpen(body))
 	}
-	w = e.do("GET", "/partials/activity/images", nil, htmx)
-	if !strings.Contains(w.Body.String(), "succeeded") || w.Header().Get("HX-Trigger") != "images-changed" || strings.Contains(w.Body.String(), "every 1s") {
+	w = e.do("GET", "/partials/activity?running=1", nil, htmx)
+	if !strings.Contains(w.Body.String(), "succeeded") || !strings.Contains(w.Header().Get("HX-Trigger"), "images-changed") || strings.Contains(w.Body.String(), "every 1s") {
 		t.Errorf("pulls after completion = %s / %v", w.Body.String(), w.Header())
 	}
 	// From the update buttons in the table: the drawer opens in place.
@@ -389,17 +389,17 @@ func TestImageActions(t *testing.T) {
 	}
 
 	w = e.post("/images/tag", url.Values{"source": {"alpine:latest"}, "target": {"alpine:mine"}}, htmx)
-	if !strings.Contains(e.activity("images"), "Tagged alpine:latest as alpine:mine.") || !strings.Contains(w.Body.String(), "mine") {
+	if !strings.Contains(e.activity(), "Tagged alpine:latest as alpine:mine.") || !strings.Contains(w.Body.String(), "mine") {
 		t.Errorf("tag: %s", w.Body.String())
 	}
 
 	e.post("/images/delete", url.Values{"ref": {"nginx:1.27"}}, htmx)
-	if !strings.Contains(e.activity("images"), "used by a container") {
-		t.Errorf("delete in-use image: %s", e.activity("images"))
+	if !strings.Contains(e.activity(), "used by a container") {
+		t.Errorf("delete in-use image: %s", e.activity())
 	}
 	e.post("/images/delete", url.Values{"ref": {"alpine:mine"}}, htmx)
-	if !strings.Contains(e.activity("images"), "Deleted image alpine:mine.") {
-		t.Errorf("delete: %s", e.activity("images"))
+	if !strings.Contains(e.activity(), "Deleted image alpine:mine.") {
+		t.Errorf("delete: %s", e.activity())
 	}
 }
 
@@ -442,13 +442,13 @@ func TestVolumeActions(t *testing.T) {
 	// "data" is mounted by the web container: neither delete nor force delete removes it.
 	for _, force := range []string{"", "true"} {
 		w = e.post("/volumes/delete", url.Values{"name": {"data"}, "view": {"list"}, "force": {force}}, htmx)
-		if !strings.Contains(e.activity("volumes"), "delete the container first") || !strings.Contains(w.Body.String(), `id="volumes"`) {
+		if !strings.Contains(e.activity(), "delete the container first") || !strings.Contains(w.Body.String(), `id="volumes"`) {
 			t.Errorf("delete in-use (force=%q): %s", force, w.Body.String())
 		}
 	}
 	e.post("/volumes/delete", url.Values{"name": {"logs"}, "view": {"list"}}, htmx)
-	if !strings.Contains(e.activity("volumes"), "Deleted volume logs.") {
-		t.Errorf("delete: %s", e.activity("volumes"))
+	if !strings.Contains(e.activity(), "Deleted volume logs.") {
+		t.Errorf("delete: %s", e.activity())
 	}
 	// From the detail page a failed delete returns to the detail page.
 	w = e.post("/volumes/delete", url.Values{"name": {"data"}, "view": {"detail"}}, htmx)
@@ -458,11 +458,11 @@ func TestVolumeActions(t *testing.T) {
 
 	// Without "all" prune keeps the unused named volume "cache".
 	w = e.post("/volumes/prune", url.Values{}, htmx)
-	if body := w.Body.String(); !strings.Contains(e.activity("volumes"), "Pruned unused volumes.") || !strings.Contains(body, `href="/volumes/cache"`) {
+	if body := w.Body.String(); !strings.Contains(e.activity(), "Pruned unused volumes.") || !strings.Contains(body, `href="/volumes/cache"`) {
 		t.Errorf("prune: %s", body)
 	}
 	w = e.post("/volumes/prune", url.Values{"all": {"on"}}, htmx)
-	if a := e.activity("volumes"); !strings.Contains(a, "prune --all") || !strings.Contains(a, "Deleted Volumes:") || !strings.Contains(w.Body.String(), `href="/volumes/data"`) || strings.Contains(w.Body.String(), `href="/volumes/cache"`) {
+	if a := e.activity(); !strings.Contains(a, "prune --all") || !strings.Contains(a, "Deleted Volumes:") || !strings.Contains(w.Body.String(), `href="/volumes/data"`) || strings.Contains(w.Body.String(), `href="/volumes/cache"`) {
 		t.Errorf("prune all: %s", a)
 	}
 
@@ -493,7 +493,7 @@ func TestImagePrune(t *testing.T) {
 			t.Errorf("unused image %s kept", img.Ref())
 		}
 	}
-	if act := e.do("GET", "/partials/activity/images", nil, htmx).Body.String(); !strings.Contains(act, "prune --all") || !strings.Contains(act, "busybox:1") {
+	if act := e.do("GET", "/partials/activity", nil, htmx).Body.String(); !strings.Contains(act, "prune --all") || !strings.Contains(act, "busybox:1") {
 		t.Errorf("activity:\n%s", act)
 	}
 }

@@ -251,16 +251,14 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("POST /networks/prune", s.handleNetworkPrune)
 	authed.HandleFunc("POST /networks/{name}/connect", s.handleNetworkConnect)
 	authed.HandleFunc("POST /networks/{name}/disconnect", s.handleNetworkDisconnect)
-	authed.HandleFunc("GET /partials/activity/{tab}", s.handleActivityPartial)
-	authed.HandleFunc("POST /activity/{tab}/clear", s.handleActivityClear)
+	authed.HandleFunc("GET /partials/activity", s.handleActivityPartial)
+	authed.HandleFunc("POST /activity/clear", s.handleActivityClear)
 	authed.HandleFunc("GET /compose", s.handleCompose)
 	authed.HandleFunc("GET /partials/compose", s.handleComposePartial)
-	authed.HandleFunc("GET /partials/compose/jobs", s.handleComposeJobsPartial)
 	authed.HandleFunc("GET /partials/compose/{project}", s.handleComposeProjectPartial)
 	authed.HandleFunc("GET /compose/new", s.handleComposeNew)
 	authed.HandleFunc("POST /compose", s.handleComposeCreate)
 	authed.HandleFunc("POST /compose/validate", s.handleComposeValidate)
-	authed.HandleFunc("POST /compose/jobs/clear", s.handleComposeOutputClear)
 	authed.HandleFunc("GET /compose/{project}", s.handleComposeDetail)
 	authed.HandleFunc("GET /compose/{project}/edit", s.handleComposeEdit)
 	authed.HandleFunc("POST /compose/{project}", s.handleComposeUpdate)
@@ -456,6 +454,8 @@ type page struct {
 	// of unread events.
 	HasEvents    bool
 	EventsUnread int
+	// Activity is the side bar of the pages that show it (activity.go).
+	Activity *activityView
 }
 
 type flash struct {
@@ -497,6 +497,7 @@ func (s *Server) newPage(r *http.Request, title, active string, data any) page {
 			p.Flash = &flash{Msg: f}
 		}
 	}
+	p.Activity = s.pageActivity(r, active)
 	return p
 }
 

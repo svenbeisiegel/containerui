@@ -11,7 +11,6 @@ import (
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/svenbeisiegel/containerui/internal/compose"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
@@ -92,8 +91,7 @@ type composeListView struct {
 }
 
 type composePage struct {
-	List   composeListView
-	Output composeOutputView
+	List composeListView
 }
 
 func (s *Server) loadComposeList(r *http.Request, f *flash) composeListView {
@@ -110,9 +108,7 @@ func (s *Server) handleCompose(w http.ResponseWriter, r *http.Request) {
 	if _, ok := s.requireCompose(w, r); !ok {
 		return
 	}
-	out := s.loadComposeOutput(r, "")
-	out.Open = sessionFrom(r).Pop(sessOutputOpen) != nil
-	data := composePage{List: s.loadComposeList(r, nil), Output: out}
+	data := composePage{List: s.loadComposeList(r, nil)}
 	s.render(w, "compose", s.newPage(r, "Compose", "compose", data))
 }
 
@@ -123,103 +119,12 @@ func (s *Server) handleComposePartial(w http.ResponseWriter, r *http.Request) {
 	s.renderPartial(w, "compose_table", s.loadComposeList(r, nil))
 }
 
-// ---- output of the last compose action ----
-
-// Session keys of the compose output drawer.
-const (
-	// sessOutputCleared (time.Time): the user cleared the output; jobs
-	// started before are not shown to them.
-	sessOutputCleared = "compose-output-cleared"
-	// sessOutputOpen: open the drawer on the next compose page, set when
-	// an action that started a job redirects (a reload starts closed).
-	sessOutputOpen = "compose-output-open"
-)
-
-// composeOutputView is the drawer with the output of the last compose
-// action, of any user; on a project's page the last action of the project.
-type composeOutputView struct {
-	Project    string // "" = all projects
-	Job        *jobs.Job
-	Took       string // duration of a finished job
-	AnyRunning bool   // a matching job runs (keeps the body polling)
-	Open       bool   // render the drawer open
-	Partial    bool   // rendered as an htmx partial: update the toggle badge out of band
-	CSRF       string
-}
+// ---- compose jobs (listed in the activity side bar) ----
 
 // Compose jobs have the target "<project> <action>".
 func jobProject(j jobs.Job) string {
 	p, _, _ := strings.Cut(j.Target, " ")
 	return p
-}
-
-func (s *Server) loadComposeOutput(r *http.Request, project string) composeOutputView {
-	sess := sessionFrom(r)
-	v := composeOutputView{Project: project, CSRF: sess.CSRF}
-	cleared, _ := sess.Get(sessOutputCleared).(time.Time)
-	newest := true
-	for _, j := range s.jobs.List(composeJobKind) { // newest first
-		if project != "" && jobProject(j) != project {
-			continue
-		}
-		if !j.Done() {
-			v.AnyRunning = true
-		}
-		// Only the newest job is shown; a cleared one never falls back to
-		// an older job.
-		if newest && j.Started.After(cleared) {
-			v.Job = &j
-			if j.Done() {
-				v.Took = j.Finished.Sub(j.Started).Round(100 * time.Millisecond).String()
-			}
-		}
-		newest = false
-	}
-	return v
-}
-
-func (s *Server) handleComposeJobsPartial(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireCompose(w, r); !ok {
-		return
-	}
-	project := r.URL.Query().Get("project")
-	if project != "" && runtime.ValidateProjectName(project) != nil {
-		http.NotFound(w, r)
-		return
-	}
-	v := s.loadComposeOutput(r, project)
-	v.Partial = true
-	if !v.AnyRunning && isHTMX(r) {
-		// The polling body stops after this response; let the project
-		// views reload once to show the result.
-		w.Header().Set("HX-Trigger", "compose-changed")
-	}
-	s.renderPartial(w, "compose_output_body", v)
-}
-
-// handleComposeOutputClear hides the shown output for this user until a
-// newer compose action starts.
-func (s *Server) handleComposeOutputClear(w http.ResponseWriter, r *http.Request) {
-	if _, ok := s.requireCompose(w, r); !ok {
-		return
-	}
-	project := r.PostFormValue("project")
-	if project != "" && runtime.ValidateProjectName(project) != nil {
-		http.NotFound(w, r)
-		return
-	}
-	sessionFrom(r).Set(sessOutputCleared, time.Now())
-	if !isHTMX(r) {
-		to := "/compose"
-		if project != "" {
-			to += "/" + project
-		}
-		redirect(w, r, to)
-		return
-	}
-	v := s.loadComposeOutput(r, project)
-	v.Partial = true
-	s.renderPartial(w, "compose_output_body", v)
 }
 
 // composeBusy reports whether a job is running for the project.
@@ -477,7 +382,7 @@ func (s *Server) deployCompose(w http.ResponseWriter, r *http.Request, c runtime
 		verb = "Applying changes to"
 	}
 	sessionFrom(r).SetFlash(fmt.Sprintf("%s project %s…", verb, f.Project))
-	sessionFrom(r).Set(sessOutputOpen, true)
+	s.openActivity(w, r, true)
 	redirect(w, r, "/compose/"+f.Project)
 }
 
@@ -560,7 +465,6 @@ func (s *Server) composeDetail(r *http.Request, p compose.Project) composeDetail
 
 type composeDetailPage struct {
 	Detail composeDetailView
-	Output composeOutputView
 }
 
 func (s *Server) handleComposeDetail(w http.ResponseWriter, r *http.Request) {
@@ -571,9 +475,7 @@ func (s *Server) handleComposeDetail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	out := s.loadComposeOutput(r, p.Name)
-	out.Open = sessionFrom(r).Pop(sessOutputOpen) != nil
-	data := composeDetailPage{Detail: s.composeDetail(r, p), Output: out}
+	data := composeDetailPage{Detail: s.composeDetail(r, p)}
 	s.render(w, "compose_detail", s.newPage(r, p.Name, "compose", data))
 }
 
@@ -668,15 +570,22 @@ func (s *Server) handleComposeAction(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		f = errFlash(err)
 	}
-	if action != "delete" && err == nil {
-		w.Header().Set("HX-Trigger", "compose-job-started")
+	redirecting := !isHTMX(r) || r.PostFormValue("view") == "detail"
+	switch {
+	case action == "delete":
+		// Done right away: listed, but the side bar stays closed.
+		target := p.Name + " delete compose file"
+		if err != nil {
+			s.recordActivity(w, r, composeJobKind, target, "", f.Msg, nil, redirecting, false)
+		} else {
+			s.recordActivity(w, r, composeJobKind, target, f.Msg, "", nil, redirecting, false)
+		}
+	case err == nil:
+		s.openActivity(w, r, redirecting) // follow the job
 	}
 
-	if !isHTMX(r) || r.PostFormValue("view") == "detail" {
+	if redirecting {
 		sessionFrom(r).SetFlash(f.Msg)
-		if action != "delete" && err == nil {
-			sessionFrom(r).Set(sessOutputOpen, true) // the reload opens the output
-		}
 		to := "/compose/" + p.Name
 		if r.PostFormValue("view") != "detail" || (action == "delete" && err == nil && !p.Deployed()) {
 			to = "/compose"

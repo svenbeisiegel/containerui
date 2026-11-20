@@ -1,4 +1,3 @@
-{{define "head"}}<script src="/static/drawer.js" defer></script>{{end}}
 {{define "content"}}
 <div class="page-head">
   <div class="title-row">{{template "back_button" "/images"}}<h1>Pull Image</h1></div>
@@ -10,10 +9,9 @@
     <label class="field">
       <span class="field-label">Image reference <span class="req" aria-hidden="true">*</span></span>
       <input name="ref" value="{{.Data.Ref}}" required placeholder="e.g. alpine:latest or ghcr.io/org/app:1.0" class="mono-input" autocomplete="off" spellcheck="false" autofocus>
-      <small class="hint">The pull runs in the background; follow it in the activity panel on the Images page.</small>
+      <small class="hint">The pull runs in the background; follow it in the activity side bar.</small>
     </label>
     <div><button type="submit" class="primary">Pull image</button></div>
   </form>
 </section>
-{{template "activity_drawer" .Data.Activity}}
 {{end}}

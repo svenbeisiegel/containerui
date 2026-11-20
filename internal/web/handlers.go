@@ -258,9 +258,17 @@ func (s *Server) handleContainerAction(w http.ResponseWriter, r *http.Request) {
 		s.log.Info("container action", "action", action, "id", id, "user", sessionFrom(r).Username)
 		f = okFlash("Container %s %s.", name, done)
 	}
+	// Listed in the activity side bar, which stays closed: the flash is
+	// the answer.
+	redirecting := !isHTMX(r) || r.PostFormValue("view") == "detail"
+	if err != nil {
+		s.recordActivity(w, r, containerJobKind, action+" "+name, "", f.Msg, nil, redirecting, false)
+	} else {
+		s.recordActivity(w, r, containerJobKind, action+" "+name, f.Msg, "", nil, redirecting, false)
+	}
 
 	// Detail page and non-JS clients get a redirect; the list gets a fresh table.
-	if !isHTMX(r) || r.PostFormValue("view") == "detail" {
+	if redirecting {
 		sessionFrom(r).SetFlash(f.Msg)
 		to := "/containers"
 		if r.PostFormValue("view") == "detail" && (action != "delete" || err != nil) {
@@ -392,6 +400,7 @@ func parseContainerForm(r *http.Request) containerForm {
 func (s *Server) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 	f := parseContainerForm(r)
 	opts, err := f.toOpts()
+	attempted := err == nil // the form parsed and reached the runtime
 	if err == nil {
 		s.setPullLabel(&opts, opts.Pull)
 		var id string
@@ -406,18 +415,32 @@ func (s *Server) handleContainerCreate(w http.ResponseWriter, r *http.Request) {
 			if opts.Start {
 				msg = fmt.Sprintf("Container %s created and started.", name)
 			}
+			s.recordActivity(w, r, containerJobKind, "create "+name, msg, "", nil, true, false)
 			sessionFrom(r).SetFlash(msg)
 			http.Redirect(w, r, "/containers", http.StatusSeeOther)
 			return
 		}
 		if id != "" {
 			// Created, but starting failed.
+			name := opts.Name
+			if name == "" {
+				name = shortID(id)
+			}
+			s.recordActivity(w, r, containerJobKind, "create "+name, "", "Created, but not started: "+userError(err), nil, true, false)
 			sessionFrom(r).SetFlash(userError(err))
 			http.Redirect(w, r, "/containers/"+id, http.StatusSeeOther)
 			return
 		}
 	}
 	s.log.Warn("container create failed", "image", f.Image, "user", sessionFrom(r).Username, "error", err)
+	if attempted {
+		// A form that does not parse is answered on the form alone.
+		target := opts.Name
+		if target == "" {
+			target = opts.Image
+		}
+		s.recordActivity(w, r, containerJobKind, "create "+target, "", userError(err), nil, true, false)
+	}
 	w.WriteHeader(http.StatusUnprocessableEntity)
 	s.render(w, "container_new", s.newPage(r, "Create container", "containers", s.newContainerView(r.Context(), f, userError(err))))
 }
@@ -644,15 +667,13 @@ type imagesView struct {
 }
 
 type imagesPage struct {
-	Images   imagesView
-	Activity activityView
+	Images imagesView
 }
 
 // imagePullView is the "Pull image" page.
 type imagePullView struct {
-	Ref      string
-	Err      string
-	Activity activityView
+	Ref string
+	Err string
 }
 
 func (s *Server) loadImages(r *http.Request, f *flash) imagesView {
@@ -764,7 +785,7 @@ func (s *Server) handleImageCheckUpdates(w http.ResponseWriter, r *http.Request)
 			}
 			return s.pullUpdates(ctx, user, progress)
 		})
-		s.openActivity(w, r, "images", !isHTMX(r))
+		s.openActivity(w, r, !isHTMX(r))
 	case s.updates.CheckNow():
 		s.log.Info("image update check started", "user", user)
 	}
@@ -779,7 +800,7 @@ func (s *Server) handleImageCheckUpdates(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleImages(w http.ResponseWriter, r *http.Request) {
-	data := imagesPage{Images: s.loadImages(r, nil), Activity: s.loadActivity(r, "images")}
+	data := imagesPage{Images: s.loadImages(r, nil)}
 	s.render(w, "images", s.newPage(r, "Images", "images", data))
 }
 
@@ -796,7 +817,7 @@ func (s *Server) handleImagesPartial(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderPullPage(w http.ResponseWriter, r *http.Request, ref, errMsg string) {
-	v := imagePullView{Ref: ref, Err: errMsg, Activity: s.loadActivity(r, "images")}
+	v := imagePullView{Ref: ref, Err: errMsg}
 	s.render(w, "image_pull", s.newPage(r, "Pull image", "images", v))
 }
 
@@ -826,11 +847,11 @@ func (s *Server) handleImagePull(w http.ResponseWriter, r *http.Request) {
 	})
 	if isHTMX(r) {
 		// The update buttons in the image table: open the drawer in place.
-		s.openActivity(w, r, "images", false)
+		s.openActivity(w, r, false)
 		w.WriteHeader(http.StatusOK)
 		return
 	}
-	s.openActivity(w, r, "images", true)
+	s.openActivity(w, r, true)
 	http.Redirect(w, r, "/images", http.StatusSeeOther)
 }
 
@@ -891,10 +912,10 @@ func (s *Server) pullUpdates(ctx context.Context, user string, progress func(str
 	return nil
 }
 
-// imageResult records an image action in the Images drawer and answers
+// imageResult records an image action in the activity side bar and answers
 // with a fresh table (htmx) or a redirect to the list.
 func (s *Server) imageResult(w http.ResponseWriter, r *http.Request, target, msg, errMsg string, out []string) {
-	s.recordActivity(w, r, imageJobKind, target, msg, errMsg, out, !isHTMX(r))
+	s.recordActivity(w, r, imageJobKind, target, msg, errMsg, out, !isHTMX(r), true)
 	if !isHTMX(r) {
 		http.Redirect(w, r, "/images", http.StatusSeeOther)
 		return
@@ -975,27 +996,24 @@ type volumeForm struct {
 func (f volumeForm) AdvancedChanged() bool { return f.Options != "" || f.Labels != "" }
 
 type volumesPage struct {
-	Volumes  volumesView
-	Activity activityView
+	Volumes volumesView
 	// PruneAnonymous: prune can be limited to anonymous volumes.
 	PruneAnonymous bool
 }
 
 // volumeNewView is the "Create volume" page.
 type volumeNewView struct {
-	Form     volumeForm
-	Err      string // error from the create form
-	Drivers  []string
-	Activity activityView
+	Form    volumeForm
+	Err     string // error from the create form
+	Drivers []string
 }
 
 type volumeDetailView struct {
-	Name     string
-	Volume   *volumeRow
-	Inspect  string
-	Err      string
-	CSRF     string
-	Activity activityView
+	Name    string
+	Volume  *volumeRow
+	Inspect string
+	Err     string
+	CSRF    string
 }
 
 // volumesSupported answers 404 if the runtime has no volume support.
@@ -1038,12 +1056,12 @@ func (s *Server) handleVolumes(w http.ResponseWriter, r *http.Request) {
 	if !s.volumesSupported(w, r) {
 		return
 	}
-	data := volumesPage{Volumes: s.loadVolumes(r, nil), Activity: s.loadActivity(r, "volumes"), PruneAnonymous: s.caps().PruneAnonymous}
+	data := volumesPage{Volumes: s.loadVolumes(r, nil), PruneAnonymous: s.caps().PruneAnonymous}
 	s.render(w, "volumes", s.newPage(r, "Volumes", "volumes", data))
 }
 
 func (s *Server) renderVolumeNew(w http.ResponseWriter, r *http.Request, f volumeForm, formErr string) {
-	v := volumeNewView{Form: f, Err: formErr, Drivers: s.caps().VolumeDrivers, Activity: s.loadActivity(r, "volumes")}
+	v := volumeNewView{Form: f, Err: formErr, Drivers: s.caps().VolumeDrivers}
 	s.render(w, "volume_new", s.newPage(r, "Create volume", "volumes", v))
 }
 
@@ -1064,7 +1082,7 @@ func (s *Server) handleVolumeDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	v := volumeDetailView{Name: name, CSRF: sessionFrom(r).CSRF, Activity: s.loadActivity(r, "volumes")}
+	v := volumeDetailView{Name: name, CSRF: sessionFrom(r).CSRF}
 	for _, row := range s.loadVolumes(r, nil).Volumes {
 		if row.Name == name {
 			v.Volume = &row
@@ -1107,14 +1125,14 @@ func (s *Server) handleVolumeCreate(w http.ResponseWriter, r *http.Request) {
 	if f.Name == "" {
 		name = shortID(name)
 	}
-	s.recordActivity(w, r, volumeJobKind, "create "+name, fmt.Sprintf("Volume %s created.", name), "", nil, true)
+	s.recordActivity(w, r, volumeJobKind, "create "+name, fmt.Sprintf("Volume %s created.", name), "", nil, true, true)
 	redirect(w, r, "/volumes")
 }
 
-// volumeResult records a volume action in the Volumes drawer and answers
+// volumeResult records a volume action in the activity side bar and answers
 // with a fresh table (htmx) or a redirect to the list.
 func (s *Server) volumeResult(w http.ResponseWriter, r *http.Request, target, msg, errMsg string, out []string) {
-	s.recordActivity(w, r, volumeJobKind, target, msg, errMsg, out, !isHTMX(r))
+	s.recordActivity(w, r, volumeJobKind, target, msg, errMsg, out, !isHTMX(r), true)
 	if !isHTMX(r) {
 		http.Redirect(w, r, "/volumes", http.StatusSeeOther)
 		return
@@ -1142,7 +1160,7 @@ func (s *Server) handleVolumeDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.PostFormValue("view") == "detail" {
 		// Back to the detail page on failure, to the list once it is gone.
-		s.recordActivity(w, r, volumeJobKind, "delete "+name, msg, errMsg, nil, true)
+		s.recordActivity(w, r, volumeJobKind, "delete "+name, msg, errMsg, nil, true, true)
 		to := "/volumes"
 		if err != nil {
 			to = "/volumes/" + url.PathEscape(name)

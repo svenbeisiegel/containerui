@@ -1,4 +1,3 @@
-{{define "head"}}<script src="/static/drawer.js" defer></script>{{end}}
 {{define "content"}}
 <h1 class="sr-only">Networks</h1>
 <div class="page-head">
@@ -13,5 +12,4 @@
   </div>
 </div>
 {{template "networks_table" .Data.Networks}}
-{{template "activity_drawer" .Data.Activity}}
 {{end}}

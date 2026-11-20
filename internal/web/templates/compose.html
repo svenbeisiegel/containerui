@@ -1,9 +1,7 @@
-{{define "head"}}<script src="/static/drawer.js" defer></script>{{end}}
 {{define "content"}}
 <h1 class="sr-only">Compose</h1>
 <div class="page-head">
   <div class="actions"><a class="button primary" href="/compose/new">Create compose</a>{{template "refresh_button" (dict "Href" "/compose" "Get" "/partials/compose" "Target" "#compose")}}</div>
 </div>
 {{template "compose_table" .Data.List}}
-{{template "compose_output" .Data.Output}}
 {{end}}
