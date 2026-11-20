@@ -14,11 +14,15 @@ import (
 )
 
 // attachTarget is a container that can be attached to, with how it was
-// created: input is only forwarded when it keeps STDIN open, and the detach
-// keys only work with a TTY.
+// created: the detach keys only work with a TTY, and input is only forwarded
+// when it keeps STDIN open and has a TTY. Without a TTY, ending the attach
+// closes the container's STDIN (docker sets StdinOnce), which ends many
+// programs, so such containers are attached output only.
 type attachTarget struct {
 	C          *runtime.Container
 	TTY, Stdin bool
+	// OpenStdin: the container keeps STDIN open (Stdin may still be off).
+	OpenStdin bool
 }
 
 // findAttachTarget runs the pre-checks for attaching. On failure it returns
@@ -40,7 +44,8 @@ func (s *Server) findAttachTarget(ctx context.Context, id string) (attachTarget,
 	if err := json.Unmarshal(raw, &in); err != nil {
 		return t, http.StatusBadGateway, "Cannot read the container's settings: " + err.Error()
 	}
-	t.TTY, t.Stdin = in.Config.Tty, in.Config.OpenStdin
+	t.TTY, t.OpenStdin = in.Config.Tty, in.Config.OpenStdin
+	t.Stdin = t.OpenStdin && t.TTY
 	return t, http.StatusOK, ""
 }
 
@@ -48,6 +53,7 @@ func (s *Server) findAttachTarget(ctx context.Context, id string) (attachTarget,
 type attachPageView struct {
 	terminalPageView
 	TTY, Stdin bool
+	OpenStdin  bool
 	Running    bool
 	// Start: the first connect starts the stopped container attached.
 	Start bool
@@ -65,7 +71,7 @@ func (s *Server) handleAttachPage(w http.ResponseWriter, r *http.Request) {
 	v := attachPageView{terminalPageView: terminalPageView{ID: id, CSRF: sessionFrom(r).CSRF, Opened: time.Now(),
 		Favicon: s.favicon, FaviconType: s.favType}, DetachKeys: runtime.DetachKeys}
 	t, status, msg := s.findAttachTarget(r.Context(), id)
-	v.C, v.Err, v.TTY, v.Stdin = t.C, msg, t.TTY, t.Stdin
+	v.C, v.Err, v.TTY, v.Stdin, v.OpenStdin = t.C, msg, t.TTY, t.Stdin, t.OpenStdin
 	if t.C != nil {
 		v.ID = t.C.ID
 		v.Running = t.C.State.IsRunning()

@@ -62,6 +62,19 @@ func (t *ptyTerminal) Wait() (int, error) {
 	return t.code, t.err
 }
 
+// Kill ends the CLI without a hangup: a killed process cannot pass a signal
+// on to the container. Close still has to release the terminal.
+func (t *ptyTerminal) Kill() error {
+	select {
+	case <-t.done:
+		return nil
+	default:
+	}
+	err := t.cmd.Process.Kill()
+	<-t.done
+	return err
+}
+
 // Close closes the pseudo terminal, which hangs up the CLI like closing a
 // console window does, and kills it if it does not exit in time. Pending
 // Reads return an error once the terminal is closed.

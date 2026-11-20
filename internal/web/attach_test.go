@@ -201,3 +201,41 @@ func TestTailBuffer(t *testing.T) {
 		t.Errorf("tail = %q; want 56789", got)
 	}
 }
+
+// A container with STDIN open but no TTY is attached output only: ending the
+// attach would close its STDIN.
+func TestAttachNoTTYIsOutputOnly(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	w := e.post("/containers", url.Values{"image": {"alpine:latest"}, "name": {"notty"}, "interactive": {"on"}})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("create: %d", w.Code)
+	}
+	body := e.do("GET", "/containers/notty/attach", nil).Body.String()
+	for _, want := range []string{"read-only (input needs a TTY)", `data-stdin="false"`, "Recreate it with a TTY"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("attach page lacks %q", want)
+		}
+	}
+
+	srv := httptest.NewServer(e.h)
+	defer srv.Close()
+	c, _, err := dialTerminal(t, e, srv, "/containers/notty/attach/ws?start=1&csrf="+url.QueryEscape(e.csrf), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	readUntil(t, c, "── starting ──")
+	c.Close(websocket.StatusNormalClosure, "")
+	var found bool
+	for _, call := range e.rt.Calls {
+		if strings.HasPrefix(call, "attach-start ") {
+			found = true
+			if !strings.Contains(call, "stdin=false tty=false") {
+				t.Errorf("call = %q; want no input forwarded", call)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("calls = %v", e.rt.Calls)
+	}
+}

@@ -26,7 +26,7 @@
       {{with .C}}<div><dt>Image</dt><dd class="mono">{{.Image}}</dd></div>{{end}}
       {{if .C}}
       <div><dt>TTY</dt><dd>{{if .TTY}}yes{{else}}no{{end}}</dd></div>
-      <div><dt>Input</dt><dd>{{if .Stdin}}STDIN open{{else}}read-only (STDIN not open){{end}}</dd></div>
+      <div><dt>Input</dt><dd>{{if .Stdin}}STDIN open{{else if .OpenStdin}}read-only (input needs a TTY){{else}}read-only (STDIN not open){{end}}</dd></div>
       {{end}}
       <div><dt>Opened</dt><dd>{{datetime .Opened}}</dd></div>
     </dl>
@@ -38,7 +38,7 @@
               data-again-label="Attach again">{{if .Start}}Start and attach{{else}}Attach again{{end}}</button>
     </div>
     <p class="logwatch-note" data-terminal-note {{if .AutoConnect}}hidden{{end}}>{{if not .AutoConnect}}The container is not running. Start it attached to see its output from the first line.{{end}}</p>
-    <p class="logwatch-note muted small">{{if and .TTY .Stdin}}Detach with the Detach button or <kbd>{{.DetachKeys}}</kbd>. {{end}}Closing this tab detaches; the container keeps running.</p>
+    <p class="logwatch-note muted small">{{if and .TTY .Stdin}}Detach with the Detach button or <kbd>{{.DetachKeys}}</kbd>. {{end}}Closing this tab detaches; the container keeps running.{{if and .OpenStdin (not .TTY)}} Input is not forwarded: without a TTY, detaching would close the container's STDIN. Recreate it with a TTY to type into it.{{end}}</p>
     {{else}}
     <p class="logwatch-note error-text">{{.Err}}</p>
     {{end}}

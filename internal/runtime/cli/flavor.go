@@ -43,8 +43,12 @@ type Flavor struct {
 	// stats: "container stats" and "system df" print JSON (not wslc).
 	stats bool
 	// attach: "container attach" and "container start --attach" with
-	// --sig-proxy and --detach-keys exist.
+	// --detach-keys exist, and "container attach" takes --sig-proxy.
 	attach bool
+	// startSigProxy: "container start --attach" takes --sig-proxy too
+	// (podman; docker start has no such flag and proxies no signals with a
+	// TTY).
+	startSigProxy bool
 
 	// compose lists the compose tools to try, in order. None for wslc,
 	// which has no compose.
@@ -100,6 +104,7 @@ var (
 		createOptions:  runtime.AllOptions(),
 		stats:          true,
 		attach:         true,
+		startSigProxy:  true,
 		compose:        []composeCandidate{{plugin: true}, {binary: "podman-compose"}},
 	}
 )

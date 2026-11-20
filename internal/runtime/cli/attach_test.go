@@ -18,7 +18,8 @@ func TestOpenAttachArgs(t *testing.T) {
 		{Docker, runtime.AttachOpts{Stdin: true, TTY: true}, "container attach --sig-proxy=false --detach-keys ctrl-p,ctrl-q abc"},
 		{Docker, runtime.AttachOpts{}, "container attach --no-stdin --sig-proxy=false --detach-keys ctrl-p,ctrl-q abc"},
 		{Podman, runtime.AttachOpts{Start: true, Stdin: true, TTY: true}, "container start --attach --interactive --sig-proxy=false --detach-keys ctrl-p,ctrl-q abc"},
-		{Docker, runtime.AttachOpts{Start: true}, "container start --attach --sig-proxy=false --detach-keys ctrl-p,ctrl-q abc"},
+		{Docker, runtime.AttachOpts{Start: true}, "container start --attach --detach-keys ctrl-p,ctrl-q abc"},
+		{Docker, runtime.AttachOpts{Start: true, Stdin: true, TTY: true}, "container start --attach --interactive --detach-keys ctrl-p,ctrl-q abc"},
 	}
 	for _, c := range cases {
 		r := &fakeRunner{}
@@ -53,6 +54,35 @@ func TestAttachCloseDetaches(t *testing.T) {
 	}
 	if len(r.calls) != 1 {
 		t.Errorf("calls = %v; detaching must not run anything in the container", r.calls)
+	}
+}
+
+// Close kills a docker start --attach CLI instead of hanging it up, as it
+// could not get --sig-proxy=false; everything else is hung up.
+func TestAttachCloseKillsWithoutSigProxyFlag(t *testing.T) {
+	cases := []struct {
+		flavor *Flavor
+		opts   runtime.AttachOpts
+		kill   bool
+	}{
+		{Docker, runtime.AttachOpts{Start: true}, true},
+		{Docker, runtime.AttachOpts{Start: true, Stdin: true}, true},
+		{Docker, runtime.AttachOpts{}, false},
+		{Podman, runtime.AttachOpts{Start: true}, false},
+	}
+	for _, c := range cases {
+		r := &fakeRunner{}
+		d := NewWithRunner(r, c.flavor, config.Runtime{})
+		term, err := d.OpenAttach(context.Background(), "abc", c.opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := term.Close(); err != nil {
+			t.Fatal(err)
+		}
+		if r.pty.killed != c.kill {
+			t.Errorf("%s %+v: killed = %v; want %v", c.flavor.Name, c.opts, r.pty.killed, c.kill)
+		}
 	}
 }
 

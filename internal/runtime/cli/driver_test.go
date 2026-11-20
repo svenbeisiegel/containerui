@@ -66,6 +66,7 @@ type stubTerminal struct {
 	done    chan struct{}
 	once    sync.Once
 	written []byte
+	killed  bool
 }
 
 func (s *stubTerminal) exit()                    { s.once.Do(func() { close(s.done) }) }
@@ -80,6 +81,7 @@ func (s *stubTerminal) Write(b []byte) (int, error) {
 func (s *stubTerminal) Resize(uint16, uint16) error { return nil }
 func (s *stubTerminal) Wait() (int, error)          { <-s.done; return 0, nil }
 func (s *stubTerminal) Close() error                { s.exit(); return nil }
+func (s *stubTerminal) Kill() error                 { s.killed = true; s.exit(); return nil }
 
 func (f *fakeRunner) last() string { return strings.Join(f.calls[len(f.calls)-1], " ") }
 
