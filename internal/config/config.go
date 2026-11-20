@@ -86,6 +86,14 @@ type Runtime struct {
 	// directory per project (relative to the config file).
 	ComposeDir string `yaml:"compose_dir"`
 
+	// VolumeHelperImage is the image of the short-lived container that
+	// reads and writes volume content for backup and restore (docker,
+	// podman); it needs sh, tar and find.
+	VolumeHelperImage string `yaml:"volume_helper_image"`
+	// VolumeUploadDir keeps uploaded volume backups until they are
+	// restored; empty = volume-uploads next to the compose folder.
+	VolumeUploadDir string `yaml:"volume_upload_dir"`
+
 	// WSLC is the pre-1.1 layout (runtime.wslc.*), still accepted and
 	// folded into the fields above.
 	WSLC *legacyWSLC `yaml:"wslc,omitempty"`
@@ -165,6 +173,8 @@ func Default() *Config {
 			PullTimeout:    30 * time.Minute,
 			ComposeTimeout: 30 * time.Minute,
 			ComposeDir:     "compose",
+			// Fully qualified, so podman needs no short-name resolution.
+			VolumeHelperImage: "docker.io/library/busybox:stable",
 		},
 		Events:   Events{Dir: "events"},
 		Registry: Registry{CheckUpdates: &on, CheckInterval: 30 * time.Minute, Timeout: 10 * time.Second, Insecure: []string{}},
@@ -346,6 +356,7 @@ func (c *Config) applyDefaults() {
 	c.Runtime.PullTimeout = cmp(c.Runtime.PullTimeout, d.Runtime.PullTimeout)
 	c.Runtime.ComposeTimeout = cmp(c.Runtime.ComposeTimeout, d.Runtime.ComposeTimeout)
 	c.Runtime.ComposeDir = cmp(c.Runtime.ComposeDir, d.Runtime.ComposeDir)
+	c.Runtime.VolumeHelperImage = cmp(c.Runtime.VolumeHelperImage, d.Runtime.VolumeHelperImage)
 	c.Runtime.Socket = SocketPath(c.Runtime.Socket)
 	c.Metrics.Interval = cmp(c.Metrics.Interval, d.Metrics.Interval)
 	c.Metrics.DashboardInterval = cmp(c.Metrics.DashboardInterval, d.Metrics.DashboardInterval)
@@ -457,6 +468,20 @@ func (c *Config) ActivityFile() string {
 		compose = "compose"
 	}
 	return filepath.Join(filepath.Dir(c.Resolve(compose)), "activity.json")
+}
+
+// VolumeUploadDir is the folder uploaded volume backups wait in until they
+// are restored: runtime.volume_upload_dir, or volume-uploads in the folder
+// that holds the compose folder (like ActivityFile).
+func (c *Config) VolumeUploadDir() string {
+	if c.Runtime.VolumeUploadDir != "" {
+		return c.Resolve(c.Runtime.VolumeUploadDir)
+	}
+	compose := c.Runtime.ComposeDir
+	if compose == "" {
+		compose = "compose"
+	}
+	return filepath.Join(filepath.Dir(c.Resolve(compose)), "volume-uploads")
 }
 
 // Resolve returns p made absolute relative to the config directory.

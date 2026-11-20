@@ -252,7 +252,7 @@ func TestRowMenus(t *testing.T) {
 	for path, items := range map[string][]string{
 		"/partials/containers": {`data-menu="c-c0ffee000001"`, `aria-label="Actions for web"`, ">Stop<", ">Restart<", ">Recreate<", ">Connect<", ">Delete<"},
 		"/partials/images":     {`data-menu="i-nginx:1.27"`, "Run…", "Tag…", `<details class="row-menu-sub">`, ">Delete<"},
-		"/partials/volumes":    {`data-menu="v-data"`, ">Delete<", ">Force delete<"},
+		"/partials/volumes":    {`data-menu="v-data"`, ">Backup<", ">Delete<"},
 		"/partials/networks":   {`data-menu="n-backend"`, ">Delete<"},
 		"/partials/compose":    {`data-menu="p-shop"`, ">Edit<"},
 		"/compose/shop":        {`<details class="row-menu"`, ">Stop<"},
@@ -338,7 +338,7 @@ func TestEmptyTables(t *testing.T) {
 		"/partials/dashboard":  `class="empty">No containers are running.<`,
 		"/partials/containers": `<td colspan="6" class="empty">No containers yet. Use <em>Create container</em> to add one.`,
 		"/partials/images":     `<td colspan="6" class="empty">No images yet. Use <em>Pull image</em> to get one.`,
-		"/partials/volumes":    `<td colspan="6" class="empty">No volumes yet. Use <em>Create volume</em> to add one.`,
+		"/partials/volumes":    `<td colspan="7" class="empty">No volumes yet. Use <em>Create volume</em> to add one.`,
 	} {
 		body := e.do("GET", path, nil, htmx).Body.String()
 		if !strings.Contains(body, "<thead>") || !strings.Contains(body, want) {

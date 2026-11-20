@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"github.com/svenbeisiegel/containerui/internal/volbackup"
 	"html/template"
 	"strings"
 	"time"
@@ -43,6 +44,7 @@ var funcs = template.FuncMap{
 		return m, nil
 	},
 	"bytes":    humanBytes,
+	"size":     volbackup.FormatBytes,
 	"duration": humanDuration,
 	"datetime": func(t time.Time) string {
 		if t.IsZero() {

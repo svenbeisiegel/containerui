@@ -11,3 +11,5 @@
 .claude/settings.local.json
 # Activity history of a local run (activity.file).
 /activity.json
+# Uploaded volume backups of a local run (runtime.volume_upload_dir).
+/volume-uploads/

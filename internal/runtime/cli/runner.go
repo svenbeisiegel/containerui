@@ -24,6 +24,9 @@ type Runner interface {
 	// Pipe is like Run but copies stdout and stderr, merged in arrival
 	// order, to w unchanged as they arrive.
 	Pipe(ctx context.Context, args []string, w io.Writer) (exitCode int, err error)
+	// Exchange is like Run but feeds stdin to the CLI and copies its
+	// stdout to w as it arrives; only stderr is captured.
+	Exchange(ctx context.Context, args []string, stdin io.Reader, w io.Writer) (stderr []byte, exitCode int, err error)
 	// StartPTY starts the CLI on a pseudo terminal of the given size and
 	// returns without waiting for it to exit.
 	StartPTY(args []string, cols, rows uint16) (runtime.Terminal, error)
@@ -92,6 +95,15 @@ func (r execRunner) Pipe(ctx context.Context, args []string, w io.Writer) (int, 
 	// Do not wait forever for the output pipe after the context ended.
 	cmd.WaitDelay = 2 * time.Second
 	return exitStatus(cmd.Run())
+}
+
+func (r execRunner) Exchange(ctx context.Context, args []string, stdin io.Reader, w io.Writer) ([]byte, int, error) {
+	var stderr bytes.Buffer
+	cmd := r.command(ctx, args)
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = stdin, w, &stderr
+	cmd.WaitDelay = 2 * time.Second
+	code, err := exitStatus(cmd.Run())
+	return stderr.Bytes(), code, err
 }
 
 // exitStatus turns a cmd error into (exitCode, err). A non-zero exit is not

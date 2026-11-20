@@ -989,6 +989,7 @@ func (s *Server) handleImagePrune(w http.ResponseWriter, r *http.Request) {
 type volumeRow struct {
 	runtime.Volume
 	UsedBy []string // names of the containers mounting the volume
+	InUse  bool     // a running container mounts it
 }
 
 type volumesView struct {
@@ -996,6 +997,7 @@ type volumesView struct {
 	Err     string
 	Flash   *flash
 	CSRF    string
+	Backup  bool // volumes can be selected for a backup
 }
 
 type volumeForm struct {
@@ -1034,6 +1036,8 @@ type volumesPage struct {
 	Volumes volumesView
 	// PruneAnonymous: prune can be limited to anonymous volumes.
 	PruneAnonymous bool
+	// Restore: backup files can be uploaded and restored.
+	Restore bool
 }
 
 // volumeNewView is the "Create volume" page.
@@ -1049,6 +1053,7 @@ type volumeDetailView struct {
 	Inspect string
 	Err     string
 	CSRF    string
+	Backup  bool
 }
 
 // volumesSupported answers 404 if the runtime has no volume support.
@@ -1063,26 +1068,35 @@ func (s *Server) volumesSupported(w http.ResponseWriter, r *http.Request) bool {
 // volumeUsers maps volume names to the containers that mount them. A failed
 // container listing only leaves the "used by" information empty.
 func (s *Server) volumeUsers(ctx context.Context) map[string][]string {
-	users := map[string][]string{}
+	users, _ := s.volumeUsage(ctx)
+	return users
+}
+
+// volumeUsage is volumeUsers plus the volumes a running container mounts.
+func (s *Server) volumeUsage(ctx context.Context) (users map[string][]string, running map[string]bool) {
+	users, running = map[string][]string{}, map[string]bool{}
 	cs, _ := s.rt.ListContainers(ctx, runtime.ListContainersOpts{All: true})
 	for _, c := range cs {
 		for _, m := range c.Mounts {
 			users[m] = append(users[m], c.Name)
+			if c.State.IsRunning() {
+				running[m] = true
+			}
 		}
 	}
-	return users
+	return users, running
 }
 
 func (s *Server) loadVolumes(r *http.Request, f *flash) volumesView {
-	v := volumesView{Flash: f, CSRF: sessionFrom(r).CSRF}
+	v := volumesView{Flash: f, CSRF: sessionFrom(r).CSRF, Backup: s.caps().VolumeBackup}
 	vols, err := s.rt.ListVolumes(r.Context())
 	if err != nil {
 		v.Err = userError(err)
 		return v
 	}
-	users := s.volumeUsers(r.Context())
+	users, running := s.volumeUsage(r.Context())
 	for _, vol := range vols {
-		v.Volumes = append(v.Volumes, volumeRow{Volume: vol, UsedBy: users[vol.Name]})
+		v.Volumes = append(v.Volumes, volumeRow{Volume: vol, UsedBy: users[vol.Name], InUse: running[vol.Name]})
 	}
 	return v
 }
@@ -1091,7 +1105,8 @@ func (s *Server) handleVolumes(w http.ResponseWriter, r *http.Request) {
 	if !s.volumesSupported(w, r) {
 		return
 	}
-	data := volumesPage{Volumes: s.loadVolumes(r, nil), PruneAnonymous: s.caps().PruneAnonymous}
+	data := volumesPage{Volumes: s.loadVolumes(r, nil), PruneAnonymous: s.caps().PruneAnonymous,
+		Restore: s.caps().VolumeBackup && s.uploads != nil}
 	s.render(w, "volumes", s.newPage(r, "Volumes", "volumes", data))
 }
 
@@ -1117,7 +1132,7 @@ func (s *Server) handleVolumeDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PathValue("name")
-	v := volumeDetailView{Name: name, CSRF: sessionFrom(r).CSRF}
+	v := volumeDetailView{Name: name, CSRF: sessionFrom(r).CSRF, Backup: s.caps().VolumeBackup}
 	for _, row := range s.loadVolumes(r, nil).Volumes {
 		if row.Name == name {
 			v.Volume = &row
@@ -1187,17 +1202,16 @@ func (s *Server) handleVolumeDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := r.PostFormValue("name")
-	force := r.PostFormValue("force") == "true"
-	err := s.rt.RemoveVolume(r.Context(), name, force)
+	err := s.rt.RemoveVolume(r.Context(), name, false)
 	var msg, errMsg string
 	if err != nil {
-		s.log.Warn("volume delete failed", "name", name, "force", force, "error", err)
+		s.log.Warn("volume delete failed", "name", name, "error", err)
 		errMsg = userError(err)
 		if errors.Is(err, runtime.ErrConflict) {
 			errMsg += " The volume is used by a container; delete the container first."
 		}
 	} else {
-		s.log.Info("volume deleted", "name", name, "force", force, "user", sessionFrom(r).Username)
+		s.log.Info("volume deleted", "name", name, "user", sessionFrom(r).Username)
 		msg = fmt.Sprintf("Deleted volume %s.", name)
 	}
 	if r.PostFormValue("view") == "detail" {

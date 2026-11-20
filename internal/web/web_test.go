@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"slices"
@@ -75,10 +76,11 @@ func newEnvWith(t *testing.T, opt func(*Options)) *env {
 	composeDir := t.TempDir()
 	o := Options{
 		Runtime: rt, Users: users, Sessions: auth.NewSessions(time.Hour, time.Hour), Jobs: jm, ComposeDir: composeDir,
-		WarmInterval: -1, // deterministic: no background warm-ups
-		Logger:       slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
-		HostLog:      &fakeSysLog{},
-		HostInfo:     fakeHostInfo,
+		VolumeUploadDir: filepath.Join(t.TempDir(), "uploads"),
+		WarmInterval:    -1, // deterministic: no background warm-ups
+		Logger:          slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+		HostLog:         &fakeSysLog{},
+		HostInfo:        fakeHostInfo,
 	}
 	if opt != nil {
 		opt(&o)
@@ -249,10 +251,10 @@ func TestPagesRender(t *testing.T) {
 		"/images/pull":             {"Pull Image", `action="/images/pull"`, `name="ref"`, activityTitle},
 		"/partials/images":         {`id="images"`},
 		"/partials/activity":       {`id="activity-jobs"`},
-		"/volumes":                 {`href="/volumes/new"`, "Prune volumes", "--all", "cache", `href="/volumes/data"`, `href="/containers/web"`, "Force delete", activityTitle},
+		"/volumes":                 {`href="/volumes/new"`, "Prune volumes", "--all", "cache", `href="/volumes/data"`, `href="/containers/web"`, `id="volume-backup-form"`, `href="/volumes/restore"`, `form="volume-backup-form"`, activityTitle},
 		"/volumes/new":             {"Create Volume", `action="/volumes"`, `name="driver"`, `name="opt_type"`, `name="opt_device"`, `name="opt_o"`, activityTitle},
 		"/partials/volumes":        {`id="volumes"`, "cache"},
-		"/volumes/data":            {"Inspect", "/var/lib/docker/volumes/data/_data", "web", "Force delete"},
+		"/volumes/data":            {"Inspect", "/var/lib/docker/volumes/data/_data", "web", `action="/volumes/backup"`},
 	}
 	for path, want := range pages {
 		w := e.do("GET", path, nil)
@@ -454,7 +456,8 @@ func TestVolumeActions(t *testing.T) {
 		t.Errorf("device not on detail page:\n%s", body)
 	}
 
-	// "data" is mounted by the web container: neither delete nor force delete removes it.
+	// "data" is mounted by the web container: delete does not remove it,
+	// and a force field (the removed "Force delete") is ignored.
 	for _, force := range []string{"", "true"} {
 		w = e.post("/volumes/delete", url.Values{"name": {"data"}, "view": {"list"}, "force": {force}}, htmx)
 		if !strings.Contains(e.activity(), "delete the container first") || !strings.Contains(w.Body.String(), `id="volumes"`) {
@@ -481,7 +484,7 @@ func TestVolumeActions(t *testing.T) {
 		t.Errorf("prune all: %s", a)
 	}
 
-	want := []string{"create-volume logs", "create-volume share", "inspect-volume share", "rmv data force=false", "rmv data force=true", "rmv logs force=false", "rmv data force=false", "prune-volumes all=false", "prune-volumes all=true"}
+	want := []string{"create-volume logs", "create-volume share", "inspect-volume share", "rmv data force=false", "rmv data force=false", "rmv logs force=false", "rmv data force=false", "prune-volumes all=false", "prune-volumes all=true"}
 	if !reflect.DeepEqual(e.rt.Calls, want) {
 		t.Errorf("calls = %v", e.rt.Calls)
 	}

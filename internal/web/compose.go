@@ -42,6 +42,9 @@ func (s *Server) caps() runtime.Capabilities {
 	if c.Compose && s.store.Dir == "" {
 		c.Compose = false
 	}
+	if _, ok := s.rt.(runtime.VolumeArchiver); !ok {
+		c.VolumeBackup = false
+	}
 	return c
 }
 

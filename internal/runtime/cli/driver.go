@@ -44,6 +44,7 @@ type Driver struct {
 	pullTimeout    time.Duration
 	composeTimeout time.Duration
 	compose        *composeTool // nil: no compose tool found
+	helperImage    string       // volume backup/restore helper
 }
 
 var _ runtime.Runtime = (*Driver)(nil)
@@ -85,7 +86,7 @@ func lookPath(f *Flavor, path string) (string, error) {
 
 // NewWithRunner creates a driver with a custom Runner (used by tests).
 func NewWithRunner(r Runner, f *Flavor, cfg config.Runtime) *Driver {
-	d := &Driver{flavor: f, runner: r, commandTimeout: cfg.CommandTimeout, pullTimeout: cfg.PullTimeout, composeTimeout: cfg.ComposeTimeout}
+	d := &Driver{flavor: f, runner: r, commandTimeout: cfg.CommandTimeout, pullTimeout: cfg.PullTimeout, composeTimeout: cfg.ComposeTimeout, helperImage: cfg.VolumeHelperImage}
 	if f.session {
 		d.session = cfg.Session
 	}
@@ -101,6 +102,9 @@ func NewWithRunner(r Runner, f *Flavor, cfg config.Runtime) *Driver {
 	if d.composeTimeout == 0 {
 		d.composeTimeout = 30 * time.Minute
 	}
+	if d.helperImage == "" {
+		d.helperImage = config.Default().Runtime.VolumeHelperImage
+	}
 	return d
 }
 
@@ -113,7 +117,7 @@ func (d *Driver) Capabilities() runtime.Capabilities {
 	c := runtime.Capabilities{Restart: true, Inspect: true, Pull: true, Tag: true, Volumes: true, Networks: true, Terminal: true, Logs: true,
 		VolumeDrivers: d.flavor.volumeDrivers, PruneAnonymous: d.flavor.pruneAnonymous,
 		NetworkDrivers: d.flavor.networkDrivers, NetworkIPv6: d.flavor.networkIPv6, Stats: d.flavor.stats,
-		CreateOptions: d.flavor.createOptions, Attach: d.flavor.attach}
+		CreateOptions: d.flavor.createOptions, Attach: d.flavor.attach, VolumeBackup: d.flavor.volumeArchive}
 	if d.compose != nil {
 		c.Compose, c.ComposeVersion = true, d.compose.name+" "+d.compose.version
 	}

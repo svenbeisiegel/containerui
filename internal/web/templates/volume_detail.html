@@ -14,7 +14,7 @@
     {{if .Mountpoint}}<dt>Mountpoint</dt><dd class="mono">{{.Mountpoint}}</dd>{{end}}
     <dt>Used by</dt><dd>{{template "volume_users" .UsedBy}}</dd>
   </dl>
-  {{template "volume_actions" (dict "V" . "View" "detail" "CSRF" $v.CSRF)}}
+  {{template "volume_actions" (dict "V" . "View" "detail" "CSRF" $v.CSRF "Backup" $v.Backup)}}
 </section>
 {{end}}
 {{if $v.Inspect}}

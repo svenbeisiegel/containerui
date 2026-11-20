@@ -278,9 +278,10 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		Secure:   cfg.Server.TLS.On(),
 		Logger:   log,
 
-		ComposeDir: cfg.Resolve(cfg.Runtime.ComposeDir),
-		Events:     evStore,
-		Updates:    scanner,
+		ComposeDir:      cfg.Resolve(cfg.Runtime.ComposeDir),
+		VolumeUploadDir: cfg.VolumeUploadDir(),
+		Events:          evStore,
+		Updates:         scanner,
 
 		Version:     version,
 		InstallType: installType(stop != nil),

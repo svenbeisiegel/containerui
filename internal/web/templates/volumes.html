@@ -24,6 +24,31 @@
       <button type="submit" class="danger" title="Removes volumes that no container uses">Prune volumes</button>
     </form>
     {{end}}
+    {{if .Caps.VolumeBackup}}
+    <details class="menu">
+      <summary class="button" data-backup-summary>Backup</summary>
+      <form id="volume-backup-form" method="post" action="/volumes/backup" class="menu-panel stack">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <p class="small" data-backup-count>Select the volumes to back up in the table.</p>
+        <label class="field">
+          <span class="field-label">Compression</span>
+          <select name="compression">
+            <option value="zstd" selected>zstd (.tar.zst)</option>
+            <option value="none">None (.tar)</option>
+          </select>
+        </label>
+        <label class="switch">
+          <input type="checkbox" name="stop">
+          <span class="track" aria-hidden="true"></span>
+          <span>Stop the containers using these volumes during the backup</span>
+        </label>
+        <p class="hint" data-backup-in-use hidden>Some selected volumes are used by running containers. Without stopping them, files that change during the backup (e.g. databases) may be saved inconsistently. Stopped containers are started again afterwards.</p>
+        <p class="hint">One file holds the content of every selected volume and how each was created (driver, options, labels).</p>
+        <div><button type="submit" class="primary" data-backup-submit disabled>Download backup</button></div>
+      </form>
+    </details>
+    {{if .Data.Restore}}<a class="button" href="/volumes/restore">Restore</a>{{end}}
+    {{end}}
     <a class="button primary" href="/volumes/new">Create volume</a>
     {{template "refresh_button" (dict "Href" "/volumes" "Get" "/partials/volumes" "Target" "#volumes")}}
   </div>

@@ -399,12 +399,19 @@
 {{define "volume_users"}}{{range $i, $c := .}}{{if $i}}, {{end}}<a href="/containers/{{$c}}">{{$c}}</a>{{else}}<span class="muted">–</span>{{end}}{{end}}
 
 {{/* volume_actions expects dict: V (volumeRow), View ("list"|"detail"), CSRF,
-     optional Menu (render as a row menu). Force only skips the error for a
-     missing volume; one in use is kept. */}}
+     Backup (offer a backup download), optional Menu (render as a row menu).
+     A volume in use is never deleted. */}}
 {{define "volume_actions"}}
 {{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "v-%s" .V.Name) "Name" .V.Name)}}{{else}}<div class="actions">{{end}}
-  {{template "volume_delete" (dict "P" . "Label" "Delete" "Force" false "Confirm" (printf "Delete volume %s? Its data is lost." .V.Name))}}
-  {{template "volume_delete" (dict "P" . "Label" "Force delete" "Force" true "Confirm" (printf "Force delete volume %s? Its data is lost." .V.Name))}}
+  {{if .Backup}}
+  <form method="post" action="/volumes/backup">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <input type="hidden" name="volume" value="{{.V.Name}}">
+    <input type="hidden" name="compression" value="zstd">
+    <button type="submit" title="Download the volume's content as a zstd-compressed backup file">Backup</button>
+  </form>
+  {{end}}
+  {{template "volume_delete" (dict "P" . "Label" "Delete" "Confirm" (printf "Delete volume %s? Its data is lost." .V.Name))}}
 {{if .Menu}}{{template "row_menu_close"}}{{else}}</div>{{end}}
 {{end}}
 
@@ -415,7 +422,6 @@
   <input type="hidden" name="csrf" value="{{.P.CSRF}}">
   <input type="hidden" name="name" value="{{.P.V.Name}}">
   <input type="hidden" name="view" value="{{.P.View}}">
-  {{if .Force}}<input type="hidden" name="force" value="true">{{end}}
   <button type="submit" class="danger">{{.Label}}</button>
 </form>
 {{end}}
@@ -425,20 +431,21 @@
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
-    <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Used by</th><th>Data location</th><th class="right">Actions</th></tr></thead>
+    <thead><tr>{{if .Backup}}<th class="check"><input type="checkbox" data-select-all aria-label="Select all volumes" title="Select all"></th>{{end}}<th>Name</th><th>Driver</th><th>Scope</th><th>Used by</th><th>Data location</th><th class="right">Actions</th></tr></thead>
     <tbody>
-    {{$csrf := .CSRF}}
+    {{$csrf := .CSRF}}{{$backup := .Backup}}
     {{range .Volumes}}
       <tr>
+        {{if $backup}}<td class="check"><input type="checkbox" name="volume" value="{{.Name}}" form="volume-backup-form" aria-label="Select {{.Name}}"{{if .InUse}} data-in-use{{end}}></td>{{end}}
         <td class="mono"><a href="/volumes/{{.Name}}" title="{{.Name}}">{{if gt (len .Name) 40}}{{shortID .Name}}…{{else}}{{.Name}}{{end}}</a></td>
         <td>{{.Driver}}</td>
         <td>{{.Scope}}</td>
         <td>{{template "volume_users" .UsedBy}}</td>
         <td class="mono small"{{if ne .DataLocation .Mountpoint}} title="Mountpoint: {{.Mountpoint}}"{{end}}>{{.DataLocation}}</td>
-        <td class="right">{{template "volume_actions" (dict "V" . "View" "list" "CSRF" $csrf "Menu" true)}}</td>
+        <td class="right">{{template "volume_actions" (dict "V" . "View" "list" "CSRF" $csrf "Backup" $backup "Menu" true)}}</td>
       </tr>
     {{else}}
-      <tr><td colspan="6" class="empty">{{if .Err}}Could not load volumes.{{else}}No volumes yet. Use <em>Create volume</em> to add one.{{end}}</td></tr>
+      <tr><td colspan="{{if .Backup}}7{{else}}6{{end}}" class="empty">{{if .Err}}Could not load volumes.{{else}}No volumes yet. Use <em>Create volume</em> to add one.{{end}}</td></tr>
     {{end}}
     </tbody>
   </table></div>

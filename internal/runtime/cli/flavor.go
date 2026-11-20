@@ -30,6 +30,9 @@ type Flavor struct {
 
 	volumeDrivers  []string
 	pruneAnonymous bool
+	// volumeArchive: "container run --rm -i" pipes stdin and stdout, which
+	// volume backup and restore use with a helper container.
+	volumeArchive bool
 
 	networkDrivers []string
 	networkIPv6    bool
@@ -71,6 +74,8 @@ var (
 		createOptions: map[string]bool{runtime.OptMultiNetwork: true},
 		// TODO: verify "wslc container attach" and "wslc container start
 		// --attach" (with --sig-proxy and --detach-keys) and enable attach.
+		// TODO: verify "wslc container run --rm -i" with piped stdin and
+		// stdout and enable volumeArchive.
 	}
 	Docker = &Flavor{
 		Name:   "docker",
@@ -87,6 +92,7 @@ var (
 		createOptions:  runtime.AllOptions(),
 		stats:          true,
 		attach:         true,
+		volumeArchive:  true,
 		compose:        []composeCandidate{{plugin: true}, {binary: "docker-compose"}},
 	}
 	Podman = &Flavor{
@@ -105,6 +111,7 @@ var (
 		stats:          true,
 		attach:         true,
 		startSigProxy:  true,
+		volumeArchive:  true,
 		compose:        []composeCandidate{{plugin: true}, {binary: "podman-compose"}},
 	}
 )

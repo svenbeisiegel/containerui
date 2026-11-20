@@ -143,11 +143,13 @@ Features:
   container, running or stopped, uses; `--force` only skips the CLI's
   confirmation prompt)
 - **Volumes**: list (with the containers using each volume), create (name,
-  driver — `guest`/`vhd` for wslc, `local` for docker/podman — driver options, labels), delete / force delete, prune
+  driver — `guest`/`vhd` for wslc, `local` for docker/podman — driver options, labels), delete, prune
   (optionally including unused named volumes, `--all`) and a detail page with
-  the inspect output. Force delete passes `volume remove --force`, which
-  only ignores a missing volume: a volume in use by a container is never
-  removed — delete the container first.
+  the inspect output. A volume in use by a container is never removed —
+  delete the container first. **Backup and restore** (docker and podman,
+  see [Volume backup and restore](#volume-backup-and-restore)): select
+  volumes in the list and download them as one file, then restore them
+  later, here or on another host.
 - **Networks**: list (with the containers attached to each network),
   create (name, driver, and optionally subnet, gateway, IP range,
   `--internal`, `--ipv6` on docker/podman, driver options, labels), delete,
@@ -454,6 +456,47 @@ differ:
 | Container alias on connect | `--network-alias` | `--alias` | `--alias` |
 | Attach to a container | — (not verified yet) | yes | yes |
 | `--session` | yes | — | — |
+
+## Volume backup and restore
+
+On docker and podman the volume list has checkboxes and a **Backup** menu.
+Select one or more volumes, choose the compression — **zstd** (`.tar.zst`,
+the default) or **none** (`.tar`) — and *Download backup*: the browser
+receives one file with the content of every selected volume and how each
+was created. The row menu and the detail page offer *Backup* for a single
+volume (zstd).
+
+Volumes used by running containers (databases in particular) can change
+while they are read. *Stop the containers using these volumes during the
+backup* stops them first and starts them again afterwards, also when the
+download is aborted.
+
+**Restore** on the volume list uploads a backup file. It is checked
+completely, then you choose which of its volumes to restore, under which
+name, and what happens when that volume exists: *Skip* (the default),
+*Replace its content* (empty it first) or *Merge into its content*
+(overwrite files of the same name, keep the others). Missing volumes are
+created with the driver, driver options and labels they had; when this
+runtime lacks the driver, with its default driver and without options. The
+restore runs in the background and reports in the activity side bar. An
+uploaded file waits in `runtime.volume_upload_dir` (only for the user who
+uploaded it) until it is restored or discarded, at most 24 hours.
+
+The volume's content is read and written by a short-lived helper container
+(`runtime.volume_helper_image`, default `docker.io/library/busybox:stable`,
+pulled when missing) that mounts the volume, runs `tar` and has no network
+and no log. Owners are kept as numeric uid/gid, together with permissions,
+symbolic and hard links; extended attributes and ACLs are not.
+
+The file is a tar stream (zstd-compressed or not) that standard tools can
+read, e.g. `zstd -dc file.tar.zst | tar -tv`:
+
+```text
+manifest.json              format, version, creation time, host, runtime and
+                           per volume: name, driver, options, labels, scope,
+                           mountpoint and the containers that used it
+volumes/<name>/...         the content of volume <name>, one volume after the other
+```
 
 ## Compose
 

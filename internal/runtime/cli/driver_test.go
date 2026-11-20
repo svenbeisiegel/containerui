@@ -28,6 +28,11 @@ type fakeRunner struct {
 
 	ptySize [2]uint16
 	pty     *stubTerminal
+
+	// exchangeOut is what Exchange writes to stdout; exchangeIn what it
+	// read from stdin.
+	exchangeOut string
+	exchangeIn  []byte
 }
 
 func (f *fakeRunner) Run(_ context.Context, args []string) ([]byte, []byte, int, error) {
@@ -52,6 +57,13 @@ func (f *fakeRunner) Pipe(_ context.Context, args []string, w io.Writer) (int, e
 	f.calls = append(f.calls, args)
 	_, _ = io.WriteString(w, f.stdout+f.stderr)
 	return f.code, nil
+}
+
+func (f *fakeRunner) Exchange(_ context.Context, args []string, stdin io.Reader, w io.Writer) ([]byte, int, error) {
+	f.calls = append(f.calls, args)
+	f.exchangeIn, _ = io.ReadAll(stdin)
+	_, _ = io.WriteString(w, f.exchangeOut)
+	return []byte(f.stderr), f.code, nil
 }
 
 func (f *fakeRunner) StartPTY(args []string, cols, rows uint16) (runtime.Terminal, error) {

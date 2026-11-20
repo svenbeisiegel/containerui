@@ -56,6 +56,10 @@ type Runtime struct {
 	LogInterval time.Duration
 	// ComposeEnabled reports a compose tool (Capabilities.Compose).
 	ComposeEnabled bool
+	// NoVolumeBackup hides volume backup (Capabilities.VolumeBackup).
+	NoVolumeBackup bool
+
+	content map[string]map[string]volumeFile // volume content by volume name
 }
 
 var _ runtime.Runtime = (*Runtime)(nil)
@@ -73,6 +77,8 @@ func NewSeeded() *Runtime {
 	f.AddContainer(runtime.Container{ID: "c0ffee000001", Name: "web", Image: "nginx:1.27", State: runtime.StateRunning, Status: "Up 2 hours", Ports: "127.0.0.1:8080->80/tcp", Networks: []string{"bridge"}, Mounts: []string{"data"}, Created: now.Add(-2 * time.Hour)})
 	f.AddContainer(runtime.Container{ID: "c0ffee000002", Name: "job", Image: "alpine:latest", State: runtime.StateExited, Status: "Exited (0) 1 hour ago", Networks: []string{"bridge"}, Created: now.Add(-3 * time.Hour)})
 	f.volumes = []runtime.Volume{volume("data", "guest"), volume("cache", "guest")}
+	f.SetVolumeFile("data", "index.html", "<h1>Hello from the data volume</h1>\n")
+	f.SetVolumeFile("data", "conf/site.conf", "listen 80;\n")
 	f.networks = []runtime.Network{
 		{ID: "n1", Name: "bridge", Driver: "bridge", Scope: "local"},
 		{ID: "n2", Name: "host", Driver: "host", Scope: "local"},
@@ -119,7 +125,7 @@ func (f *Runtime) Name() string { return "fake" }
 func (f *Runtime) Capabilities() runtime.Capabilities {
 	c := runtime.Capabilities{Restart: true, Inspect: true, Pull: true, Tag: true, Volumes: true, Networks: true, Terminal: true, Attach: true, Logs: true,
 		VolumeDrivers: volumeDrivers, PruneAnonymous: true, NetworkDrivers: networkDrivers, NetworkIPv6: true, Stats: !f.NoStats,
-		CreateOptions: runtime.AllOptions()}
+		CreateOptions: runtime.AllOptions(), VolumeBackup: !f.NoVolumeBackup}
 	if f.NoNetworks {
 		c.Networks = false
 	}
@@ -550,7 +556,15 @@ func (f *Runtime) CreateVolume(_ context.Context, opts runtime.CreateVolumeOpts)
 		k, val, _ := strings.Cut(kv, "=")
 		v.Options[k] = val
 	}
+	for _, kv := range opts.Labels {
+		k, val, _ := strings.Cut(kv, "=")
+		if v.Labels == nil {
+			v.Labels = map[string]string{}
+		}
+		v.Labels[k] = val
+	}
 	f.volumes = append(f.volumes, v)
+	delete(f.content, name)
 	return name, nil
 }
 
@@ -572,6 +586,7 @@ func (f *Runtime) RemoveVolume(_ context.Context, name string, force bool) error
 		return &runtime.CommandError{Op: "volume remove", Output: "volume is in use by container " + c, Kind: runtime.ErrConflict}
 	}
 	f.volumes = slices.Delete(f.volumes, i, i+1)
+	delete(f.content, name)
 	return nil
 }
 

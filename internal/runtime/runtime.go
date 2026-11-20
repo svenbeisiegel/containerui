@@ -84,6 +84,19 @@ type Runtime interface {
 	DisconnectNetwork(ctx context.Context, network, container string) error
 }
 
+// VolumeArchiver is implemented by drivers that can read and write the
+// content of volumes. Capabilities.VolumeBackup reports whether it works
+// for this runtime.
+type VolumeArchiver interface {
+	// ExportVolume writes the volume's content as an uncompressed tar
+	// stream to w; entry names are relative to the volume's root (".").
+	ExportVolume(ctx context.Context, name string, w io.Writer) error
+	// ImportVolume extracts an uncompressed tar stream into an existing
+	// volume, keeping numeric owners and permissions; with replace the
+	// volume is emptied first, otherwise the content is merged.
+	ImportVolume(ctx context.Context, name string, r io.Reader, replace bool) error
+}
+
 // Capabilities tells the UI which optional features a driver supports, so
 // unsupported actions can be hidden instead of failing.
 type Capabilities struct {
@@ -104,6 +117,9 @@ type Capabilities struct {
 	// PruneAnonymous: PruneVolumes(all=false) can remove only anonymous
 	// volumes. Without it, prune always removes all unused volumes.
 	PruneAnonymous bool
+	// VolumeBackup: the driver implements VolumeArchiver (backup and
+	// restore of volume content).
+	VolumeBackup bool
 
 	// NetworkDrivers lists the drivers CreateNetwork accepts; the first is
 	// the runtime's default.

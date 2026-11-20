@@ -358,3 +358,94 @@ document.addEventListener("submit", function (e) {
     });
   });
 })();
+
+// Volume list: the table's checkboxes belong to the "Backup" form. Keep the
+// count, the submit button and the select-all box in step, also after htmx
+// replaced the table.
+(function () {
+  var form = document.getElementById("volume-backup-form");
+  if (!form) return;
+  var submit = form.querySelector("[data-backup-submit]");
+  var count = form.querySelector("[data-backup-count]");
+  var inUse = form.querySelector("[data-backup-in-use]");
+  var summary = document.querySelector("[data-backup-summary]");
+  function boxes() {
+    return Array.prototype.slice.call(document.querySelectorAll('input[name="volume"][form="volume-backup-form"]'));
+  }
+  function sync() {
+    var all = boxes();
+    var sel = all.filter(function (b) { return b.checked; });
+    var busy = sel.some(function (b) { return b.hasAttribute("data-in-use"); });
+    submit.disabled = sel.length === 0;
+    submit.textContent = sel.length > 1 ? "Download backup of " + sel.length + " volumes" : "Download backup";
+    count.textContent = sel.length === 0 ? "Select the volumes to back up in the table." :
+      sel.length === 1 ? "Volume " + sel[0].value + " is selected." : sel.length + " volumes are selected; they go into one file.";
+    inUse.hidden = !busy;
+    if (summary) summary.textContent = sel.length ? "Backup (" + sel.length + ")" : "Backup";
+    var head = document.querySelector("[data-select-all]");
+    if (head) {
+      head.checked = all.length > 0 && sel.length === all.length;
+      head.indeterminate = sel.length > 0 && sel.length < all.length;
+    }
+  }
+  document.addEventListener("change", function (e) {
+    var t = e.target;
+    if (t.matches("[data-select-all]")) {
+      boxes().forEach(function (b) { b.checked = t.checked; });
+    }
+    if (t.matches('[data-select-all], input[name="volume"][form="volume-backup-form"]')) sync();
+  });
+  document.body.addEventListener("htmx:afterSettle", sync);
+  sync();
+})();
+
+// Volume restore: upload the backup file with a progress bar. The server
+// answers JSON: where to go next, or what is wrong with the file.
+(function () {
+  var form = document.querySelector("form[data-volume-upload]");
+  if (!form || !window.XMLHttpRequest || !window.FormData) return;
+  var box = form.querySelector("[data-upload-progress]");
+  var bar = box.querySelector("progress");
+  var status = form.querySelector("[data-upload-status]");
+  var errBox = form.querySelector("[data-upload-error]");
+  var btn = form.querySelector('button[type="submit"]');
+  function fail(msg) {
+    errBox.textContent = msg;
+    errBox.hidden = false;
+    box.hidden = true;
+    btn.disabled = false;
+  }
+  form.addEventListener("submit", function (e) {
+    e.preventDefault();
+    var xhr = new XMLHttpRequest();
+    xhr.open("POST", form.action);
+    xhr.setRequestHeader("X-CSRF-Token", form.elements.namedItem("csrf").value);
+    xhr.setRequestHeader("Accept", "application/json");
+    xhr.upload.addEventListener("progress", function (ev) {
+      if (!ev.lengthComputable) return;
+      bar.max = ev.total;
+      bar.value = ev.loaded;
+      status.textContent = Math.floor(ev.loaded * 100 / ev.total) + " % uploaded";
+    });
+    xhr.upload.addEventListener("load", function () {
+      bar.removeAttribute("value");
+      status.textContent = "Checking the backup file…";
+    });
+    xhr.addEventListener("load", function () {
+      var res = null;
+      try { res = JSON.parse(xhr.responseText); } catch (_) { /* not JSON */ }
+      if (res && res.redirect) {
+        window.location.href = res.redirect;
+        return;
+      }
+      fail((res && res.error) || "The upload failed (HTTP " + xhr.status + ").");
+    });
+    xhr.addEventListener("error", function () { fail("The upload failed: the connection was lost."); });
+    errBox.hidden = true;
+    box.hidden = false;
+    btn.disabled = true;
+    bar.value = 0;
+    status.textContent = "Uploading…";
+    xhr.send(new FormData(form));
+  });
+})();

@@ -1,0 +1,84 @@
+{{define "content"}}
+{{$v := .Data}}
+<div class="page-head">
+  <div class="title-row">{{template "back_button" "/volumes"}}<h1>Restore volumes</h1></div>
+</div>
+{{if $v.Err}}<div class="flash error" role="alert">{{$v.Err}}</div>{{end}}
+{{with $v.Upload}}
+<section class="panel">
+  <h2>Backup file</h2>
+  <dl class="props">
+    <dt>File</dt><dd class="mono wrap">{{.FileName}} <span class="muted">({{size .Size}}, {{.Manifest.Compression}})</span></dd>
+    <dt>Created</dt><dd>{{datetime .Manifest.Created}}{{with .Manifest.Host}} on <span class="mono">{{.}}</span>{{end}}{{with .Manifest.Runtime}} ({{.}}){{end}}</dd>
+    {{with .Manifest.Creator}}<dt>Created by</dt><dd>{{.}}</dd>{{end}}
+  </dl>
+</section>
+<section class="panel">
+  <h2>Volumes</h2>
+  <form id="volume-restore-form" method="post" action="/volumes/restore/{{.ID}}" class="stack">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+    <div class="table-wrap"><table>
+      <thead><tr><th class="check">Restore</th><th>Volume in the backup</th><th class="num">Content</th><th>Restore into</th><th>If it exists</th></tr></thead>
+      <tbody>
+      {{range $v.Rows}}
+        <tr>
+          <td class="check"><input type="checkbox" name="sel_{{.Index}}" {{if .Selected}}checked{{end}} aria-label="Restore {{.Source.Name}}"></td>
+          <td>
+            <span class="mono">{{.Source.Name}}</span>
+            <div class="small muted">{{or .Source.Driver "default driver"}}{{range $k, $o := .Source.Options}} · <span class="mono">{{$k}}={{$o}}</span>{{end}}</div>
+            {{with .Source.UsedBy}}<div class="small muted">was used by {{join . ", "}}</div>{{end}}
+          </td>
+          <td class="num small">{{.Stats.EntriesText}}<br>{{size .Stats.Bytes}}</td>
+          <td>
+            <input name="name_{{.Index}}" value="{{.Target}}" pattern="[a-zA-Z0-9][a-zA-Z0-9_.\-]*" autocomplete="off" spellcheck="false" aria-label="Restore {{.Source.Name}} into">
+            <div class="small">
+              {{if .Exists}}<span class="badge warn">exists</span>{{with .UsedBy}} <span class="muted">used by {{join . ", "}}</span>{{end}}
+              {{else}}<span class="badge info">new</span>{{if and .Source.Driver (not .Driver)}} <span class="muted">created with the default driver: {{.Source.Driver}} is not available</span>{{end}}{{end}}
+            </div>
+            {{with .Err}}<div class="small error-text" role="alert">{{.}}</div>{{end}}
+          </td>
+          <td>
+            <select name="mode_{{.Index}}" aria-label="If {{.Target}} exists">
+              <option value="skip" {{if eq .Mode "skip"}}selected{{end}}>Skip</option>
+              <option value="replace" {{if eq .Mode "replace"}}selected{{end}}>Replace its content</option>
+              <option value="merge" {{if eq .Mode "merge"}}selected{{end}}>Merge into its content</option>
+            </select>
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    <p class="hint">A volume that does not exist is created with the driver, options and labels it had. For one that exists, <em>Replace</em> deletes its content first; <em>Merge</em> overwrites files of the same name and keeps the others. Whether a volume exists is checked again when the restore starts.</p>
+    <label class="switch">
+      <input type="checkbox" name="stop" {{if $v.Stop}}checked{{end}}>
+      <span class="track" aria-hidden="true"></span>
+      <span>Stop the running containers using existing volumes during the restore, and start them again afterwards</span>
+    </label>
+    <div class="actions start">
+      <button type="submit" class="primary">Restore</button>
+      <button type="submit" class="danger" form="volume-restore-discard">Discard upload</button>
+    </div>
+  </form>
+  <form id="volume-restore-discard" method="post" action="/volumes/restore/{{.ID}}/discard" data-confirm="Discard the uploaded backup file?">
+    <input type="hidden" name="csrf" value="{{$.CSRF}}">
+  </form>
+</section>
+{{else}}
+<section class="panel">
+  <form method="post" action="/volumes/restore/upload" enctype="multipart/form-data" class="stack" data-volume-upload>
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <div class="flash error" role="alert" data-upload-error hidden></div>
+    <label class="field">
+      <span class="field-label">Backup file <span class="req">*</span></span>
+      <input type="file" name="file" accept=".zst,.tar,application/zstd,application/x-tar" required>
+      <small class="hint">A <code>.tar.zst</code> or <code>.tar</code> file from <em>Backup</em> on the volume list. After the upload you choose which volumes to restore and under which names. The file is checked completely before anything is changed.</small>
+    </label>
+    <div class="upload-progress" data-upload-progress hidden>
+      <progress max="1"></progress>
+      <span class="small muted" data-upload-status></span>
+    </div>
+    <div><button type="submit" class="primary">Upload</button></div>
+  </form>
+</section>
+{{end}}
+{{end}}

@@ -46,6 +46,13 @@ runtime:
   compose_path: ""
   compose_timeout: 30m    # compose up/down/pull
   compose_dir: compose    # deployed compose files, one folder per project
+  # Volume backup and restore (docker/podman) run a short-lived container
+  # of this image that mounts the volume and reads or writes its content
+  # with tar; it is pulled when missing. It needs sh, tar and find.
+  volume_helper_image: docker.io/library/busybox:stable
+  # Uploaded backups wait here until they are restored (at most 24 hours).
+  # Empty = volume-uploads next to the compose folder.
+  volume_upload_dir: ""
 
 # Linux: the errors of the systemd journal (priority err and worse) are
 # kept for 7 days and shown on the Events page, one JSON Lines file per

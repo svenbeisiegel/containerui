@@ -64,6 +64,9 @@ type Options struct {
 	Stater runtime.Stater
 	// Metrics sets the monitoring intervals; zero values are the defaults.
 	Metrics config.Metrics
+	// VolumeUploadDir keeps uploaded volume backups until they are
+	// restored; empty disables volume restore.
+	VolumeUploadDir string
 }
 
 // favicon is the first of these files present in static/. favicon.svg ships
@@ -101,6 +104,7 @@ type Server struct {
 	hostinfo    func(context.Context) hostinfo.Info
 	events      *events.Store    // nil: no Events page
 	updates     *updates.Scanner // nil: no image updates
+	uploads     *uploadStore     // nil: no volume restore
 
 	terminals  atomic.Int32 // open terminal connections
 	logStreams atomic.Int32 // open live log streams
@@ -113,6 +117,10 @@ func New(o Options) (*Server, error) {
 		pages:   map[string]*template.Template{},
 		version: o.Version, installType: o.InstallType,
 		hostlog: o.HostLog, hostinfo: o.HostInfo, events: o.Events, updates: o.Updates,
+	}
+	if o.VolumeUploadDir != "" {
+		s.uploads = &uploadStore{dir: o.VolumeUploadDir}
+		s.uploads.sweep(time.Now())
 	}
 	if s.hostlog == nil {
 		s.hostlog = hostlog.New()
@@ -166,7 +174,7 @@ func (s *Server) Close() {
 }
 
 func (s *Server) parseTemplates() error {
-	pages := []string{"login", "dashboard", "containers", "container_choose", "container_import", "container_new", "container_detail", "images", "image_pull", "volumes", "volume_new", "volume_detail", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events"}
+	pages := []string{"login", "dashboard", "containers", "container_choose", "container_import", "container_new", "container_detail", "images", "image_pull", "volumes", "volume_new", "volume_detail", "volume_restore", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events"}
 	for _, p := range pages {
 		t, err := template.New(p).Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/partials.html", "templates/"+p+".html")
 		if err != nil {
@@ -250,6 +258,12 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("GET /volumes/{name}", s.handleVolumeDetail)
 	authed.HandleFunc("POST /volumes/delete", s.handleVolumeDelete)
 	authed.HandleFunc("POST /volumes/prune", s.handleVolumePrune)
+	authed.HandleFunc("POST /volumes/backup", s.handleVolumeBackup)
+	authed.HandleFunc("GET /volumes/restore", s.handleVolumeRestorePage)
+	authed.HandleFunc("POST /volumes/restore/upload", s.handleVolumeRestoreUpload)
+	authed.HandleFunc("GET /volumes/restore/{id}", s.handleVolumeRestoreChoose)
+	authed.HandleFunc("POST /volumes/restore/{id}", s.handleVolumeRestore)
+	authed.HandleFunc("POST /volumes/restore/{id}/discard", s.handleVolumeRestoreDiscard)
 	authed.HandleFunc("GET /networks", s.handleNetworks)
 	authed.HandleFunc("GET /partials/networks", s.handleNetworksPartial)
 	authed.HandleFunc("GET /networks/new", s.handleNetworkNew)
