@@ -246,3 +246,115 @@ document.addEventListener("submit", function (e) {
     else if (s.focus) m.querySelector("summary").focus();
   });
 })();
+
+// Image picker: a small combobox over the datalist. The native datalist
+// filters by the whole text, so "nginx:1.27" would hide "nginx:latest";
+// this one ignores the tag, so every tag of the typed image stays listed.
+(function () {
+  document.querySelectorAll("[data-image-picker]").forEach(function (box, n) {
+    var input = box.querySelector("input");
+    var dl = box.querySelector("datalist");
+    if (!input || !dl) return;
+    var refs = Array.prototype.map.call(dl.options, function (o) { return o.value; });
+    input.removeAttribute("list");
+
+    var listId = "image-picker-list-" + n;
+    var list = document.createElement("ul");
+    list.id = listId;
+    list.className = "combo-list";
+    list.setAttribute("role", "listbox");
+    list.hidden = true;
+    box.appendChild(list);
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute("aria-controls", listId);
+
+    var active = -1;
+
+    // Repository part of a reference: no digest, no tag after the last "/".
+    function repo(s) {
+      s = s.split("@")[0];
+      var slash = s.lastIndexOf("/");
+      var colon = s.lastIndexOf(":");
+      if (colon > slash) s = s.slice(0, colon);
+      return s.toLowerCase();
+    }
+
+    function items() { return list.querySelectorAll("[role=option]"); }
+
+    function setActive(i) {
+      var opts = items();
+      if (active >= 0 && opts[active]) opts[active].removeAttribute("aria-selected");
+      active = i;
+      if (i >= 0 && opts[i]) {
+        opts[i].setAttribute("aria-selected", "true");
+        input.setAttribute("aria-activedescendant", opts[i].id);
+        opts[i].scrollIntoView({ block: "nearest" });
+      } else {
+        input.removeAttribute("aria-activedescendant");
+      }
+    }
+
+    function close() {
+      list.hidden = true;
+      input.setAttribute("aria-expanded", "false");
+      setActive(-1);
+    }
+
+    function open() {
+      var q = repo(input.value.trim());
+      list.textContent = "";
+      active = -1;
+      input.removeAttribute("aria-activedescendant");
+      refs.forEach(function (ref) {
+        if (q && repo(ref).indexOf(q) < 0) return;
+        var li = document.createElement("li");
+        li.id = listId + "-" + list.children.length;
+        li.setAttribute("role", "option");
+        li.textContent = ref;
+        list.appendChild(li);
+      });
+      var any = list.children.length > 0;
+      list.hidden = !any;
+      input.setAttribute("aria-expanded", any ? "true" : "false");
+    }
+
+    function pick(li) {
+      input.value = li.textContent;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      close();
+    }
+
+    input.addEventListener("focus", open);
+    input.addEventListener("input", open);
+    input.addEventListener("blur", close);
+    input.addEventListener("keydown", function (e) {
+      var opts = items();
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (list.hidden) { open(); opts = items(); }
+        if (!opts.length) return;
+        var i = e.key === "ArrowDown" ? active + 1 : active - 1;
+        if (i >= opts.length) i = 0;
+        if (i < 0) i = opts.length - 1;
+        setActive(i);
+      } else if (e.key === "Enter") {
+        if (list.hidden) return;
+        e.preventDefault();
+        if (active >= 0 && opts[active]) pick(opts[active]);
+        else close();
+      } else if (e.key === "Escape") {
+        if (list.hidden) return;
+        e.preventDefault();
+        close();
+      }
+    });
+    // mousedown would blur the input (and close the list) before the click.
+    list.addEventListener("mousedown", function (e) { e.preventDefault(); });
+    list.addEventListener("click", function (e) {
+      var li = e.target.closest("[role=option]");
+      if (li) pick(li);
+    });
+  });
+})();
