@@ -14,4 +14,4 @@ func NewSystem(service, socket string, log *slog.Logger) (*System, error) {
 	return nil, errors.New("system accounts are only supported on Linux and Windows")
 }
 
-func (*System) Verify(string, string) bool { return false }
+func (*System) Verify(string, string) (string, bool) { return "", false }

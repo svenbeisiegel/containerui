@@ -1,0 +1,16 @@
+{{define "content"}}
+<div class="login">
+  <img class="login-logo" src="/static/logo.svg" alt="" width="64" height="64">
+  <h1>Container<span class="accent">UI</span></h1>
+  <p class="subtitle">Two-factor sign-in for <strong>{{.Data.Username}}</strong></p>
+  {{template "flash" .Flash}}
+  <form method="post" action="/login/mfa" class="stack">
+    <label class="field"><span class="field-label">Code from your authenticator app</span>
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus spellcheck="false" maxlength="20" class="mono-input">
+      <small class="hint">Lost your device? Enter one of your recovery codes instead.</small>
+    </label>
+    <button type="submit" class="primary block">Verify</button>
+  </form>
+  <p class="login-alt"><a href="/login">Sign in as someone else</a></p>
+</div>
+{{end}}

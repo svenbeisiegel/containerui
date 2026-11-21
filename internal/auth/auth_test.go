@@ -33,7 +33,7 @@ func TestUsers(t *testing.T) {
 		{"admin", "", false},
 	}
 	for _, c := range checks {
-		if got := u.Verify(c.user, c.pw); got != c.ok {
+		if account, got := u.Verify(c.user, c.pw); got != c.ok || (got && account != c.user) {
 			t.Errorf("Verify(%q, %q) = %v", c.user, c.pw, got)
 		}
 	}

@@ -140,6 +140,7 @@ code { font-family: var(--mono); font-size: .92em; background: var(--code-bg); p
 .session { display: flex; align-items: center; gap: .85rem; }
 .session form { margin: 0; }
 .session .user { color: rgb(255 255 255 / .9); }
+.session a.user:hover, .session a.user[aria-current] { color: #fff; text-decoration: underline; }
 .topbar .badge.runtime { background: rgb(255 255 255 / .12); color: #fff; }
 .topbar button.link { color: rgb(255 255 255 / .85); font-weight: 600; }
 .topbar button.link:hover { color: #fff; text-decoration: underline; }
@@ -543,6 +544,20 @@ body.public {
 .login-logo { position: absolute; top: 1.25rem; right: 1.25rem; user-select: none; }
 .login h1 .accent { color: var(--highlight); }
 .login .subtitle { margin: .2rem 0 1.5rem; font-weight: 300; color: var(--muted); }
+.login.login-wide { max-width: 520px; }
+.login-alt { margin: 1rem 0 0; text-align: center; font-size: .9rem; }
+
+/* ---------- two-factor sign-in ---------- */
+.totp-setup { display: flex; gap: 1.25rem; align-items: center; flex-wrap: wrap; margin: 0 0 1rem; }
+.totp-setup p { margin: 0; }
+.totp-qr { background: #fff; border-radius: var(--radius-sm); image-rendering: pixelated; flex: none; }
+.totp-setup .stack { flex: 1; min-width: 200px; gap: .5rem; }
+.totp-key { font-size: 1rem; letter-spacing: .04em; word-spacing: .3em; overflow-wrap: anywhere; padding: .35em .5em; }
+.recovery-codes { border: 1px solid var(--border); border-left: 4px solid var(--highlight); border-radius: var(--radius-sm); padding: .75rem 1rem; margin-bottom: 1rem; }
+.recovery-codes p { margin: 0 0 .5rem; }
+.mono-list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr)); gap: .35rem .75rem; }
+.mfa-actions { display: flex; flex-direction: column; gap: .25rem; max-width: 520px; }
+.mfa-actions button { min-width: 11rem; }
 
 /* ---------- jobs & details ---------- */
 .job { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: .5rem .75rem; margin-top: .5rem; }
@@ -641,7 +656,8 @@ body:has(> .output-handle) main { padding-right: calc(1.25rem + 28px); } /* keep
   .topbar nav { order: 3; flex-basis: 100%; min-height: 40px; min-width: 0; overflow-x: auto; scrollbar-width: none; } /* scrolls instead of widening the page */
   .topbar nav a { white-space: nowrap; }
   .session { margin-left: auto; }
-  .session .user { display: none; }
+  .session .user { max-width: 7rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .session .badge.runtime { display: none; }
   .grid2 { grid-template-columns: 1fr; }
   .tag-form { position: static; margin-top: .35rem; box-shadow: none; }
   .tag-form :is(input, select) { width: 100%; }

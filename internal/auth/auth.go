@@ -57,15 +57,22 @@ func NewUsers(users []config.User) (*Users, []string, error) {
 	return u, plaintext, nil
 }
 
-// Verify reports whether username/password are valid.
-func (u *Users) Verify(username, password string) bool {
+// Verify reports whether username/password are valid; the account is the
+// username.
+func (u *Users) Verify(username, password string) (string, bool) {
 	hash, ok := u.hashes[username]
 	if !ok {
 		_ = bcrypt.CompareHashAndPassword(u.dummy, []byte(password))
-		return false
+		return "", false
 	}
-	return bcrypt.CompareHashAndPassword(hash, []byte(password)) == nil
+	if bcrypt.CompareHashAndPassword(hash, []byte(password)) != nil {
+		return "", false
+	}
+	return username, true
 }
+
+// RandomToken returns 256 random bits, URL-safe.
+func RandomToken() string { return randomToken() }
 
 func randomToken() string {
 	b := make([]byte, 32)
@@ -77,7 +84,8 @@ func randomToken() string {
 
 type Session struct {
 	ID       string
-	Username string
+	Username string // as typed at sign-in, for display
+	Account  string // the account Verify returned, for per-account state
 	CSRF     string
 	Created  time.Time
 	LastSeen time.Time
@@ -149,8 +157,12 @@ func NewSessions(idle, absolute time.Duration) *Sessions {
 	return &Sessions{byID: map[string]*Session{}, idle: idle, absolute: absolute, now: time.Now}
 }
 
-// Create starts a new session (always with a fresh ID).
-func (s *Sessions) Create(username string) *Session {
+// Create starts a new session (always with a fresh ID) whose account is the
+// username.
+func (s *Sessions) Create(username string) *Session { return s.CreateFor(username, username) }
+
+// CreateFor starts a new session for username signed in as account.
+func (s *Sessions) CreateFor(username, account string) *Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
@@ -159,7 +171,7 @@ func (s *Sessions) Create(username string) *Session {
 			delete(s.byID, id)
 		}
 	}
-	sess := &Session{ID: randomToken(), Username: username, CSRF: randomToken(), Created: now, LastSeen: now}
+	sess := &Session{ID: randomToken(), Username: username, Account: account, CSRF: randomToken(), Created: now, LastSeen: now}
 	s.byID[sess.ID] = sess
 	return sess
 }

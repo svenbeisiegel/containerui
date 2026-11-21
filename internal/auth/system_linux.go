@@ -38,26 +38,29 @@ func NewSystem(service, socket string, log *slog.Logger) (*System, error) {
 	return &System{service: service, socket: socket, log: log}, nil
 }
 
-func (s *System) Verify(username, password string) bool {
+// Verify returns the account's name as the user database spells it, which
+// can differ from what was typed (directories that ignore case).
+func (s *System) Verify(username, password string) (string, bool) {
 	if username == "" || password == "" || len(username) > 256 || strings.ContainsRune(username+password, 0) {
-		return false
+		return "", false
 	}
 	if err := pamAuthenticate(s.service, username, password); err != nil {
 		s.log.Debug("system login failed", "user", username, "error", err)
-		return false
+		return "", false
 	}
-	if err := s.mayUseRuntime(username); err != nil {
-		s.log.Warn("system login refused: no access to the container runtime", "user", username, "error", err)
-		return false
-	}
-	return true
-}
-
-func (s *System) mayUseRuntime(username string) error {
 	u, err := user.Lookup(username)
 	if err != nil {
-		return err
+		s.log.Warn("system login refused: account not found", "user", username, "error", err)
+		return "", false
 	}
+	if err := s.mayUseRuntime(u); err != nil {
+		s.log.Warn("system login refused: no access to the container runtime", "user", username, "error", err)
+		return "", false
+	}
+	return u.Username, true
+}
+
+func (s *System) mayUseRuntime(u *user.User) error {
 	if s.socket == "" {
 		if u.Uid == "0" || u.Uid == strconv.Itoa(os.Getuid()) {
 			return nil

@@ -21,7 +21,7 @@ func TestParseEmptyUsesDefaults(t *testing.T) {
 		if cfg.Runtime.Driver != "auto" || cfg.Runtime.PullTimeout != 30*time.Minute || cfg.Runtime.CommandTimeout != 30*time.Second {
 			t.Errorf("runtime = %+v", cfg.Runtime)
 		}
-		if cfg.Server.PAMService != "login" || len(cfg.Users) != 0 {
+		if cfg.Server.PAMService != "login" || cfg.Server.MFA != MFAOptional || len(cfg.Users) != 0 {
 			t.Errorf("cfg = %+v", cfg)
 		}
 		if cfg.Server.ListenIsLoopback() {
@@ -275,5 +275,23 @@ func TestActivityFile(t *testing.T) {
 		if got := cfg.ActivityFile(); got != filepath.Clean(c.want) {
 			t.Errorf("compose %q file %q: got %q, want %q", c.compose, c.file, got, c.want)
 		}
+	}
+}
+
+func TestMFASetting(t *testing.T) {
+	if _, err := Parse([]byte("server:\n  mfa: sometimes\n")); err == nil || !strings.Contains(err.Error(), "server.mfa") {
+		t.Errorf("invalid server.mfa: %v", err)
+	}
+	cfg, err := Parse([]byte("server:\n  mfa: required\n"))
+	if err != nil || cfg.Server.MFA != MFARequired {
+		t.Fatalf("mfa: required = %v, %v", cfg, err)
+	}
+	cfg.Dir = "/etc/containerui"
+	if got := cfg.MFAPath(); got != filepath.Join(filepath.Dir(cfg.ActivityFile()), "mfa.json") {
+		t.Errorf("MFAPath = %s", got)
+	}
+	cfg.Server.MFAFile = "secrets/mfa.json"
+	if got := cfg.MFAPath(); got != cfg.Resolve("secrets/mfa.json") {
+		t.Errorf("MFAPath with mfa_file = %s", got)
 	}
 }

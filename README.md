@@ -411,6 +411,8 @@ The default file is [internal/config/default.yaml](internal/config/default.yaml)
 | `server.session_absolute_timeout` | `12h` | Maximum session lifetime |
 | `server.pam_service` | `login` | Linux: PAM service for sign-in (`/etc/pam.d/<name>`) |
 | `server.system_accounts` | `true` | Windows: Windows accounts may sign in, see [Windows sign-in](#windows-sign-in) |
+| `server.mfa` | `optional` | Two-factor sign-in: `off`, `optional` or `required`, see [Two-factor sign-in](#two-factor-sign-in) |
+| `server.mfa_file` | `""` | File with the authenticator secrets; empty = `mfa.json` next to `activity.json` |
 | `runtime.driver` | `auto` | `auto`, `wslc`, `docker`, `podman` or `fake` |
 | `runtime.path` | — | Path to the CLI (empty = `wslc.exe` / `docker` / `podman` on `PATH`) |
 | `runtime.session` | — | wslc session to use (empty = default; wslc only) |
@@ -636,6 +638,45 @@ sign-in succeeds when
    are checked with their full token. For wslc, which has no pipe, only
    Administrators and the account ContainerUI runs as may sign in.
 
+## Two-factor sign-in
+
+After the password (of a Linux or Windows system account or a config user)
+ContainerUI can ask for a six-digit code from an authenticator app (TOTP,
+RFC 6238: Google or Microsoft Authenticator, 1Password, Aegis, …). The
+system-account sign-in itself is unchanged; the code is an extra step that
+ContainerUI checks, not PAM.
+
+`server.mfa` sets the policy:
+
+| Value | Effect |
+|---|---|
+| `off` | Never asked; the Account page shows nothing to set up. |
+| `optional` (default) | Each user can turn it on under **Account** (click the username in the header): scan the QR code, confirm with a code. |
+| `required` | Every user must. Those who have not set it up yet do so right after the password, before they get a session. It cannot be turned off on the Account page. |
+
+Setting it up shows ten **recovery codes** once; each signs in once in place
+of an app code. New ones can be made on the Account page, which needs a
+current app code, as turning it off does. The second factor belongs to the
+account, not to how the name was typed: the Linux user name as the user
+database spells it, the Windows account SID (so `alice`, `CORP\alice` and
+`alice@corp.example` are one account), or the config user name.
+
+The secrets are kept in `mfa.json` in the data folder, next to
+`activity.json` (`server.mfa_file` to change it). The file is only readable
+by its owner. Include it in backups: without it everybody signs in with the
+password alone, or must set up an app again where `required`. If the file
+cannot be read, sign-in is refused rather than letting people in without
+their second factor.
+
+A user who lost their device is reset by an administrator on the server:
+
+```bash
+sudo containerui mfa-reset alice
+```
+
+(`-config` as for `serve`; on Windows the username they sign in with or the
+account SID). It takes effect at once, also in a running server.
+
 ## Important: wslc sessions are per user
 
 wslc keeps one session per Windows user and per elevation level. ContainerUI
@@ -680,7 +721,7 @@ into `internal/web/static/` as `favicon.svg`, `favicon.png` or `favicon.ico`
 ## Architecture
 
 ```
-cmd/containerui        entry point: serve, hash-password, first-start user setup
+cmd/containerui        entry point: serve, hash-password, mfa-reset, first-start user setup
 internal/config        defaults, embedded default.yaml, loading, validation, AddUser
 internal/runtime       Runtime interface, domain types, validation, driver registry, Composer,
                        inspect → create options and recreating a container
@@ -849,6 +890,11 @@ classification, volume drivers) and an entry in `Flavors`.
 - Passwords are stored as bcrypt hashes. Unknown users still go through a
   bcrypt compare, so usernames can't be probed by timing. Repeated failed
   logins per client IP and username are locked out with exponential backoff.
+- Optional or required two-factor sign-in (TOTP). Until the code is
+  entered there is no session, only a pending sign-in limited to `/login`
+  that lasts 5 minutes and ends after 5 wrong codes. Code failures are also
+  throttled per client IP and account. A code works only once, and recovery
+  codes are stored as SHA-256 hashes.
 - Sessions are server-side; the cookie is `HttpOnly`, `SameSite=Strict`, and
   `Secure` when TLS is on.
 - Every state-changing request needs a per-session CSRF token and must come

@@ -24,6 +24,16 @@ server:
   # Docker). The users below sign in either way. Linux always signs in
   # with system accounts.
   system_accounts: true
+  # Two-factor sign-in with an authenticator app (TOTP), asked after the
+  # password of any account (system or config user):
+  #   off       never asked
+  #   optional  users can set it up on their Account page (default)
+  #   required  every user must; those without it set it up at sign-in
+  # A user who lost the device: containerui mfa-reset <user>
+  mfa: optional
+  # File with the authenticator secrets; empty = mfa.json in the data
+  # folder (next to activity.json). Keep it private and in backups.
+  mfa_file: ""
 
 runtime:
   # Container runtime: auto, wslc, docker, podman or fake (in-memory demo

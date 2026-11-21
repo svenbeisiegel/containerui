@@ -31,7 +31,7 @@
     </nav>
     <div class="session">
       <span class="badge runtime" title="Container runtime driver">{{.Runtime}}</span>
-      <span class="user">{{.User}}</span>
+      <a class="user" href="/account" title="Account and two-factor sign-in"{{if eq .Active "account"}} aria-current="page"{{end}}>{{.User}}</a>
       {{template "theme_toggle"}}
       <form method="post" action="/logout">
         <input type="hidden" name="csrf" value="{{.CSRF}}">

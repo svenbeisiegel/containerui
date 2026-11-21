@@ -1,5 +1,17 @@
 {{define "flash"}}{{if .}}<div class="flash {{if .Error}}error{{else}}ok{{end}}" role="status">{{.Msg}}</div>{{end}}{{end}}
 
+{{/* Adding ContainerUI to an authenticator app: QR code and key (setupView). */}}
+{{define "totp_setup"}}
+<div class="totp-setup">
+  {{if .QR}}<img class="totp-qr" src="{{.QR}}" alt="QR code for your authenticator app" width="185" height="185">{{end}}
+  <div class="stack">
+    <p>Scan the code with your authenticator app, or enter this key:</p>
+    <code class="totp-key">{{.Secret}}</code>
+    <p class="hint">Then enter the six-digit code the app shows.</p>
+  </div>
+</div>
+{{end}}
+
 {{define "state"}}<span class="badge {{stateClass .}}">{{.}}</span>{{end}}
 
 {{/* The icon shown is the theme a click switches to (see app.css/app.js). */}}

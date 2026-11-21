@@ -78,6 +78,8 @@ func main() {
 		err = initConfig(args)
 	case "hash-password":
 		err = hashPassword()
+	case "mfa-reset":
+		err = mfaReset(args)
 	case "help":
 		usage()
 	default:
@@ -104,6 +106,11 @@ func usage() {
       Write the default configuration to a new file (- for standard output).
   containerui hash-password
       Read a password and print its bcrypt hash for the config file.
+  containerui mfa-reset [-config config.yaml] <user>
+      Remove the two-factor sign-in of a user who lost their authenticator
+      app (the username they sign in with, or a Windows account SID). They
+      sign in with the password alone, or set it up again where it is
+      required. Takes effect at once, also in a running server.
 `)
 }
 
@@ -268,12 +275,22 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		}
 	}
 
+	var mfa *auth.MFA
+	if cfg.Server.MFA != config.MFAOff {
+		if mfa, err = auth.OpenMFA(cfg.MFAPath()); err != nil {
+			return err
+		}
+		log.Info("two-factor sign-in", "mode", cfg.Server.MFA, "file", mfa.Path())
+	}
+
 	s, err := web.New(web.Options{
 		Runtime:  rt,
 		Stater:   stater,
 		Metrics:  cfg.Metrics,
 		Users:    users,
 		Sessions: auth.NewSessions(cfg.Server.SessionIdleTimeout, cfg.Server.SessionAbsoluteTimeout),
+		MFA:      mfa,
+		MFAMode:  cfg.Server.MFA,
 		Jobs:     jm,
 		Secure:   cfg.Server.TLS.On(),
 		Logger:   log,
@@ -559,6 +576,40 @@ func readPasswordTwice() (string, error) {
 		return "", errMismatch
 	}
 	return string(p1), nil
+}
+
+func mfaReset(args []string) error {
+	fs := flag.NewFlagSet("mfa-reset", flag.ExitOnError)
+	path := fs.String("config", "", "path to the YAML config file (default: as for serve)")
+	_ = fs.Parse(args)
+	if fs.NArg() != 1 || fs.Arg(0) == "" {
+		return errors.New("usage: containerui mfa-reset [-config config.yaml] <user>")
+	}
+	var err error
+	if *path == "" {
+		if *path, err = defaultConfigPath(); err != nil {
+			return err
+		}
+	}
+	cfg, err := config.Load(*path)
+	if err != nil {
+		return err
+	}
+	m, err := auth.OpenMFA(cfg.MFAPath())
+	if err != nil {
+		return err
+	}
+	removed, err := m.Reset(fs.Arg(0))
+	if err != nil {
+		return err
+	}
+	if len(removed) == 0 {
+		return fmt.Errorf("%s has no two-factor sign-in in %s", fs.Arg(0), m.Path())
+	}
+	for _, a := range removed {
+		fmt.Println("two-factor sign-in removed:", a)
+	}
+	return nil
 }
 
 func hashPassword() error {

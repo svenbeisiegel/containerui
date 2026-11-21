@@ -8,20 +8,25 @@ import (
 
 // Verifier checks sign-in credentials. Users (config file accounts) and
 // System (Linux and Windows system accounts) implement it.
+//
+// Verify returns the account the credentials belong to: a key that is the
+// same however the user spelled the name (the canonical Linux user name, the
+// Windows account SID, the config user name). Per-account state such as the
+// second factor is kept under it.
 type Verifier interface {
-	Verify(username, password string) bool
+	Verify(username, password string) (account string, ok bool)
 }
 
 // Any accepts the credentials one of its verifiers accepts, asked in order.
 type Any []Verifier
 
-func (a Any) Verify(username, password string) bool {
+func (a Any) Verify(username, password string) (string, bool) {
 	for _, v := range a {
-		if v.Verify(username, password) {
-			return true
+		if account, ok := v.Verify(username, password); ok {
+			return account, true
 		}
 	}
-	return false
+	return "", false
 }
 
 // SocketOwner describes a Unix socket's owner and permission bits.

@@ -1,0 +1,16 @@
+{{define "content"}}
+<div class="login login-wide">
+  <img class="login-logo" src="/static/logo.svg" alt="" width="64" height="64">
+  <h1>Container<span class="accent">UI</span></h1>
+  <p class="subtitle">This server requires two-factor sign-in. Set it up for <strong>{{.Data.Username}}</strong>.</p>
+  {{template "flash" .Flash}}
+  {{template "totp_setup" .Data.Setup}}
+  <form method="post" action="/login/mfa/setup" class="stack">
+    <label class="field"><span class="field-label">Code shown by the app</span>
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus spellcheck="false" maxlength="10" class="mono-input">
+    </label>
+    <button type="submit" class="primary block">Set up and sign in</button>
+  </form>
+  <p class="login-alt"><a href="/login">Cancel</a></p>
+</div>
+{{end}}

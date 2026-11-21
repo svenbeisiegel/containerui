@@ -48,7 +48,20 @@ type Server struct {
 	// SystemAccounts lets Windows accounts sign in (nil = default, on).
 	// Linux always signs in with system accounts.
 	SystemAccounts *bool `yaml:"system_accounts"`
+	// MFA is the two-factor sign-in policy: off, optional (users may set
+	// up an authenticator app) or required (every user must).
+	MFA string `yaml:"mfa"`
+	// MFAFile keeps the users' authenticator secrets; empty is mfa.json
+	// next to the activity history.
+	MFAFile string `yaml:"mfa_file"`
 }
+
+// Two-factor sign-in policies (server.mfa).
+const (
+	MFAOff      = "off"
+	MFAOptional = "optional"
+	MFARequired = "required"
+)
 
 // SystemAccountsOn reports whether system accounts may sign in.
 func (s Server) SystemAccountsOn() bool { return s.SystemAccounts == nil || *s.SystemAccounts }
@@ -166,6 +179,7 @@ func Default() *Config {
 			SessionAbsoluteTimeout: 12 * time.Hour,
 			PAMService:             "login",
 			SystemAccounts:         &on,
+			MFA:                    MFAOptional,
 		},
 		Runtime: Runtime{
 			Driver:         "auto",
@@ -351,6 +365,7 @@ func (c *Config) applyDefaults() {
 	if c.Server.SystemAccounts == nil {
 		c.Server.SystemAccounts = d.Server.SystemAccounts
 	}
+	c.Server.MFA = cmp(c.Server.MFA, d.Server.MFA)
 	c.Runtime.Driver = cmp(c.Runtime.Driver, d.Runtime.Driver)
 	c.Runtime.CommandTimeout = cmp(c.Runtime.CommandTimeout, d.Runtime.CommandTimeout)
 	c.Runtime.PullTimeout = cmp(c.Runtime.PullTimeout, d.Runtime.PullTimeout)
@@ -389,6 +404,11 @@ func (c *Config) validate() error {
 	t := c.Server.TLS
 	if t.On() && !t.IsSelfSigned() && (t.CertFile == "" || t.KeyFile == "") {
 		errs = append(errs, errors.New("server.tls: cert_file and key_file are required unless self_signed is true"))
+	}
+	switch c.Server.MFA {
+	case MFAOff, MFAOptional, MFARequired:
+	default:
+		errs = append(errs, fmt.Errorf("server.mfa %q: must be off, optional or required", c.Server.MFA))
 	}
 	seen := map[string]bool{}
 	for i, u := range c.Users {
@@ -468,6 +488,16 @@ func (c *Config) ActivityFile() string {
 		compose = "compose"
 	}
 	return filepath.Join(filepath.Dir(c.Resolve(compose)), "activity.json")
+}
+
+// MFAPath is the file the two-factor secrets are kept in: server.mfa_file,
+// or mfa.json next to the activity history (the data folder of the
+// packages).
+func (c *Config) MFAPath() string {
+	if c.Server.MFAFile != "" {
+		return c.Resolve(c.Server.MFAFile)
+	}
+	return filepath.Join(filepath.Dir(c.ActivityFile()), "mfa.json")
 }
 
 // VolumeUploadDir is the folder uploaded volume backups wait in until they

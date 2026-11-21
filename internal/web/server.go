@@ -36,9 +36,13 @@ type Options struct {
 	Runtime  runtime.Runtime
 	Users    auth.Verifier
 	Sessions *auth.Sessions
-	Jobs     *jobs.Manager
-	Secure   bool // served over TLS: mark cookies Secure
-	Logger   *slog.Logger
+	// MFA keeps the accounts' second factor; nil turns two-factor sign-in
+	// off. MFAMode is server.mfa (off, optional, required).
+	MFA     *auth.MFA
+	MFAMode string
+	Jobs    *jobs.Manager
+	Secure  bool // served over TLS: mark cookies Secure
+	Logger  *slog.Logger
 	// ComposeDir is the absolute folder for compose files deployed through
 	// the UI; empty disables compose.
 	ComposeDir string
@@ -78,21 +82,25 @@ var faviconCandidates = []struct{ name, ctype string }{
 }
 
 type Server struct {
-	rt       runtime.Runtime
-	users    auth.Verifier
-	sessions *auth.Sessions
-	throttle *auth.Throttle
-	jobs     *jobs.Manager
-	store    compose.Store
-	secure   bool
-	log      *slog.Logger
-	pages    map[string]*template.Template
-	partials *template.Template
-	static   http.Handler
-	warm     *warmer
-	metrics  *metricsSampler // nil: the runtime reports no resource usage
-	favicon  string          // URL path, "" if none
-	favType  string
+	rt        runtime.Runtime
+	users     auth.Verifier
+	sessions  *auth.Sessions
+	throttle  *auth.Throttle
+	mfa       *auth.MFA
+	mfaMode   string
+	mfaIssuer string
+	pending   *pendingLogins
+	jobs      *jobs.Manager
+	store     compose.Store
+	secure    bool
+	log       *slog.Logger
+	pages     map[string]*template.Template
+	partials  *template.Template
+	static    http.Handler
+	warm      *warmer
+	metrics   *metricsSampler // nil: the runtime reports no resource usage
+	favicon   string          // URL path, "" if none
+	favType   string
 
 	logsPage     *template.Template // standalone live log page
 	terminalPage *template.Template // standalone terminal page
@@ -113,6 +121,7 @@ type Server struct {
 func New(o Options) (*Server, error) {
 	s := &Server{
 		rt: o.Runtime, users: o.Users, sessions: o.Sessions, jobs: o.Jobs,
+		mfa: o.MFA, mfaMode: o.MFAMode, mfaIssuer: mfaIssuer(), pending: newPendingLogins(),
 		throttle: auth.NewThrottle(), secure: o.Secure, log: o.Logger, store: compose.Store{Dir: o.ComposeDir},
 		pages:   map[string]*template.Template{},
 		version: o.Version, installType: o.InstallType,
@@ -174,7 +183,7 @@ func (s *Server) Close() {
 }
 
 func (s *Server) parseTemplates() error {
-	pages := []string{"login", "dashboard", "containers", "container_choose", "container_import", "container_new", "container_detail", "images", "image_detail", "image_pull", "volumes", "volume_new", "volume_detail", "volume_restore", "volume_files", "volume_edit", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events"}
+	pages := []string{"login", "login_mfa", "login_mfa_setup", "account", "dashboard", "containers", "container_choose", "container_import", "container_new", "container_detail", "images", "image_detail", "image_pull", "volumes", "volume_new", "volume_detail", "volume_restore", "volume_files", "volume_edit", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events"}
 	for _, p := range pages {
 		t, err := template.New(p).Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/partials.html", "templates/"+p+".html")
 		if err != nil {
@@ -214,9 +223,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /login", s.handleLoginPage)
 	mux.HandleFunc("GET /login/warm", s.handleWarm)
 	mux.HandleFunc("POST /login", s.handleLogin)
+	mux.HandleFunc("GET /login/mfa", s.handleMFAPage)
+	mux.HandleFunc("POST /login/mfa", s.handleMFALogin)
+	mux.HandleFunc("GET /login/mfa/setup", s.handleMFAPage)
+	mux.HandleFunc("POST /login/mfa/setup", s.handleMFALogin)
 
 	authed := http.NewServeMux()
 	authed.HandleFunc("POST /logout", s.handleLogout)
+	authed.HandleFunc("GET /account", s.handleAccount)
+	authed.HandleFunc("POST /account/mfa/{action}", s.handleAccountMFA)
 	authed.HandleFunc("GET /{$}", s.handleDashboard)
 	authed.HandleFunc("GET /partials/dashboard", s.handleDashboardPartial)
 	authed.HandleFunc("GET /containers", s.handleContainers)
@@ -593,23 +608,15 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 		fail(fmt.Sprintf("Too many failed attempts. Try again in %s.", wait.Round(time.Second)))
 		return
 	}
-	if !s.users.Verify(username, password) {
+	account, ok := s.users.Verify(username, password)
+	if !ok {
 		s.throttle.Failure(key)
 		s.log.Warn("login failed", "user", username, "remote", r.RemoteAddr)
 		fail("Invalid username or password.")
 		return
 	}
 	s.throttle.Success(key)
-	if c, err := r.Cookie(sessionCookie); err == nil {
-		s.sessions.Delete(c.Value)
-	}
-	sess := s.sessions.Create(username)
-	http.SetCookie(w, &http.Cookie{
-		Name: sessionCookie, Value: sess.ID, Path: "/",
-		HttpOnly: true, Secure: s.secure, SameSite: http.SameSiteStrictMode,
-	})
-	s.log.Info("login", "user", username, "remote", r.RemoteAddr)
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	s.passwordAccepted(w, r, username, account)
 }
 
 func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 
 	"golang.org/x/sys/windows"
@@ -53,16 +54,17 @@ func TestSystemVerify(t *testing.T) {
 		err := windows.OpenProcessToken(windows.CurrentProcess(), windows.TOKEN_QUERY|windows.TOKEN_DUPLICATE, &token)
 		return token, err
 	}
-	if s.Verify(`CORP\alice`, "wrong") {
+	ok := func(u, p string) bool { _, ok := s.Verify(u, p); return ok }
+	if ok(`CORP\alice`, "wrong") {
 		t.Error("a wrong password was accepted")
 	}
 	if gotUser != "alice" || gotDomain != "CORP" {
 		t.Errorf("logon got %q, %q", gotUser, gotDomain)
 	}
-	if !s.Verify("alice", "right") {
-		t.Error("the account ContainerUI runs as was refused")
+	if account, _ := s.Verify("alice", "right"); !strings.HasPrefix(account, "S-1-") {
+		t.Errorf("the account ContainerUI runs as was refused or has no SID: %q", account)
 	}
-	if s.Verify("", "right") || s.Verify("alice", "") || s.Verify("a\x00b", "right") {
+	if ok("", "right") || ok("alice", "") || ok("a\x00b", "right") {
 		t.Error("malformed credentials were accepted")
 	}
 }

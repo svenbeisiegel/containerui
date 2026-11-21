@@ -31,25 +31,32 @@ func NewSystem(service, socket string, log *slog.Logger) (*System, error) {
 	return &System{pipe: socket, log: log, logon: logonUser}, nil
 }
 
-func (s *System) Verify(username, password string) bool {
+// Verify returns the account's SID, the same for every way of writing the
+// name (alice, CORP\alice, alice@corp.example, any case).
+func (s *System) Verify(username, password string) (string, bool) {
 	if username == "" || password == "" || len(username) > 256 || strings.ContainsRune(username+password, 0) {
-		return false
+		return "", false
 	}
 	user, domain := splitAccount(username)
 	if user == "" {
-		return false
+		return "", false
 	}
 	token, err := s.logon(user, domain, password)
 	if err != nil {
 		s.log.Debug("windows login failed", "user", username, "error", err)
-		return false
+		return "", false
 	}
 	defer token.Close()
+	tu, err := token.GetTokenUser()
+	if err != nil {
+		s.log.Warn("windows login refused: no account SID", "user", username, "error", err)
+		return "", false
+	}
 	if err := s.mayUseRuntime(token); err != nil {
 		s.log.Warn("windows login refused: no access to the container runtime", "user", username, "error", err)
-		return false
+		return "", false
 	}
-	return true
+	return tu.User.Sid.String(), true
 }
 
 // splitAccount splits DOMAIN\user into user and domain. A UPN (user@domain)

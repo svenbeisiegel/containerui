@@ -29,11 +29,20 @@ func TestSocketAllows(t *testing.T) {
 func TestAnyVerifier(t *testing.T) {
 	no := verifierFunc(func(string, string) bool { return false })
 	yes := verifierFunc(func(u, p string) bool { return u == "a" && p == "b" })
-	if !(Any{no, yes}).Verify("a", "b") || (Any{no, yes}).Verify("a", "c") || (Any{}).Verify("a", "b") {
+	ok := func(v Verifier, u, p string) bool { _, ok := v.Verify(u, p); return ok }
+	if !ok(Any{no, yes}, "a", "b") || ok(Any{no, yes}, "a", "c") || ok(Any{}, "a", "b") {
 		t.Error("Any does not accept exactly what one of its verifiers accepts")
+	}
+	if account, _ := (Any{no, yes}).Verify("a", "b"); account != "account:a" {
+		t.Errorf("Any returned account %q", account)
 	}
 }
 
 type verifierFunc func(string, string) bool
 
-func (f verifierFunc) Verify(u, p string) bool { return f(u, p) }
+func (f verifierFunc) Verify(u, p string) (string, bool) {
+	if f(u, p) {
+		return "account:" + u, true
+	}
+	return "", false
+}

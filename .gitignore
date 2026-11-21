@@ -13,3 +13,5 @@
 /activity.json
 # Uploaded volume backups of a local run (runtime.volume_upload_dir).
 /volume-uploads/
+# Two-factor secrets of a local run (server.mfa_file).
+/mfa.json

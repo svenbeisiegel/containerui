@@ -1,0 +1,46 @@
+{{define "content"}}
+{{$v := .Data}}
+<div class="page-head">
+  <div class="title-row"><h1>Account</h1></div>
+</div>
+<section class="panel">
+  <div class="panel-head"><h2>Two-factor sign-in</h2>
+    {{if $v.On}}{{if $v.Enrolled}}<span class="badge ok">On</span>{{else}}<span class="badge">Off</span>{{end}}{{end}}
+  </div>
+  {{if not $v.On}}
+  <p class="muted">Two-factor sign-in is turned off on this server (<code>server.mfa: off</code>).</p>
+  {{else if $v.Enrolled}}
+    {{with $v.Recovery}}
+    <div class="recovery-codes" role="status">
+      <p><strong>Your recovery codes.</strong> Each one signs you in once without the app. Store them somewhere safe now: they are not shown again.</p>
+      <ul class="mono-list">{{range .}}<li><code>{{.}}</code></li>{{end}}</ul>
+    </div>
+    {{end}}
+    <p>After your password, ContainerUI asks for a code from your authenticator app. Unused recovery codes: <strong>{{$v.RecoveryLeft}}</strong>.</p>
+    <div class="mfa-actions">
+      <form method="post" action="/account/mfa/recovery" class="inline-form">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="Code from the app" aria-label="Code from the app" maxlength="10" class="mono-input">
+        <button type="submit">New recovery codes</button>
+      </form>
+      {{if not $v.Required}}
+      <form method="post" action="/account/mfa/disable" class="inline-form">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="Code from the app" aria-label="Code from the app" maxlength="10" class="mono-input">
+        <button type="submit" class="danger">Turn off</button>
+      </form>
+      {{else}}
+      <p class="hint">Two-factor sign-in is required on this server and cannot be turned off.</p>
+      {{end}}
+    </div>
+  {{else}}
+    <p>Protect your account with a code from an authenticator app (Google Authenticator, Microsoft Authenticator, 1Password, Aegis, …), asked after your password.</p>
+    {{template "totp_setup" $v.Setup}}
+    <form method="post" action="/account/mfa/enroll" class="inline-form">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input name="code" inputmode="numeric" autocomplete="one-time-code" required placeholder="Code shown by the app" aria-label="Code shown by the app" maxlength="10" class="mono-input">
+      <button type="submit" class="primary">Turn on</button>
+    </form>
+  {{end}}
+</section>
+{{end}}
