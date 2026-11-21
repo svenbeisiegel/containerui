@@ -1,0 +1,88 @@
+{{define "content"}}
+{{$v := .Data}}{{$i := $v.Info}}{{$u := $v.Update}}
+<div class="page-head">
+  <div class="title-row">{{template "back_button" "/images"}}<h1 class="wrap mono-title">{{$v.Ref}}{{if $u.Available}} <span class="badge warn update-tag" title="A newer image is available. Use the update button.">update</span>{{end}}</h1></div>
+  {{with $v.Image}}{{template "image_actions" (dict "I" . "U" $u "Caps" $v.Caps "CSRF" $v.CSRF "View" "detail" "Menu" false)}}{{end}}
+</div>
+{{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
+
+{{if or $v.Image $v.HasInfo}}
+<div class="cards stat-cards">
+  <div class="card"><span class="label">Size</span><span class="num">{{if $v.Image}}{{$v.Image.Size}}{{else}}{{bytes $i.Size}}{{end}}</span></div>
+  <div class="card"><span class="label">Created</span><span class="num">{{if $v.Image}}{{ago $v.Image.Created}}{{else}}{{ago $i.Created}}{{end}}</span>
+    <span class="sub">{{if $v.Image}}{{datetime $v.Image.Created}}{{else}}{{datetime $i.Created}}{{end}}</span></div>
+  {{with $i.RootFS.Layers}}<div class="card"><span class="label">Layers</span><span class="num">{{len .}}</span></div>{{end}}
+  {{with $i.Platform}}<div class="card"><span class="label">Platform</span><span class="num">{{.}}</span></div>{{end}}
+  <div class="card"><span class="label">Containers</span><span class="num">{{len $v.Users}}</span><span class="sub">{{if $v.Users}}created from it{{else}}none – unused{{end}}</span></div>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Overview</h2>
+    <dl class="props">
+      {{with $v.Image}}<dt>Repository</dt><dd class="mono">{{.Repository}}</dd><dt>Tag</dt><dd class="mono">{{.Tag}}</dd>{{end}}
+      <dt>ID</dt><dd class="mono break">{{if $i.ID}}{{$i.ID}}{{else if $v.Image}}{{$v.Image.ID}}{{end}}</dd>
+      {{with $i.RepoTags}}<dt>Tags</dt><dd class="chips">{{range .}}<a class="chip mono" href="/images/{{.}}">{{.}}</a>{{end}}</dd>{{end}}
+      {{with $i.RepoDigests}}<dt>Digests</dt><dd class="mono small break">{{range $n, $d := .}}{{if $n}}<br>{{end}}{{$d}}{{end}}</dd>{{end}}
+      {{with $i.Author}}<dt>Author</dt><dd>{{.}}</dd>{{end}}
+      {{if $u.Ref}}<dt>Updates</dt><dd>
+        {{if $u.DigestChanged}}<span class="badge warn">rebuilt</span> <span class="muted small">the registry has a newer image for this tag</span><br>{{end}}
+        {{with $u.NewerTags}}<span class="badge warn">newer</span> <span class="mono small">{{range $n, $t := .}}{{if $n}}, {{end}}{{$t.Name}}{{end}}</span><br>{{end}}
+        {{if not $u.Available}}{{if $u.Status.Err}}<span class="muted small" title="{{$u.Status.Err}}">not checked</span>{{else if $u.Status.TagGone}}<span class="muted small">the registry no longer has this tag{{with $u.NewerLocal}}; version {{.}} is already pulled{{end}}</span>{{else}}<span class="badge ok">up to date</span>{{end}}{{end}}
+      </dd>{{end}}
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Run configuration</h2>
+    {{if or $i.Config.Entrypoint $i.Config.Cmd $i.Config.WorkingDir $i.Config.User $i.Ports $i.Volumes $i.Config.StopSignal $i.Healthcheck}}
+    <dl class="props">
+      {{with $i.Config.Entrypoint}}<dt>Entrypoint</dt><dd class="mono break">{{join . " "}}</dd>{{end}}
+      {{with $i.Config.Cmd}}<dt>Command</dt><dd class="mono break">{{join . " "}}</dd>{{end}}
+      {{with $i.Config.WorkingDir}}<dt>Working dir</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $i.Config.User}}<dt>User</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $i.Ports}}<dt>Exposed ports</dt><dd class="chips">{{range .}}<span class="chip mono">{{.}}</span>{{end}}</dd>{{end}}
+      {{with $i.Volumes}}<dt>Volumes</dt><dd class="chips">{{range .}}<span class="chip mono">{{.}}</span>{{end}}</dd>{{end}}
+      {{with $i.Config.StopSignal}}<dt>Stop signal</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $i.Healthcheck}}<dt>Healthcheck</dt><dd class="mono break">{{.}}</dd>{{end}}
+    </dl>
+    {{else}}<p class="empty">The image sets no command, ports or volumes.</p>{{end}}
+  </section>
+</div>
+
+{{if or $i.Env $i.Config.Labels}}
+<div class="grid2">
+  {{with $i.Env}}<section class="panel"><h2>Environment</h2>{{template "kv_list" .}}</section>{{end}}
+  {{with $i.Config.Labels}}<section class="panel"><h2>Labels</h2>{{template "kv_list" .}}</section>{{end}}
+</div>
+{{end}}
+
+<section class="panel">
+  <h2>Containers</h2>
+  {{if not $v.Users}}<p class="empty">No container was created from this image.</p>
+  {{else}}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>State</th><th>Created</th></tr></thead>
+    <tbody>
+    {{range $v.Users}}
+      <tr>
+        <td><a href="/containers/{{.ID}}">{{.Name}}</a><div class="id">{{shortID .ID}}</div></td>
+        <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
+        <td title="{{datetime .Created}}">{{ago .Created}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{end}}
+</section>
+{{end}}
+
+{{if $v.Inspect}}
+<section class="panel">
+  <details class="inspect">
+    <summary><h2>Inspect</h2></summary>
+    <pre class="log">{{$v.Inspect}}</pre>
+  </details>
+</section>
+{{end}}
+{{end}}

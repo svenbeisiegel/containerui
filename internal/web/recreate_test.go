@@ -207,8 +207,8 @@ func TestImageUpdates(t *testing.T) {
 			t.Errorf("detail page misses %q", want)
 		}
 	}
-	if strings.Contains(page, "/update\"") {
-		t.Error("detail page offers an update action")
+	if !strings.Contains(detailHead(page), "/update\"") {
+		t.Error("detail page head does not offer the update action")
 	}
 
 	w := e.post("/containers/c0ffee000001/update", url.Values{"image": {"nginx:1.28"}}, htmx)

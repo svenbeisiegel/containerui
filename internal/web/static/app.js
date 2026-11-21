@@ -230,6 +230,16 @@ document.addEventListener("submit", function (e) {
       inInput: !!input && document.activeElement === input
     };
   });
+  // A polled refresh also swaps in a detail page's head buttons
+  // (#compose-actions): leave them alone while one of their drop-downs
+  // is open or has the focus, so a half-filled form is not lost.
+  document.addEventListener("htmx:oobBeforeSwap", function (e) {
+    var t = e.detail.target;
+    if (t && t.matches && t.matches(".page-head > .actions") &&
+        (t.querySelector("details[open]") || t.contains(document.activeElement))) {
+      e.detail.shouldSwap = false;
+    }
+  });
   document.addEventListener("htmx:afterSwap", function () {
     var s = saved;
     saved = null;

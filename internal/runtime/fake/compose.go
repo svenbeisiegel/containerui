@@ -141,7 +141,10 @@ func (f *Runtime) InspectImage(_ context.Context, ref string) (json.RawMessage, 
 	if img.Digest != "" {
 		digests = []string{img.Repository + "@" + img.Digest}
 	}
-	return json.Marshal(map[string]any{"Id": img.ID, "RepoTags": []string{img.Ref()}, "RepoDigests": digests, "Config": map[string]any{"Env": imageEnv}})
+	return json.Marshal(map[string]any{"Id": img.ID, "RepoTags": []string{img.Ref()}, "RepoDigests": digests,
+		"Created": img.Created, "Size": 5 << 20, "Architecture": "amd64", "Os": "linux",
+		"RootFS": map[string]any{"Type": "layers", "Layers": []string{"sha256:1111", "sha256:2222", "sha256:3333"}},
+		"Config": map[string]any{"Env": imageEnv}})
 }
 
 func (f *Runtime) composeCheck(op string, t runtime.ComposeTarget) error {

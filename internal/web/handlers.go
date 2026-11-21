@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/svenbeisiegel/containerui/internal/registry"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 	"github.com/svenbeisiegel/containerui/internal/updates"
 )
@@ -155,6 +154,7 @@ func (s *Server) handleContainersPartial(w http.ResponseWriter, r *http.Request)
 
 type containerDetailView struct {
 	ID        string
+	CSRF      string
 	Container *runtime.Container
 	Inspect   string
 	Err       string
@@ -170,7 +170,7 @@ type containerDetailView struct {
 
 func (s *Server) handleContainerDetail(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
-	v := containerDetailView{ID: id, Caps: s.caps()}
+	v := containerDetailView{ID: id, Caps: s.caps(), CSRF: sessionFrom(r).CSRF}
 	if cs, err := s.rt.ListContainers(r.Context(), runtime.ListContainersOpts{All: true}); err == nil {
 		for i := range cs {
 			if cs[i].ID == id || cs[i].Name == id {
@@ -722,38 +722,10 @@ func (s *Server) loadImages(r *http.Request, f *flash) imagesView {
 // that no container could be matched to keeps the engine's count on all
 // its rows: never call an image unused that the engine says is used.
 func markImageUse(imgs []runtime.Image, cs []runtime.Container) {
-	byRef := map[string][]int{}
-	for i, img := range imgs {
+	for i := range imgs {
 		imgs[i].InUse = 0
-		if img.Repository == "" || img.Repository == "<none>" || img.Tag == "" || img.Tag == "<none>" {
-			continue
-		}
-		if r, err := registry.ParseRef(img.Ref()); err == nil {
-			byRef[r.String()] = append(byRef[r.String()], i)
-		}
-	}
-	for _, c := range cs {
-		r, err := registry.ParseRef(c.Image)
-		switch {
-		case errors.Is(err, registry.ErrNotRegistry):
-			id := strings.TrimPrefix(c.Image, "sha256:")
-			for i, img := range imgs {
-				if strings.HasPrefix(strings.TrimPrefix(img.ID, "sha256:"), id) {
-					imgs[i].InUse++
-				}
-			}
-		case err != nil:
-		case r.Digest != "":
-			for i, img := range imgs {
-				if img.Digest != r.Digest {
-					continue
-				}
-				if ir, err := registry.ParseRef(img.Repository); err == nil && ir.Name() == r.Name() {
-					imgs[i].InUse++
-				}
-			}
-		default:
-			for _, i := range byRef[r.String()] {
+		for _, c := range cs {
+			if containerUsesImage(c, imgs[i]) {
 				imgs[i].InUse++
 			}
 		}
@@ -933,6 +905,13 @@ func (s *Server) imageResult(w http.ResponseWriter, r *http.Request, target, msg
 	s.renderImagesTable(w, r, nil)
 }
 
+// imageDetailResult answers an action sent from an image's detail page:
+// record it and go to the page to, where the flash shows the outcome.
+func (s *Server) imageDetailResult(w http.ResponseWriter, r *http.Request, target, msg, errMsg, to string) {
+	s.recordActivity(w, r, imageJobKind, target, msg, errMsg, nil, true, true)
+	redirect(w, r, to)
+}
+
 func (s *Server) handleImageTag(w http.ResponseWriter, r *http.Request) {
 	source := r.PostFormValue("source")
 	target := strings.TrimSpace(r.PostFormValue("target"))
@@ -944,10 +923,18 @@ func (s *Server) handleImageTag(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		s.log.Warn("image tag failed", "source", source, "target", target, "error", err)
+		if r.PostFormValue("view") == "detail" {
+			s.imageDetailResult(w, r, "tag "+source+" → "+target, "", userError(err), imageDetailURL(source))
+			return
+		}
 		s.imageResult(w, r, "tag "+source+" → "+target, "", userError(err), nil)
 		return
 	}
 	s.log.Info("image tagged", "source", source, "target", target, "user", sessionFrom(r).Username)
+	if r.PostFormValue("view") == "detail" {
+		s.imageDetailResult(w, r, "tag "+source+" → "+target, fmt.Sprintf("Tagged %s as %s.", source, target), "", imageDetailURL(source))
+		return
+	}
 	s.imageResult(w, r, "tag "+source+" → "+target, fmt.Sprintf("Tagged %s as %s.", source, target), "", nil)
 }
 
@@ -960,12 +947,20 @@ func (s *Server) handleImageDelete(w http.ResponseWriter, r *http.Request) {
 		if errors.Is(err, runtime.ErrConflict) {
 			msg += " The image is used by a container; delete the container first, or refresh the list and delete again to remove it anyway."
 		}
+		if r.PostFormValue("view") == "detail" {
+			s.imageDetailResult(w, r, "delete "+ref, "", msg, imageDetailURL(ref))
+			return
+		}
 		s.imageResult(w, r, "delete "+ref, "", msg, nil)
 		return
 	}
 	s.log.Info("image deleted", "ref", ref, "force", force, "user", sessionFrom(r).Username)
 	if s.updates != nil {
 		s.updates.Refresh(r.Context(), ref)
+	}
+	if r.PostFormValue("view") == "detail" {
+		s.imageDetailResult(w, r, "delete "+ref, fmt.Sprintf("Deleted image %s.", ref), "", "/images")
+		return
 	}
 	s.imageResult(w, r, "delete "+ref, fmt.Sprintf("Deleted image %s.", ref), "", nil)
 }

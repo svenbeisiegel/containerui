@@ -434,6 +434,9 @@ type composeDetailView struct {
 	Caps    runtime.Capabilities
 	CSRF    string
 	Err     string
+	// Partial is set on the polled refresh, which also swaps in the
+	// head's action buttons.
+	Partial bool
 }
 
 // findProject loads the project named in the path, answering 404 if there
@@ -503,6 +506,7 @@ func (s *Server) handleComposeProjectPartial(w http.ResponseWriter, r *http.Requ
 	} else {
 		v.Err = "Project " + name + " no longer exists."
 	}
+	v.Partial = v.Err == ""
 	s.renderPartial(w, "compose_project", v)
 }
 

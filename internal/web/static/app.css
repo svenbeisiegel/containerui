@@ -192,6 +192,25 @@ a.card:hover { text-decoration: none; border-color: var(--focus); border-top-col
 .card .num { font-size: 2rem; font-weight: 700; line-height: 1.1; color: var(--heading); font-variant-numeric: tabular-nums; }
 .card .label { color: var(--muted); }
 .card .sub { color: var(--muted); font-size: .85rem; }
+/* Image detail page: smaller numbers, so text values (linux/amd64) fit. */
+.stat-cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; }
+.stat-cards .card .num { font-size: 1.45rem; overflow-wrap: break-word; }
+@media (max-width: 640px) { .stat-cards .card .num { font-size: 1.15rem; } }
+.chips { display: flex; flex-wrap: wrap; gap: .35rem; }
+.chip {
+  display: inline-block; padding: .1rem .5rem; border-radius: 999px;
+  font-size: .82rem; background: var(--soft); color: var(--text); border: 1px solid var(--border);
+}
+a.chip { color: var(--accent); }
+a.chip:hover { border-color: var(--accent); text-decoration: none; }
+.break { overflow-wrap: anywhere; }
+.mono-title { font-family: var(--mono); font-size: 1.35rem; }
+details.inspect > summary { cursor: pointer; list-style: none; }
+details.inspect > summary::-webkit-details-marker { display: none; }
+details.inspect > summary h2 { display: inline-block; margin: 0; }
+details.inspect > summary::after { content: " ▸"; color: var(--muted); }
+details.inspect[open] > summary::after { content: " ▾"; }
+details.inspect[open] > summary { margin-bottom: .75rem; }
 
 /* ---------- charts (dashboard metrics) ----------
    Server-rendered SVG (partials.html "linechart", "donut_panel"); hover by
@@ -535,6 +554,7 @@ pre.log {
 dl.props { display: grid; grid-template-columns: max-content 1fr; gap: .35rem 1.25rem; margin: 0 0 1rem; }
 dl.props dt { color: var(--muted); }
 dl.props dd { margin: 0; }
+dl.props:last-child { margin-bottom: 0; }
 .syslog-actions { justify-content: flex-start; }
 
 /* ---------- networks ---------- */
@@ -607,7 +627,6 @@ body:has(> .output-handle) main { padding-right: calc(1.25rem + 28px); } /* keep
 .activity-list .job .flash { margin-top: .5rem; }
 .activity-list .job pre.log { min-height: 0; max-height: 320px; }
 .activity-list .job-kind { font-size: .8rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
-.down-form { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: .9rem; padding-top: .9rem; border-top: 1px solid var(--border); }
 
 @media (max-width: 720px) {
   .fields { grid-template-columns: minmax(0, 1fr); }

@@ -2,6 +2,7 @@
 {{$v := .Data}}
 <div class="page-head">
   <div class="title-row">{{template "back_button" "/networks"}}<h1 class="wrap">{{$v.Name}}</h1></div>
+  {{with $v.Network}}{{if not .Predefined}}{{template "network_actions" (dict "N" . "View" "detail" "CSRF" $v.CSRF)}}{{end}}{{end}}
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Network}}
@@ -21,7 +22,6 @@
     {{with $v.Info.Options}}<dt>Options</dt><dd>{{template "kv_list" .}}</dd>{{end}}
     {{if .Predefined}}<dt>Type</dt><dd><span class="badge info">built-in</span> <span class="muted small">created by the runtime; cannot be deleted</span></dd>{{end}}
   </dl>
-  {{if not .Predefined}}{{template "network_actions" (dict "N" . "View" "detail" "CSRF" $v.CSRF)}}{{end}}
 </section>
 {{end}}
 

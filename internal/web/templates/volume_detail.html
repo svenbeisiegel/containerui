@@ -2,6 +2,7 @@
 {{$v := .Data}}
 <div class="page-head">
   <div class="title-row">{{template "back_button" "/volumes"}}<h1 class="wrap">{{$v.Name}}</h1></div>
+  {{with $v.Volume}}{{template "volume_actions" (dict "V" . "View" "detail" "CSRF" $v.CSRF "Backup" $v.Backup "Files" $v.Files)}}{{end}}
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Volume}}
@@ -14,7 +15,6 @@
     {{if .Mountpoint}}<dt>Mountpoint</dt><dd class="mono">{{.Mountpoint}}</dd>{{end}}
     <dt>Used by</dt><dd>{{template "volume_users" .UsedBy}}</dd>
   </dl>
-  {{template "volume_actions" (dict "V" . "View" "detail" "CSRF" $v.CSRF "Backup" $v.Backup "Files" $v.Files)}}
 </section>
 {{end}}
 {{if $v.Inspect}}

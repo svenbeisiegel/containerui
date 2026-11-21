@@ -1,7 +1,8 @@
 {{define "content"}}
 {{$v := .Data}}
 <div class="page-head">
-  <div class="title-row">{{template "back_button" "/containers"}}<h1 class="wrap">{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}{{with $v.Updates}} <span class="badge warn update-tag" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update in the actions menu of the container list.">update</span>{{end}}</h1></div>
+  <div class="title-row">{{template "back_button" "/containers"}}<h1 class="wrap">{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}{{with $v.Updates}} <span class="badge warn update-tag" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update above.">update</span>{{end}}</h1></div>
+  {{with $v.Container}}{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Updates" $v.Updates "Menu" false)}}{{end}}
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Job}}{{template "recreate_job" .}}{{end}}

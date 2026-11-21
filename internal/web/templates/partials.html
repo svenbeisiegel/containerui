@@ -26,6 +26,22 @@
   <summary class="button kebab" aria-label="Actions for {{.Name}}" title="Actions">{{template "kebab_icon"}}</summary>
   <div class="row-menu-panel">{{end}}
 {{define "row_menu_close"}}</div></details>{{end}}
+
+{{/* The actions of a list row and of its detail page come from one
+     template, rendered as the row's ⋮ menu (Menu true) or as the button
+     bar in the detail page's head (Menu false). actions_open expects dict:
+     Menu, Key and Name (for the row menu), optional ID (of the bar);
+     actions_close, actions_sep and actions_sub_close expect Menu.
+     actions_sub_open opens an inline expander (Tag, Update) that is a
+     drop-down in the head; it expects dict: Menu, Label, optional Class
+     and Title. */}}
+{{define "actions_open"}}{{if .Menu}}{{template "row_menu_open" (dict "Key" .Key "Name" .Name)}}{{else}}<div class="actions"{{with .ID}} id="{{.}}"{{end}}>{{end}}{{end}}
+{{define "actions_close"}}{{if .}}{{template "row_menu_close"}}{{else}}</div>{{end}}{{end}}
+{{define "actions_sep"}}{{if .}}<hr class="row-menu-sep">{{end}}{{end}}
+{{define "actions_sub_open"}}<details class="{{if .Menu}}row-menu-sub{{else}}menu{{end}}">
+  <summary class="button{{with .Class}} {{.}}{{end}}"{{with .Title}} title="{{.}}"{{end}}>{{.Label}}{{if .Menu}}…{{end}}</summary>
+  {{if not .Menu}}<div class="menu-panel">{{end}}{{end}}
+{{define "actions_sub_close"}}{{if not .}}</div>{{end}}</details>{{end}}
 {{define "kebab_icon"}}<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><g fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></g></svg>{{end}}
 
 {{/* ---------- dashboard ---------- */}}
@@ -131,17 +147,19 @@
 {{end}}
 
 {{/* ---------- containers ---------- */}}
-{{/* container_actions: the ⋮ menu of a container row with every action
+{{/* container_actions: the ⋮ menu of a container row (or the button bar
+     of its detail page) with every action
      that fits the container's state. Expects dict: C (container), Caps,
-     View ("list": refresh #containers, "detail": redirect), CSRF; optional
-     Return (page to go back to) and Updates (the container's update
-     candidates). Edit, Recreate and Update are left out for compose
+     View ("list": refresh #containers, "detail": redirect), CSRF, Menu
+     (row menu, else the detail page's button bar); optional Return (page
+     to go back to) and Updates (the container's update candidates). Edit, Recreate and Update are left out for compose
      containers, which change through their project. */}}
 {{define "container_actions"}}
 {{$c := .C}}{{$caps := .Caps}}{{$csrf := .CSRF}}
 {{$running := $c.State.IsRunning}}
 {{$recreate := and $caps.Inspect (not (index $c.Labels "com.docker.compose.project"))}}
-{{template "row_menu_open" (dict "Key" (printf "c-%s" $c.ID) "Name" $c.Name)}}
+{{$menu := .Menu}}
+{{template "actions_open" (dict "Menu" $menu "Key" (printf "c-%s" $c.ID) "Name" $c.Name)}}
   {{if $running}}
     {{template "container_action" (dict "P" . "Act" "stop" "Label" "Stop" "Class" "" "Confirm" "" "Force" false)}}
     {{if $caps.Restart}}{{template "container_action" (dict "P" . "Act" "restart" "Label" "Restart" "Class" "" "Confirm" "" "Force" false)}}{{end}}
@@ -149,7 +167,7 @@
     {{template "container_action" (dict "P" . "Act" "start" "Label" "Start" "Class" "primary" "Confirm" "" "Force" false)}}
   {{end}}
   {{if $recreate}}
-  <hr class="row-menu-sep">
+  {{template "actions_sep" $menu}}
   <a class="button" href="/containers/{{$c.ID}}/edit">Edit</a>
   {{$pull := or (index $c.Labels "containerui.pull") "missing"}}
   <form method="post" action="/containers/{{$c.ID}}/recreate" hx-post="/containers/{{$c.ID}}/recreate" hx-swap="none" hx-disabled-elt="find button"
@@ -158,8 +176,7 @@
     <button type="submit" title="Stop, remove and create the container again (pull policy {{$pull}})">Recreate</button>
   </form>
   {{with and $caps.Pull .Updates}}
-  <details class="row-menu-sub">
-    <summary class="button primary" title="A newer image is available">Update…</summary>
+  {{template "actions_sub_open" (dict "Menu" $menu "Label" "Update" "Class" "primary" "Title" "A newer image is available")}}
     <form class="tag-form" method="post" action="/containers/{{$c.ID}}/update" hx-post="/containers/{{$c.ID}}/update" hx-swap="none" hx-disabled-elt="find button"
           hx-confirm="Update container {{$c.Name}} to the selected image? It is recreated with the same settings; volumes are kept.">
       <input type="hidden" name="csrf" value="{{$csrf}}">
@@ -168,11 +185,11 @@
       </select>
       <button type="submit" class="primary" title="Pull the image if needed and recreate the container with it">Update</button>
     </form>
-  </details>
+  {{template "actions_sub_close" $menu}}
   {{end}}
   {{end}}
   {{if or (and $running $caps.Terminal) $caps.Attach $caps.Logs}}
-  <hr class="row-menu-sep">
+  {{template "actions_sep" $menu}}
   {{if and $running $caps.Terminal}}<a class="button" href="/containers/{{$c.ID}}/terminal" target="_blank" rel="noopener" title="Open a shell in the container">Connect</a>{{end}}
   {{if $caps.Attach}}<a class="button" href="/containers/{{$c.ID}}/attach" target="_blank" rel="noopener" title="Attach to the container's main process">Attach</a>{{end}}
   {{if $caps.Logs}}
@@ -180,9 +197,9 @@
   <a class="button" href="/containers/{{$c.ID}}/logs/download" download>Download logs</a>
   {{end}}
   {{end}}
-  <hr class="row-menu-sep">
+  {{template "actions_sep" $menu}}
   {{template "container_action" (dict "P" . "Act" "delete" "Label" "Delete" "Class" "danger" "Confirm" (printf "Delete container %s?%s" $c.Name (or (and $running " It is running and will be killed first.") "")) "Force" true)}}
-{{template "row_menu_close"}}
+{{template "actions_close" $menu}}
 {{end}}
 
 {{define "container_action"}}
@@ -214,7 +231,7 @@
         <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
         <td class="mono small">{{.Ports}}</td>
         <td title="{{datetime .Created}}">{{ago .Created}}</td>
-        <td class="right">{{template "container_actions" (dict "C" . "Caps" $caps "View" "list" "CSRF" $csrf "Updates" (index $upd .ID))}}</td>
+        <td class="right">{{template "container_actions" (dict "C" . "Caps" $caps "View" "list" "CSRF" $csrf "Updates" (index $upd .ID) "Menu" true)}}</td>
       </tr>
     {{else}}
       <tr><td colspan="6" class="empty">{{if .Err}}Could not load containers.{{else}}No containers yet. Use <em>Create container</em> to add one.{{end}}</td></tr>
@@ -225,6 +242,40 @@
 {{end}}
 
 {{/* ---------- images ---------- */}}
+{{/* image_actions: the ⋮ menu of an image row (or the button bar of its
+     detail page). Expects dict: I (runtime.Image), U (updates.Image, zero
+     without a check), Caps, CSRF, View ("list": refresh #images,
+     "detail": redirect), Menu. */}}
+{{define "image_actions"}}
+{{$i := .I}}{{$u := .U}}{{$caps := .Caps}}{{$csrf := .CSRF}}{{$menu := .Menu}}{{$list := eq .View "list"}}
+{{template "actions_open" (dict "Menu" $menu "Key" (printf "i-%s" $i.Ref) "Name" $i.Ref)}}
+  {{if and $u.Available $caps.Pull}}
+  {{if $u.DigestChanged}}{{template "image_update" (dict "Ref" $u.Ref "Label" "Update" "Title" (printf "Pull the newer image for %s" $u.Ref) "CSRF" $csrf)}}{{end}}
+  {{with $u.NewerTags}}{{$t := index . 0}}{{template "image_update" (dict "Ref" (printf "%s:%s" $u.Repo $t.Name) "Label" (printf "Pull %s" $t.Name) "Title" (printf "Pull %s:%s, the newest %s version" $u.Repo $t.Name $t.Kind) "CSRF" $csrf)}}{{end}}
+  {{end}}
+  <a class="button" href="/containers/new?image={{$i.Ref}}">Run…</a>
+  {{if $caps.Tag}}
+  {{template "actions_sub_open" (dict "Menu" $menu "Label" "Tag" "Title" "Add another name for this image")}}
+    <form class="tag-form" method="post" action="/images/tag" hx-post="/images/tag" {{if $list}}hx-target="#images" hx-swap="outerHTML"{{else}}hx-swap="none"{{end}}>
+      <input type="hidden" name="csrf" value="{{$csrf}}">
+      <input type="hidden" name="source" value="{{$i.Ref}}">
+      <input type="hidden" name="view" value="{{.View}}">
+      <input name="target" placeholder="repository:tag" required aria-label="New tag for {{$i.Ref}}">
+      <button type="submit" class="primary">Tag</button>
+    </form>
+  {{template "actions_sub_close" $menu}}
+  {{end}}
+  <form method="post" action="/images/delete" hx-post="/images/delete" {{if $list}}hx-target="#images" hx-swap="outerHTML"{{else}}hx-swap="none"{{end}} hx-disabled-elt="find button"
+        hx-confirm="Delete image {{$i.Ref}}?{{if $i.InUse}} Warning: this image is in use by {{$i.InUse}} container(s); it will be removed anyway.{{end}}">
+    <input type="hidden" name="csrf" value="{{$csrf}}">
+    <input type="hidden" name="ref" value="{{$i.Ref}}">
+    <input type="hidden" name="view" value="{{.View}}">
+    {{if $i.Containers}}<input type="hidden" name="force" value="true">{{end}}
+    <button type="submit" class="danger">Delete</button>
+  </form>
+{{template "actions_close" $menu}}
+{{end}}
+
 {{define "images_table"}}
 <section id="images" class="panel" hx-get="/partials/images" hx-trigger="images-changed from:body{{if and .Scan .Scan.Scanning}}, every 2s{{end}}" hx-swap="outerHTML">
   {{template "flash" .Flash}}
@@ -236,37 +287,13 @@
     {{range .Images}}
       {{$u := index $upd .Ref}}
       <tr>
-        <td class="mono">{{.Repository}}{{if .InUse}}<span class="in-use" title="In use by {{.InUse}} container(s)">*</span>{{end}}</td>
+        <td class="mono"><a href="/images/{{.Ref}}">{{.Repository}}</a>{{if .InUse}}<span class="in-use" title="In use by {{.InUse}} container(s)">*</span>{{end}}</td>
         <td class="mono">{{.Tag}}{{if $u.Available}} <span class="badge warn update-tag" title="{{if $u.DigestChanged}}The registry has a newer image for this tag. {{end}}{{with $u.NewerTags}}Newer versions: {{range $i, $t := .}}{{if $i}}, {{end}}{{$t.Name}}{{end}}{{end}}">update</span>{{else if $u.Status.Err}} <span class="muted small" title="{{$u.Status.Err}}">not checked</span>{{else if $u.Status.TagGone}} <span class="muted small" title="The registry no longer has this tag{{with $u.NewerLocal}}; version {{.}} is already pulled{{end}}">not in registry</span>{{end}}</td>
         <td class="id" title="{{.ID}}">{{shortID .ID}}</td>
         <td>{{.Size}}</td>
         <td title="{{datetime .Created}}">{{ago .Created}}</td>
         <td class="right">
-          {{template "row_menu_open" (dict "Key" (printf "i-%s" .Ref) "Name" .Ref)}}
-            {{if and $u.Available $caps.Pull}}
-            {{if $u.DigestChanged}}{{template "image_update" (dict "Ref" $u.Ref "Label" "Update" "Title" (printf "Pull the newer image for %s" $u.Ref) "CSRF" $csrf)}}{{end}}
-            {{with $u.NewerTags}}{{$t := index . 0}}{{template "image_update" (dict "Ref" (printf "%s:%s" $u.Repo $t.Name) "Label" (printf "Pull %s" $t.Name) "Title" (printf "Pull %s:%s, the newest %s version" $u.Repo $t.Name $t.Kind) "CSRF" $csrf)}}{{end}}
-            {{end}}
-            <a class="button" href="/containers/new?image={{.Ref}}">Run…</a>
-            {{if $caps.Tag}}
-            <details class="row-menu-sub">
-              <summary class="button">Tag…</summary>
-              <form class="tag-form" method="post" action="/images/tag" hx-post="/images/tag" hx-target="#images" hx-swap="outerHTML">
-                <input type="hidden" name="csrf" value="{{$csrf}}">
-                <input type="hidden" name="source" value="{{.Ref}}">
-                <input name="target" placeholder="repository:tag" required aria-label="New tag for {{.Ref}}">
-                <button type="submit" class="primary">Tag</button>
-              </form>
-            </details>
-            {{end}}
-            <form method="post" action="/images/delete" hx-post="/images/delete" hx-target="#images" hx-swap="outerHTML" hx-disabled-elt="find button"
-                  hx-confirm="Delete image {{.Ref}}?{{if .InUse}} Warning: this image is in use by {{.InUse}} container(s); it will be removed anyway.{{end}}">
-              <input type="hidden" name="csrf" value="{{$csrf}}">
-              <input type="hidden" name="ref" value="{{.Ref}}">
-              {{if .Containers}}<input type="hidden" name="force" value="true">{{end}}
-              <button type="submit" class="danger">Delete</button>
-            </form>
-          {{template "row_menu_close"}}
+          {{template "image_actions" (dict "I" . "U" $u "Caps" $caps "CSRF" $csrf "View" "list" "Menu" true)}}
         </td>
       </tr>
     {{else}}
@@ -519,9 +546,10 @@
 {{define "compose_status"}}<span class="badge {{if eq .Status "running"}}ok{{else if eq .Status "partial"}}warn{{else if eq .Status "stopped"}}muted{{else}}info{{end}}">{{.Status}}</span>{{if .Deployed}} <span class="muted small">{{.Running}}/{{.Total}} running</span>{{end}}{{end}}
 
 {{/* compose_actions expects dict: P (compose.Project), View ("list"|"detail"), CSRF,
-     optional Menu (render as a row menu). */}}
+     optional Menu (render as a row menu, else the detail page's button bar
+     #compose-actions) and OOB (swap the bar in out of band). */}}
 {{define "compose_actions"}}
-{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "p-%s" .P.Name) "Name" .P.Name)}}{{else}}<div class="actions">{{end}}
+{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "p-%s" .P.Name) "Name" .P.Name)}}{{else}}<div class="actions" id="compose-actions"{{if .OOB}} hx-swap-oob="true"{{end}}>{{end}}
   {{if .P.Deployed}}
     {{if lt .P.Running .P.Total}}{{template "compose_action" (dict "A" . "Act" "start" "Label" "Start" "Class" "primary" "Confirm" "")}}{{end}}
     {{if gt .P.Running 0}}
@@ -530,7 +558,23 @@
     {{end}}
     {{if .P.Stored}}{{template "compose_action" (dict "A" . "Act" "pull" "Label" "Pull" "Class" "" "Confirm" "")}}{{end}}
     <a class="button" href="/compose/{{.P.Name}}/edit">Edit</a>
-    {{if eq .View "list"}}{{template "compose_action" (dict "A" . "Act" "down" "Label" "Down" "Class" "danger" "Confirm" (printf "Take project %s down? Its containers and networks are removed; volumes are kept." .P.Name))}}{{end}}
+    {{if .Menu}}{{template "compose_action" (dict "A" . "Act" "down" "Label" "Down" "Class" "danger" "Confirm" (printf "Take project %s down? Its containers and networks are removed; volumes are kept." .P.Name))}}
+    {{else}}
+    {{template "actions_sub_open" (dict "Menu" false "Label" "Down" "Class" "danger" "Title" "Remove the project's containers and networks")}}
+      <form method="post" action="/compose/{{.P.Name}}/down" hx-post="/compose/{{.P.Name}}/down" hx-swap="none" hx-disabled-elt="find button"
+            hx-confirm="Take project {{.P.Name}} down? Its containers and networks are removed." class="stack">
+        <input type="hidden" name="csrf" value="{{.CSRF}}">
+        <input type="hidden" name="view" value="{{.View}}">
+        <p class="muted small">Removes the project's containers and networks. Volumes are kept unless you tick the switch.</p>
+        <label class="switch">
+          <input type="checkbox" name="volumes" value="true">
+          <span class="track" aria-hidden="true"></span>
+          <span>Also remove the project's volumes <code>--volumes</code></span>
+        </label>
+        <div><button type="submit" class="danger">Down</button></div>
+      </form>
+    {{template "actions_sub_close" false}}
+    {{end}}
   {{else}}
     {{if .P.Stored}}{{template "compose_action" (dict "A" . "Act" "up" "Label" "Deploy" "Class" "primary" "Confirm" "")}}{{end}}
     <a class="button" href="/compose/{{.P.Name}}/edit">Edit</a>
@@ -607,21 +651,9 @@
       <dt>Compose file</dt><dd>{{if eq .Source "stored"}}stored in ContainerUI{{else if .Source}}<span class="mono">{{.Source}}</span> <span class="muted small">(deployed outside ContainerUI)</span>{{else}}<span class="muted">unknown – Edit rebuilds it from the containers</span>{{end}}</dd>
       {{with $p.WorkingDir}}<dt>Project folder</dt><dd class="mono">{{.}}</dd>{{end}}
     </dl>
-    {{template "compose_actions" (dict "P" $p "View" "detail" "CSRF" .CSRF)}}
-    {{if $p.Deployed}}
-    <form method="post" action="/compose/{{$p.Name}}/down" hx-post="/compose/{{$p.Name}}/down" hx-swap="none" hx-disabled-elt="find button"
-          hx-confirm="Take project {{$p.Name}} down? Its containers and networks are removed." class="down-form">
-      <input type="hidden" name="csrf" value="{{.CSRF}}">
-      <input type="hidden" name="view" value="detail">
-      <label class="switch">
-        <input type="checkbox" name="volumes" value="true">
-        <span class="track" aria-hidden="true"></span>
-        <span>Also remove the project's volumes <code>--volumes</code></span>
-      </label>
-      <button type="submit" class="danger">Down</button>
-    </form>
-    {{end}}
   </section>
+  {{/* Polling keeps the head's buttons in step with the project's state. */}}
+  {{if .Partial}}{{template "compose_actions" (dict "P" $p "View" "detail" "CSRF" .CSRF "OOB" true)}}{{end}}
 
   <section class="panel">
     <h2>Services</h2>
@@ -638,7 +670,7 @@
           <td class="mono">{{.Image}}</td>
           <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
           <td class="mono small">{{.Ports}}</td>
-          <td class="right">{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Return" (printf "/compose/%s" $p.Name))}}</td>
+          <td class="right">{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Return" (printf "/compose/%s" $p.Name) "Menu" true)}}</td>
         </tr>
         {{end}}
       {{end}}

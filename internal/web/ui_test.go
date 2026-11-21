@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -244,19 +245,20 @@ func TestBackButtons(t *testing.T) {
 	}
 }
 
-// Table rows offer their actions in a ⋮ menu; volume and network detail
-// pages keep buttons, the container detail page has no actions.
+// Table rows offer their actions in a ⋮ menu; the detail pages behind
+// them offer the same actions as buttons in the page head.
 func TestRowMenus(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 	for path, items := range map[string][]string{
-		"/partials/containers": {`data-menu="c-c0ffee000001"`, `aria-label="Actions for web"`, ">Stop<", ">Restart<", ">Recreate<", ">Connect<", ">Delete<"},
-		"/partials/images":     {`data-menu="i-nginx:1.27"`, "Run…", "Tag…", `<details class="row-menu-sub">`, ">Delete<"},
-		"/partials/volumes":    {`data-menu="v-data"`, ">Backup<", ">Delete<"},
-		"/partials/networks":   {`data-menu="n-backend"`, ">Delete<"},
-		"/partials/compose":    {`data-menu="p-shop"`, ">Edit<"},
-		"/compose/shop":        {`<details class="row-menu"`, ">Stop<"},
-		"/networks/bridge":     {`<details class="row-menu"`, ">Disconnect<"},
+		"/partials/containers":   {`data-menu="c-c0ffee000001"`, `aria-label="Actions for web"`, ">Stop<", ">Restart<", ">Recreate<", ">Connect<", ">Delete<"},
+		"/partials/images":       {`data-menu="i-nginx:1.27"`, "Run…", "Tag…", `<details class="row-menu-sub">`, ">Delete<"},
+		"/partials/volumes":      {`data-menu="v-data"`, ">Backup<", ">Delete<"},
+		"/partials/networks":     {`data-menu="n-backend"`, ">Delete<"},
+		"/partials/compose":      {`data-menu="p-shop"`, ">Edit<"},
+		"/compose/shop":          {`<details class="row-menu"`, ">Stop<"},
+		"/partials/compose/shop": {`id="compose-actions" hx-swap-oob="true"`},
+		"/networks/bridge":       {`<details class="row-menu"`, ">Disconnect<"},
 	} {
 		body := e.do("GET", path, nil, htmx).Body.String()
 		i := strings.Index(body, `<details class="row-menu"`)
@@ -273,17 +275,51 @@ func TestRowMenus(t *testing.T) {
 			t.Errorf("GET %s: row menu without ⋮ button or panel", path)
 		}
 	}
-	if body := e.do("GET", "/containers/web", nil).Body.String(); strings.Contains(body, `class="row-menu"`) || strings.Contains(body, `<div class="actions">`) || strings.Contains(body, `hx-post="/containers/`) {
-		t.Error("GET /containers/web: the detail page offers actions")
-	}
-	for _, path := range []string{"/volumes/data", "/networks/backend"} {
+	// Detail pages offer the same actions as buttons in the page head,
+	// not in the panel below it.
+	for path, items := range map[string][]string{
+		"/containers/web":    {">Stop<", ">Restart<", ">Edit<", ">Recreate<", ">Connect<", ">Download logs<", ">Delete<", `name="view" value="detail"`},
+		"/volumes/data":      {">Backup<", ">Delete<"},
+		"/networks/backend":  {">Delete<"},
+		"/compose/shop":      {">Stop<", ">Edit<", ">Down<", `name="volumes"`},
+		"/images/nginx:1.27": {">Run…<", ">Tag<", ">Delete<", `name="view" value="detail"`},
+	} {
 		body := e.do("GET", path, nil).Body.String()
-		i := strings.Index(body, `<section class="panel">`)
-		j := strings.Index(body[max(i, 0):], "</section>")
-		if i < 0 || j < 0 || strings.Contains(body[i:i+j], `class="row-menu"`) || !strings.Contains(body[i:i+j], `<div class="actions">`) {
-			t.Errorf("GET %s: the detail panel's actions are not plain buttons", path)
+		head := detailHead(body)
+		if head == "" || strings.Contains(head, `class="row-menu"`) || !strings.Contains(head, `<div class="actions"`) {
+			t.Errorf("GET %s: no button bar in the page head", path)
+			continue
+		}
+		for _, want := range items {
+			if !strings.Contains(head, want) {
+				t.Errorf("GET %s: page head misses %q", path, want)
+			}
+		}
+		if i := strings.Index(body, `<section class="panel">`); i >= 0 {
+			j := strings.Index(body[i:], "</section>")
+			if strings.Contains(body[i:i+j], `<div class="actions"`) {
+				t.Errorf("GET %s: the detail panel still holds actions", path)
+			}
 		}
 	}
+	// A stopped container offers Start, not Stop.
+	e.post("/containers/c0ffee000001/stop", url.Values{"name": {"web"}}, htmx)
+	if head := detailHead(e.do("GET", "/containers/web", nil).Body.String()); !strings.Contains(head, ">Start<") || strings.Contains(head, ">Stop<") {
+		t.Error("GET /containers/web: stopped container's head should offer Start only")
+	}
+}
+
+// detailHead returns a detail page's head, title row and buttons.
+func detailHead(body string) string {
+	start := strings.Index(body, `<div class="page-head">`)
+	if start < 0 {
+		return ""
+	}
+	end := strings.Index(body[start:], "<section")
+	if end < 0 {
+		return body[start:]
+	}
+	return body[start : start+end]
 }
 
 // checkHeadActions checks that the page head holds the buttons labels in
