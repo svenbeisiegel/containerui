@@ -452,7 +452,7 @@ func TestVolumeActions(t *testing.T) {
 	if body := e.do("GET", "/volumes", nil).Body.String(); !strings.Contains(body, "Data location") || !strings.Contains(body, `title="Mountpoint: /var/lib/docker/volumes/share/_data">:/data</td>`) || !strings.Contains(body, ">/var/lib/docker/volumes/data/_data</td>") {
 		t.Errorf("data location not shown:\n%s", body)
 	}
-	if body := e.do("GET", "/volumes/share", nil).Body.String(); !strings.Contains(body, "<dt>Device</dt><dd class=\"mono\">:/data</dd>") {
+	if body := e.do("GET", "/volumes/share", nil).Body.String(); !strings.Contains(body, "<dt>Device</dt><dd class=\"mono break\">:/data</dd>") {
 		t.Errorf("device not on detail page:\n%s", body)
 	}
 

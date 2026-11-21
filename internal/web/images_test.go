@@ -63,3 +63,30 @@ func TestImageDetail(t *testing.T) {
 		t.Error("list tag does not answer with the table")
 	}
 }
+
+// Detail pages share the image page's layout: summary cards, titled
+// panels and the inspect document collapsed at the bottom.
+func TestDetailLayout(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	for path, items := range map[string][]string{
+		"/containers/web":    {">State<", ">Restart policy<", "<h2>Overview</h2>", "<h2>Network</h2>", "<h2>Mounts</h2>", "<h2>Environment</h2>", `href="/images/nginx:1.27"`},
+		"/images/nginx:1.27": {">Size<", "<h2>Overview</h2>", "<h2>Containers</h2>"},
+		"/volumes/data":      {">Driver<", "<h2>Overview</h2>", "<h2>Containers</h2>", `href="/containers/c0ffee000001">web</a>`},
+		"/networks/backend":  {">Driver<", "<h2>Overview</h2>", "<h2>Addressing</h2>", "<h2>Labels</h2>", "<h2>Connected Containers</h2>"},
+		"/compose/shop":      {">Services<", "<h2>Overview</h2>", "<h2>Services</h2>"},
+	} {
+		body := e.do("GET", path, nil).Body.String()
+		if !strings.Contains(body, `<div class="cards stat-cards">`) {
+			t.Errorf("GET %s: no summary cards", path)
+		}
+		for _, want := range items {
+			if !strings.Contains(body, want) {
+				t.Errorf("GET %s: misses %q", path, want)
+			}
+		}
+		if path != "/compose/shop" && (!strings.Contains(body, `<details class="inspect">`) || strings.Contains(body, `<details class="inspect" open`)) {
+			t.Errorf("GET %s: inspect output is not collapsed", path)
+		}
+	}
+}

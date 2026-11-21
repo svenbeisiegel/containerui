@@ -6,21 +6,38 @@
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Volume}}
+<div class="cards stat-cards">
+  <div class="card"><span class="label">Driver</span><span class="num">{{.Driver}}</span></div>
+  {{if .Scope}}<div class="card"><span class="label">Scope</span><span class="num">{{.Scope}}</span></div>{{end}}
+  {{if not $v.Info.CreatedAt.IsZero}}<div class="card"><span class="label">Created</span><span class="num">{{ago $v.Info.CreatedAt}}</span><span class="sub">{{datetime $v.Info.CreatedAt}}</span></div>{{end}}
+  <div class="card"><span class="label">Containers</span><span class="num">{{len .UsedBy}}</span><span class="sub">{{if .InUse}}mounted by a running container{{else if .UsedBy}}none running{{else}}none – unused{{end}}</span></div>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Overview</h2>
+    <dl class="props">
+      <dt>Name</dt><dd class="mono break">{{.Name}}</dd>
+      {{if .Mountpoint}}<dt>Mountpoint</dt><dd class="mono break">{{.Mountpoint}}</dd>{{end}}
+      {{with index .Options "device"}}<dt>Device</dt><dd class="mono break">{{.}}</dd>{{end}}
+      {{with index .Options "type"}}<dt>Type</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with index .Options "o"}}<dt>Mount options</dt><dd class="mono break">{{.}}</dd>{{end}}
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Labels</h2>
+    {{with .Labels}}{{template "kv_list" .}}{{else}}<p class="empty">The volume has no labels.</p>{{end}}
+  </section>
+</div>
+
 <section class="panel">
-  <dl class="props">
-    <dt>Name</dt><dd class="mono">{{.Name}}</dd>
-    <dt>Driver</dt><dd>{{.Driver}}</dd>
-    {{if .Scope}}<dt>Scope</dt><dd>{{.Scope}}</dd>{{end}}
-    {{with index .Options "device"}}<dt>Device</dt><dd class="mono">{{.}}</dd>{{end}}
-    {{if .Mountpoint}}<dt>Mountpoint</dt><dd class="mono">{{.Mountpoint}}</dd>{{end}}
-    <dt>Used by</dt><dd>{{template "volume_users" .UsedBy}}</dd>
-  </dl>
+  <h2>Containers</h2>
+  {{if $v.Users}}{{template "container_list" (dict "C" $v.Users "Empty" "")}}
+  {{else if .UsedBy}}<p class="chips">{{range .UsedBy}}<a class="chip" href="/containers/{{.}}">{{.}}</a>{{end}}</p>
+  {{else}}<p class="empty">No container mounts this volume.</p>{{end}}
 </section>
 {{end}}
-{{if $v.Inspect}}
-<section class="panel">
-  <h2>Inspect</h2>
-  <pre class="log">{{$v.Inspect}}</pre>
-</section>
-{{end}}
+
+{{template "inspect_panel" $v.Inspect}}
 {{end}}

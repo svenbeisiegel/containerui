@@ -43,9 +43,11 @@ var funcs = template.FuncMap{
 		}
 		return m, nil
 	},
-	"bytes":    humanBytes,
-	"size":     volbackup.FormatBytes,
-	"duration": humanDuration,
+	"bytes": humanBytes,
+	// splitPorts splits a runtime's port summary ("a, b") into entries.
+	"splitPorts": func(s string) []string { return strings.Split(s, ", ") },
+	"size":       volbackup.FormatBytes,
+	"duration":   humanDuration,
 	"datetime": func(t time.Time) string {
 		if t.IsZero() {
 			return ""

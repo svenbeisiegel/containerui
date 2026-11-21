@@ -1,31 +1,92 @@
 {{define "content"}}
-{{$v := .Data}}
+{{$v := .Data}}{{$i := $v.Info}}
 <div class="page-head">
   <div class="title-row">{{template "back_button" "/containers"}}<h1 class="wrap">{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}{{with $v.Updates}} <span class="badge warn update-tag" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update above.">update</span>{{end}}</h1></div>
   {{with $v.Container}}{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Updates" $v.Updates "Menu" false)}}{{end}}
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Job}}{{template "recreate_job" .}}{{end}}
-{{with $v.Container}}
+{{with $v.Container}}{{$c := .}}
+<div class="cards stat-cards">
+  <div class="card"><span class="label">State</span><span class="num">{{template "state" .State}}</span><span class="sub">{{.Status}}</span></div>
+  <div class="card"><span class="label">Image</span><span class="num mono-num"><a href="/images/{{.Image}}">{{.Image}}</a></span></div>
+  <div class="card"><span class="label">Created</span><span class="num">{{ago .Created}}</span><span class="sub">{{datetime .Created}}</span></div>
+  {{if $v.HasInfo}}
+  <div class="card"><span class="label">Restart policy</span><span class="num">{{with $i.Restart}}{{.}}{{else}}none{{end}}</span><span class="sub">restarted {{$i.RestartCount}} time{{if ne $i.RestartCount 1}}s{{end}}</span></div>
+  {{with $i.Health}}<div class="card"><span class="label">Health</span><span class="num"><span class="badge {{if eq . "healthy"}}ok{{else if eq . "unhealthy"}}bad{{else}}warn{{end}}">{{.}}</span></span></div>{{end}}
+  {{end}}
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Overview</h2>
+    <dl class="props">
+      <dt>Name</dt><dd class="mono">{{.Name}}</dd>
+      <dt>ID</dt><dd class="mono break">{{.ID}}</dd>
+      <dt>Image</dt><dd class="mono break"><a href="/images/{{.Image}}">{{.Image}}</a></dd>
+      {{if .Command}}<dt>Command</dt><dd class="mono break">{{.Command}}</dd>{{end}}
+      {{with $i.Config.WorkingDir}}<dt>Working dir</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $i.Config.User}}<dt>User</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $i.Config.Hostname}}<dt>Hostname</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{if $i.HostConfig.Privileged}}<dt>Privileged</dt><dd><span class="badge warn">yes</span></dd>{{end}}
+      {{if not $i.State.StartedAt.IsZero}}<dt>Started</dt><dd>{{datetime $i.State.StartedAt}} ({{ago $i.State.StartedAt}})</dd>{{end}}
+      {{if and (not .State.IsRunning) (not $i.State.FinishedAt.IsZero)}}<dt>Finished</dt><dd>{{datetime $i.State.FinishedAt}} <span class="muted">exit code {{$i.State.ExitCode}}</span></dd>{{end}}
+      {{if $v.Project}}<dt>Compose project</dt><dd><a href="/compose/{{$v.Project}}">{{$v.Project}}</a> <span class="muted small">— edit and update it through the project</span></dd>{{end}}
+      {{with $v.Updates}}<dt>Image update</dt><dd class="chips">{{range .}}<span class="chip mono" title="{{.Label}}">{{.Ref}}</span>{{end}}</dd>{{end}}
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Network</h2>
+    <dl class="props">
+      <dt>Ports</dt><dd>{{if .Ports}}<span class="chips">{{range splitPorts .Ports}}<span class="chip mono">{{.}}</span>{{end}}</span>{{else}}<span class="muted">none published</span>{{end}}</dd>
+    </dl>
+    {{with $i.Nets}}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Network</th><th>IP address</th><th>Aliases</th></tr></thead>
+      <tbody>
+      {{range .}}
+        <tr>
+          <td>{{if $v.Caps.Networks}}<a href="/networks/{{.Name}}">{{.Name}}</a>{{else}}{{.Name}}{{end}}</td>
+          <td class="mono small">{{with .IPv4}}{{.}}{{else}}<span class="muted">–</span>{{end}}{{with .IPv6}}<br>{{.}}{{end}}</td>
+          <td class="small">{{with .Aliases}}{{join . ", "}}{{else}}<span class="muted">–</span>{{end}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    {{else}}{{if .Networks}}
+    <dl class="props"><dt>Networks</dt><dd class="chips">{{range .Networks}}{{if $v.Caps.Networks}}<a class="chip" href="/networks/{{.}}">{{.}}</a>{{else}}<span class="chip">{{.}}</span>{{end}}{{end}}</dd></dl>
+    {{end}}{{end}}
+  </section>
+</div>
+
 <section class="panel">
-  <dl class="props">
-    <dt>ID</dt><dd class="mono">{{.ID}}</dd>
-    <dt>Image</dt><dd class="mono">{{.Image}}</dd>
-    <dt>State</dt><dd>{{template "state" .State}} <span class="muted">{{.Status}}</span></dd>
-    {{if .Command}}<dt>Command</dt><dd class="mono">{{.Command}}</dd>{{end}}
-    {{if .Ports}}<dt>Ports</dt><dd class="mono">{{.Ports}}</dd>{{end}}
-    {{if .Networks}}<dt>Networks</dt><dd>{{if $v.Caps.Networks}}{{range $i, $n := .Networks}}{{if $i}}, {{end}}<a href="/networks/{{$n}}">{{$n}}</a>{{end}}{{else}}{{join .Networks ", "}}{{end}}</dd>{{end}}
-    {{if .Mounts}}<dt>Mounts</dt><dd>{{join .Mounts ", "}}</dd>{{end}}
-    {{if $v.Project}}<dt>Compose project</dt><dd><a href="/compose/{{$v.Project}}">{{$v.Project}}</a> <span class="muted">— edit and update it through the project</span></dd>{{end}}
-    {{with $v.Updates}}<dt>Image update</dt><dd>{{range $i, $u := .}}{{if $i}}, {{end}}<span class="mono">{{$u.Ref}}</span> <span class="muted small">({{$u.Label}})</span>{{end}}</dd>{{end}}
-    <dt>Created</dt><dd>{{datetime .Created}} ({{ago .Created}})</dd>
-  </dl>
+  <h2>Mounts</h2>
+  {{if $i.Mounts}}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Type</th><th>Source</th><th>Destination</th><th>Mode</th></tr></thead>
+    <tbody>
+    {{range $i.Mounts}}
+      <tr>
+        <td><span class="badge info">{{.Type}}</span></td>
+        <td class="mono small break">{{if and (eq .Type "volume") .Name}}<a href="/volumes/{{.Name}}">{{.Name}}</a>{{else}}{{.Source}}{{end}}</td>
+        <td class="mono small break">{{.Destination}}</td>
+        <td>{{if .RW}}read-write{{else}}<span class="badge warn">read-only</span>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{else if .Mounts}}<p class="chips">{{range .Mounts}}<span class="chip mono">{{.}}</span>{{end}}</p>
+  {{else}}<p class="empty">The container mounts no volumes or folders.</p>{{end}}
 </section>
+
+{{if or $i.Env $i.Config.Labels}}
+<div class="grid2">
+  {{with $i.Env}}<section class="panel"><h2>Environment</h2>{{template "kv_list" .}}</section>{{end}}
+  {{with $i.Config.Labels}}<section class="panel"><h2>Labels</h2>{{template "kv_list" .}}</section>{{end}}
+</div>
 {{end}}
-{{if $v.Inspect}}
-<section class="panel">
-  <h2>Inspect</h2>
-  <pre class="log">{{$v.Inspect}}</pre>
-</section>
 {{end}}
+
+{{template "inspect_panel" $v.Inspect}}
 {{end}}

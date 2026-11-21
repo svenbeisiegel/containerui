@@ -42,6 +42,38 @@
   <summary class="button{{with .Class}} {{.}}{{end}}"{{with .Title}} title="{{.}}"{{end}}>{{.Label}}{{if .Menu}}…{{end}}</summary>
   {{if not .Menu}}<div class="menu-panel">{{end}}{{end}}
 {{define "actions_sub_close"}}{{if not .}}</div>{{end}}</details>{{end}}
+{{/* container_list: a short table of containers on a detail page; expects
+     dict: C ([]runtime.Container), Empty (text without any). */}}
+{{define "container_list"}}
+{{if not .C}}<p class="empty">{{.Empty}}</p>
+{{else}}
+<div class="table-wrap"><table>
+  <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Created</th></tr></thead>
+  <tbody>
+  {{range .C}}
+    <tr>
+      <td><a href="/containers/{{.ID}}">{{.Name}}</a><div class="id">{{shortID .ID}}</div></td>
+      <td class="mono small">{{.Image}}</td>
+      <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
+      <td title="{{datetime .Created}}">{{ago .Created}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table></div>
+{{end}}
+{{end}}
+
+{{/* inspect_panel: the runtime's raw inspect document of a detail page,
+     collapsed until opened; expects the pretty-printed JSON. */}}
+{{define "inspect_panel"}}{{if .}}
+<section class="panel">
+  <details class="inspect">
+    <summary><h2>Inspect</h2><span class="muted small">raw document from the runtime</span></summary>
+    <pre class="log">{{.}}</pre>
+  </details>
+</section>
+{{end}}{{end}}
+
 {{define "kebab_icon"}}<svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true"><g fill="currentColor"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></g></svg>{{end}}
 
 {{/* ---------- dashboard ---------- */}}
@@ -645,8 +677,16 @@
 <div id="compose-project" hx-get="/partials/compose/{{.Project.Name}}" hx-trigger="every 5s, compose-changed from:body" hx-swap="outerHTML">
   {{if .Err}}<div class="flash error">{{.Err}}</div>{{else}}
   {{$v := .}}{{$p := .Project}}
+  <div class="cards stat-cards">
+    <div class="card"><span class="label">Status</span><span class="num">{{template "compose_status" $p}}</span></div>
+    <div class="card"><span class="label">Services</span><span class="num">{{len $p.Services}}</span>{{if $p.Deployed}}<span class="sub">{{$p.Running}} of {{$p.Total}} containers running</span>{{end}}</div>
+    <div class="card"><span class="label">Volumes</span><span class="num">{{len $p.Volumes}}</span></div>
+    <div class="card"><span class="label">Networks</span><span class="num">{{len $p.Networks}}</span></div>
+  </div>
   <section class="panel">
+    <h2>Overview</h2>
     <dl class="props">
+      <dt>Name</dt><dd class="mono">{{$p.Name}}</dd>
       <dt>Status</dt><dd>{{template "compose_status" $p}}</dd>
       <dt>Compose file</dt><dd>{{if eq .Source "stored"}}stored in ContainerUI{{else if .Source}}<span class="mono">{{.Source}}</span> <span class="muted small">(deployed outside ContainerUI)</span>{{else}}<span class="muted">unknown – Edit rebuilds it from the containers</span>{{end}}</dd>
       {{with $p.WorkingDir}}<dt>Project folder</dt><dd class="mono">{{.}}</dd>{{end}}

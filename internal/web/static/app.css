@@ -196,6 +196,7 @@ a.card:hover { text-decoration: none; border-color: var(--focus); border-top-col
 .stat-cards { grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: .75rem; }
 .stat-cards .card .num { font-size: 1.45rem; overflow-wrap: break-word; }
 @media (max-width: 640px) { .stat-cards .card .num { font-size: 1.15rem; } }
+.stat-cards .card .num.mono-num { font-family: var(--mono); font-size: 1rem; line-height: 1.4; overflow-wrap: anywhere; }
 .chips { display: flex; flex-wrap: wrap; gap: .35rem; }
 .chip {
   display: inline-block; padding: .1rem .5rem; border-radius: 999px;
@@ -205,11 +206,11 @@ a.chip { color: var(--accent); }
 a.chip:hover { border-color: var(--accent); text-decoration: none; }
 .break { overflow-wrap: anywhere; }
 .mono-title { font-family: var(--mono); font-size: 1.35rem; }
-details.inspect > summary { cursor: pointer; list-style: none; }
+details.inspect > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: .6rem; flex-wrap: wrap; }
 details.inspect > summary::-webkit-details-marker { display: none; }
 details.inspect > summary h2 { display: inline-block; margin: 0; }
-details.inspect > summary::after { content: " ▸"; color: var(--muted); }
-details.inspect[open] > summary::after { content: " ▾"; }
+details.inspect > summary::after { content: "▸"; color: var(--muted); order: -1; }
+details.inspect[open] > summary::after { content: "▾"; }
 details.inspect[open] > summary { margin-bottom: .75rem; }
 
 /* ---------- charts (dashboard metrics) ----------

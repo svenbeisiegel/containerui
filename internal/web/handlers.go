@@ -157,8 +157,11 @@ type containerDetailView struct {
 	CSRF      string
 	Container *runtime.Container
 	Inspect   string
-	Err       string
-	Caps      runtime.Capabilities
+	// Info is read from the inspect document (HasInfo: it could be).
+	Info    containerInfo
+	HasInfo bool
+	Err     string
+	Caps    runtime.Capabilities
 	// Project is the compose project managing the container ("" if none).
 	Project string
 	// Updates lists the newer images the update check found; the
@@ -184,6 +187,7 @@ func (s *Server) handleContainerDetail(w http.ResponseWriter, r *http.Request) {
 			v.Err = userError(err)
 		} else {
 			v.Inspect = prettyJSON(raw)
+			v.Info, v.HasInfo = parseContainerInfo(raw)
 		}
 	}
 	name := id
@@ -1046,6 +1050,8 @@ type volumeNewView struct {
 type volumeDetailView struct {
 	Name    string
 	Volume  *volumeRow
+	Info    volumeInfo
+	Users   []runtime.Container // the containers mounting the volume
 	Inspect string
 	Err     string
 	CSRF    string
@@ -1140,6 +1146,10 @@ func (s *Server) handleVolumeDetail(w http.ResponseWriter, r *http.Request) {
 		v.Err = userError(err)
 	} else {
 		v.Inspect = prettyJSON(raw)
+		v.Info = parseVolumeInfo(raw)
+	}
+	if v.Volume != nil && len(v.Volume.UsedBy) > 0 {
+		v.Users = containersNamed(r, s.rt, v.Volume.UsedBy)
 	}
 	if v.Volume == nil && v.Inspect == "" {
 		w.WriteHeader(http.StatusNotFound)

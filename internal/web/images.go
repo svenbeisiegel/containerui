@@ -58,17 +58,7 @@ func (i imageInfo) Platform() string {
 }
 
 // Env splits the image's environment into name and value.
-func (i imageInfo) Env() map[string]string {
-	if len(i.Config.Env) == 0 {
-		return nil
-	}
-	m := make(map[string]string, len(i.Config.Env))
-	for _, kv := range i.Config.Env {
-		k, v, _ := strings.Cut(kv, "=")
-		m[k] = v
-	}
-	return m
-}
+func (i imageInfo) Env() map[string]string { return envMap(i.Config.Env) }
 
 func (i imageInfo) Ports() []string   { return sortedKeys(i.Config.ExposedPorts) }
 func (i imageInfo) Volumes() []string { return sortedKeys(i.Config.Volumes) }

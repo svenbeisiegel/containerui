@@ -6,23 +6,43 @@
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Network}}
-<section class="panel">
-  <dl class="props">
-    <dt>Name</dt><dd class="mono">{{.Name}}</dd>
-    <dt>ID</dt><dd class="mono">{{.ID}}</dd>
-    <dt>Driver</dt><dd>{{.Driver}}</dd>
-    {{if .Scope}}<dt>Scope</dt><dd>{{.Scope}}</dd>{{end}}
-    <dt>Internal</dt><dd>{{if .Internal}}yes{{else}}no{{end}}</dd>
-    <dt>IPv6</dt><dd>{{if .IPv6}}yes{{else}}no{{end}}</dd>
-    {{range $v.Info.Subnets}}
-    <dt>Subnet</dt><dd class="mono">{{.Subnet}}{{with .Gateway}} <span class="muted">gateway</span> {{.}}{{end}}{{with .IPRange}} <span class="muted">range</span> {{.}}{{end}}</dd>
-    {{end}}
-    {{if not .Created.IsZero}}<dt>Created</dt><dd>{{datetime .Created}} ({{ago .Created}})</dd>{{end}}
-    {{with $v.Info.Labels}}<dt>Labels</dt><dd>{{template "kv_list" .}}</dd>{{end}}
-    {{with $v.Info.Options}}<dt>Options</dt><dd>{{template "kv_list" .}}</dd>{{end}}
-    {{if .Predefined}}<dt>Type</dt><dd><span class="badge info">built-in</span> <span class="muted small">created by the runtime; cannot be deleted</span></dd>{{end}}
-  </dl>
-</section>
+<div class="cards stat-cards">
+  <div class="card"><span class="label">Driver</span><span class="num">{{.Driver}}</span>{{if .Predefined}}<span class="sub">built-in network</span>{{end}}</div>
+  {{if .Scope}}<div class="card"><span class="label">Scope</span><span class="num">{{.Scope}}</span></div>{{end}}
+  {{with $v.Info.Subnets}}{{with index . 0}}<div class="card"><span class="label">Subnet</span><span class="num mono-num">{{.Subnet}}</span>{{with .Gateway}}<span class="sub">gateway {{.}}</span>{{end}}</div>{{end}}{{end}}
+  <div class="card"><span class="label">Containers</span><span class="num">{{len $v.Info.Containers}}</span><span class="sub">{{if $v.Info.Containers}}connected{{else}}none connected{{end}}</span></div>
+  {{if not .Created.IsZero}}<div class="card"><span class="label">Created</span><span class="num">{{ago .Created}}</span><span class="sub">{{datetime .Created}}</span></div>{{end}}
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Overview</h2>
+    <dl class="props">
+      <dt>Name</dt><dd class="mono break">{{.Name}}</dd>
+      <dt>ID</dt><dd class="mono break">{{.ID}}</dd>
+      <dt>Internal</dt><dd>{{if .Internal}}<span class="badge warn">yes</span> <span class="muted small">no access to outside networks</span>{{else}}no{{end}}</dd>
+      <dt>IPv6</dt><dd>{{if .IPv6}}<span class="badge ok">enabled</span>{{else}}no{{end}}</dd>
+      {{if .Predefined}}<dt>Type</dt><dd><span class="badge info">built-in</span> <span class="muted small">created by the runtime; cannot be deleted</span></dd>{{end}}
+    </dl>
+  </section>
+
+  <section class="panel">
+    <h2>Addressing</h2>
+    {{with $v.Info.Subnets}}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Subnet</th><th>Gateway</th><th>IP range</th></tr></thead>
+      <tbody>{{range .}}<tr><td class="mono small">{{.Subnet}}</td><td class="mono small">{{with .Gateway}}{{.}}{{else}}<span class="muted">–</span>{{end}}</td><td class="mono small">{{with .IPRange}}{{.}}{{else}}<span class="muted">–</span>{{end}}</td></tr>{{end}}</tbody>
+    </table></div>
+    {{else}}<p class="empty">The network has no IP address management.</p>{{end}}
+  </section>
+</div>
+
+{{if or $v.Info.Labels $v.Info.Options}}
+<div class="grid2">
+  {{with $v.Info.Options}}<section class="panel"><h2>Driver options</h2>{{template "kv_list" .}}</section>{{end}}
+  {{with $v.Info.Labels}}<section class="panel"><h2>Labels</h2>{{template "kv_list" .}}</section>{{end}}
+</div>
+{{end}}
 {{end}}
 
 {{if or $v.Network $v.Info.Containers}}
@@ -80,10 +100,5 @@
 </section>
 {{end}}
 
-{{if $v.Inspect}}
-<section class="panel">
-  <h2>Inspect</h2>
-  <pre class="log">{{$v.Inspect}}</pre>
-</section>
-{{end}}
+{{template "inspect_panel" $v.Inspect}}
 {{end}}

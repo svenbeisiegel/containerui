@@ -59,30 +59,9 @@
 
 <section class="panel">
   <h2>Containers</h2>
-  {{if not $v.Users}}<p class="empty">No container was created from this image.</p>
-  {{else}}
-  <div class="table-wrap"><table>
-    <thead><tr><th>Name</th><th>State</th><th>Created</th></tr></thead>
-    <tbody>
-    {{range $v.Users}}
-      <tr>
-        <td><a href="/containers/{{.ID}}">{{.Name}}</a><div class="id">{{shortID .ID}}</div></td>
-        <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
-        <td title="{{datetime .Created}}">{{ago .Created}}</td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table></div>
-  {{end}}
+  {{template "container_list" (dict "C" $v.Users "Empty" "No container was created from this image.")}}
 </section>
 {{end}}
 
-{{if $v.Inspect}}
-<section class="panel">
-  <details class="inspect">
-    <summary><h2>Inspect</h2></summary>
-    <pre class="log">{{$v.Inspect}}</pre>
-  </details>
-</section>
-{{end}}
+{{template "inspect_panel" $v.Inspect}}
 {{end}}
