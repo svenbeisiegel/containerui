@@ -193,7 +193,9 @@ func TestRefreshDisk(t *testing.T) {
 	}
 	clk.add(2 * diskMinGap)
 	m.refreshDisk()
-	waitFor(t, "the second disk usage", func() bool { _, d := st.counts(); return d == 2 })
+	// Wait for the run to finish, not just start: refreshDisk skips while
+	// one is busy (sizing the binds takes a while on slow runners).
+	waitFor(t, "the second disk usage", func() bool { _, d := st.counts(); return d == 2 && !m.snapshot().DiskBusy })
 
 	// A failure keeps the previous result.
 	st.mu.Lock()
