@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -164,6 +165,7 @@ func (v Volume) Source() string {
 type ContainerStatus struct {
 	Name         string         `json:"name"`
 	Image        string         `json:"image"`
+	ImageID      string         `json:"imageID"` // repo@sha256:… of the image that runs
 	Ready        bool           `json:"ready"`
 	Started      *bool          `json:"started"`
 	RestartCount int            `json:"restartCount"`
@@ -862,6 +864,9 @@ type Node struct {
 			Type    string `json:"type"`
 			Address string `json:"address"`
 		} `json:"addresses"`
+		// Images are the container images stored on the node, as the
+		// kubelet reports them: at most MaxNodeImages, largest first.
+		Images   []NodeImage `json:"images"`
 		NodeInfo struct {
 			KubeletVersion          string `json:"kubeletVersion"`
 			OSImage                 string `json:"osImage"`
@@ -871,6 +876,68 @@ type Node struct {
 			OperatingSystem         string `json:"operatingSystem"`
 		} `json:"nodeInfo"`
 	} `json:"status"`
+}
+
+// MaxNodeImages is how many images the kubelet reports per node by default
+// (its nodeStatusMaxImages); a node with more stored lists only the largest.
+const MaxNodeImages = 50
+
+// NodeImage is one image stored on a node.
+type NodeImage struct {
+	Names     []string `json:"names"` // repo@sha256:… and repo:tag references
+	SizeBytes int64    `json:"sizeBytes"`
+}
+
+// Repo is the image's repository, e.g. "docker.io/osem/osem".
+func (i NodeImage) Repo() string {
+	for _, n := range i.Names {
+		if r, _, ok := strings.Cut(n, "@"); ok {
+			return r
+		}
+	}
+	for _, n := range i.Names {
+		return splitTag(n)
+	}
+	return ""
+}
+
+// Tags lists the image's tags ("1.2.5118"), in the kubelet's order.
+func (i NodeImage) Tags() []string {
+	var out []string
+	for _, n := range i.Names {
+		if strings.Contains(n, "@") {
+			continue
+		}
+		if r := splitTag(n); len(r) < len(n) {
+			out = append(out, n[len(r)+1:])
+		}
+	}
+	return out
+}
+
+// Digest is the image's content digest ("sha256:…"), "" if unknown.
+func (i NodeImage) Digest() string {
+	for _, n := range i.Names {
+		if _, d, ok := strings.Cut(n, "@"); ok {
+			return d
+		}
+	}
+	return ""
+}
+
+// Has reports whether ref names this image (a container's image or
+// imageID).
+func (i NodeImage) Has(ref string) bool {
+	return ref != "" && slices.Contains(i.Names, ref)
+}
+
+// splitTag returns a reference without its ":tag" (a port in the registry
+// host is not a tag).
+func splitTag(ref string) string {
+	if c := strings.LastIndex(ref, ":"); c > strings.LastIndex(ref, "/") {
+		return ref[:c]
+	}
+	return ref
 }
 
 // Ready reports whether the node's Ready condition is true.

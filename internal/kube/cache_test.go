@@ -271,3 +271,25 @@ func TestEmptyNamespaceListMeansAll(t *testing.T) {
 		t.Error("NewStatic: empty list must mean all")
 	}
 }
+
+func TestNodeImage(t *testing.T) {
+	img := NodeImage{Names: []string{"docker.io/osem/osem@sha256:1c35f785a4fd", "docker.io/osem/osem:1.2.5118", "docker.io/osem/osem:latest"}, SizeBytes: 1 << 30}
+	if img.Repo() != "docker.io/osem/osem" || strings.Join(img.Tags(), ",") != "1.2.5118,latest" || img.Digest() != "sha256:1c35f785a4fd" {
+		t.Errorf("repo %q tags %v digest %q", img.Repo(), img.Tags(), img.Digest())
+	}
+	if !img.Has("docker.io/osem/osem@sha256:1c35f785a4fd") || !img.Has("docker.io/osem/osem:latest") || img.Has("") || img.Has("osem:latest") {
+		t.Error("Has")
+	}
+	// A registry port is not a tag; an image known only by digest has none.
+	reg := NodeImage{Names: []string{"registry.local:5000/app:2"}}
+	if reg.Repo() != "registry.local:5000/app" || strings.Join(reg.Tags(), ",") != "2" || reg.Digest() != "" {
+		t.Errorf("registry with port: %q %v", reg.Repo(), reg.Tags())
+	}
+	untagged := NodeImage{Names: []string{"registry.local:5000/app@sha256:ab"}}
+	if untagged.Repo() != "registry.local:5000/app" || len(untagged.Tags()) != 0 {
+		t.Errorf("untagged: %q %v", untagged.Repo(), untagged.Tags())
+	}
+	if (NodeImage{}).Repo() != "" {
+		t.Error("no names: empty repo")
+	}
+}

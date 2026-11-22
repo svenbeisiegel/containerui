@@ -9,6 +9,7 @@
   <div class="card"><span class="label">Pods</span><span class="num">{{len $v.Pods}}</span><span class="sub">of {{index $n.Status.Allocatable "pods"}}</span></div>
   <div class="card"><span class="label">CPU</span><span class="num">{{index $n.Status.Capacity "cpu"}}</span><span class="sub">cores</span></div>
   <div class="card"><span class="label">Memory</span><span class="num">{{quantity "memory" (index $n.Status.Capacity "memory")}}</span></div>
+  <div class="card"><span class="label">Images</span><span class="num">{{len $v.Images}}{{if $v.ImagesCapped}}+{{end}}</span><span class="sub">{{size $v.ImageSize}} stored</span></div>
   <div class="card"><span class="label">Age</span><span class="num">{{age $n.Metadata.CreationTimestamp}}</span></div>
 </div>
 <div class="grid2">
@@ -40,6 +41,26 @@
 <section class="panel">
   <h2>Pods</h2>
   {{template "kube_pods_table" (dict "Pods" $v.Pods "ShowNS" true "ShowOwner" true "Empty" "No pods run on this node.")}}
+</section>
+<section class="panel">
+  <h2>Images</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Repository</th><th>Tag</th><th class="right">Size</th><th>Used by</th><th class="wide-only">Digest</th></tr></thead>
+    <tbody>
+    {{range $v.Images}}
+      <tr>
+        <td class="mono small break">{{with .Repo}}{{.}}{{else}}<span class="muted">&lt;none&gt;</span>{{end}}</td>
+        <td class="mono small">{{with .Tags}}{{join . ", "}}{{else}}<span class="muted">&lt;none&gt;</span>{{end}}</td>
+        <td class="right small">{{size .SizeBytes}}</td>
+        <td class="small">{{range $i, $p := .UsedBy}}{{if $i}}, {{end}}<a href="{{kubeLink "Pod" $p.Namespace $p.Name}}">{{$p.Name}}</a>{{else}}<span class="muted">unused</span>{{end}}</td>
+        <td class="id small wide-only" title="{{.Digest}}">{{with .Digest}}{{shortID .}}{{else}}<span class="muted">–</span>{{end}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="5" class="empty">The kubelet reports no images for this node.</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{if $v.ImagesCapped}}<p class="footnote">The kubelet reports at most {{len $v.Images}} images per node, the largest first; the node may store more.</p>{{end}}
 </section>
 {{with $n.Metadata.Labels}}<section class="panel"><h2>Labels</h2>{{template "kv_list" .}}</section>{{end}}
 <section class="panel">

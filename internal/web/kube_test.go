@@ -37,15 +37,19 @@ func seedCluster(t *testing.T, namespaces []string) *kube.Cluster {
 	seed(kube.ResNamespaces,
 		obj(`{"metadata":{"name":"osem","creationTimestamp":"@11d"}}`),
 		obj(`{"metadata":{"name":"kube-system","creationTimestamp":"@11d"}}`))
-	node := func(name, extra string) json.RawMessage {
+	node := func(name, extra, images string) json.RawMessage {
 		return obj(`{"metadata":{"name":"` + name + `","creationTimestamp":"@11d","labels":{"node-role.kubernetes.io/control-plane":"true","node-role.kubernetes.io/etcd":"true"}},
 			"spec":{` + extra + `},
 			"status":{"capacity":{"cpu":"6","memory":"16379432Ki","pods":"110"},"allocatable":{"cpu":"6","memory":"16379432Ki","pods":"110"},
 			"conditions":[{"type":"MemoryPressure","status":"False"},{"type":"EtcdIsVoter","status":"True","reason":"MemberNotLearner"},{"type":"Ready","status":"True","reason":"KubeletReady"}],
 			"addresses":[{"type":"InternalIP","address":"192.168.21.10"}],
+			"images":[` + images + `],
 			"nodeInfo":{"kubeletVersion":"v1.36.6+rke2r1","osImage":"OSEM Container Appliance 2026.11-6","kernelVersion":"7.3.3-1-default","containerRuntimeVersion":"containerd://2.3.7-k3s1","architecture":"amd64"}}}`)
 	}
-	seed(kube.ResNodes, node("kube-1", ""), node("kube-2", ""), node("kube-3", `"unschedulable":true`))
+	seed(kube.ResNodes,
+		node("kube-1", "", `{"names":["docker.io/rancher/mirrored-cilium-cilium@sha256:f73eac98b99a","docker.io/rancher/mirrored-cilium-cilium:v1.20.4"],"sizeBytes":250000000},
+			{"names":["docker.io/osem/couchdb@sha256:aa11bb22cc33dd44","docker.io/osem/couchdb:3.4"],"sizeBytes":1073741824}`),
+		node("kube-2", "", ""), node("kube-3", `"unschedulable":true`, ""))
 	seed(kube.ResStatefulSets, obj(`{"metadata":{"name":"wpi","namespace":"osem","uid":"sts-wpi","creationTimestamp":"@11d","labels":{"app":"wpi"}},
 		"spec":{"replicas":3,"serviceName":"wpi","selector":{"matchLabels":{"app":"wpi"}},
 		"template":{"spec":{"containers":[{"name":"couchdb","image":"osem/couchdb:3.4","ports":[{"containerPort":5984}]},{"name":"wpi","image":"osem/wpi:2.5"}]}},
@@ -67,7 +71,7 @@ func seedCluster(t *testing.T, namespaces []string) *kube.Cluster {
 			"spec":{"nodeName":"kube-1","containers":[{"name":"couchdb","image":"osem/couchdb:3.4"},{"name":"wpi","image":"osem/wpi:2.5"}],
 			"volumes":[{"name":"osemdb-volume","persistentVolumeClaim":{"claimName":"osemdb-volume-wpi-0"}}]},
 			"status":{"phase":"Running","podIP":"10.42.0.7","conditions":[{"type":"Ready","status":"True"}],
-			"containerStatuses":[{"name":"couchdb","ready":true,"state":{"running":{"startedAt":"@11d"}}},{"name":"wpi","ready":true,"state":{"running":{"startedAt":"@11d"}}}]}}`),
+			"containerStatuses":[{"name":"couchdb","ready":true,"image":"docker.io/osem/couchdb:3.4","imageID":"docker.io/osem/couchdb@sha256:aa11bb22cc33dd44","state":{"running":{"startedAt":"@11d"}}},{"name":"wpi","ready":true,"state":{"running":{"startedAt":"@11d"}}}]}}`),
 		obj(`{"metadata":{"name":"wpi-1","namespace":"osem","creationTimestamp":"@11d","labels":{"app":"wpi"},"ownerReferences":[{"kind":"StatefulSet","name":"wpi","controller":true}]},
 			"spec":{"nodeName":"kube-2","containers":[{"name":"couchdb","image":"osem/couchdb:3.4"},{"name":"wpi","image":"osem/wpi:2.5"}]},
 			"status":{"phase":"Running","podIP":"10.42.1.7",
@@ -173,6 +177,16 @@ func TestKubeNoRuntimeRoutes(t *testing.T) {
 	if strings.Contains(body, `href="/containers"`) || !strings.Contains(body, `title="Kubernetes cluster">kubernetes</span>`) {
 		t.Error("navigation must show the cluster pages and the kubernetes badge")
 	}
+	// Nodes comes right after Dashboard.
+	order := []string{`<a href="/" `, `<a href="/nodes" `, `<a href="/workloads" `, `<a href="/pods" `}
+	last := -1
+	for _, link := range order {
+		i := strings.Index(body, link)
+		if i <= last {
+			t.Fatalf("navigation order: %s at %d, previous at %d", link, i, last)
+		}
+		last = i
+	}
 }
 
 func TestKubeNamespacePicker(t *testing.T) {
@@ -262,5 +276,26 @@ func TestKubeDistributionConditionsAreNoProblem(t *testing.T) {
 	e := newKubeEnv(t, nil)
 	if body := e.do("GET", "/nodes", nil).Body.String(); strings.Contains(body, `badge warn">EtcdIsVoter`) {
 		t.Error("RKE2's EtcdIsVoter condition must not be shown as a problem")
+	}
+}
+
+func TestKubeNodeImages(t *testing.T) {
+	e := newKubeEnv(t, nil)
+	body := e.do("GET", "/nodes/kube-1", nil).Body.String()
+	for _, want := range []string{"<h2>Images</h2>", "docker.io/osem/couchdb", "3.4", "1.0 GiB", `href="/pods/osem/wpi-0">wpi-0</a>`,
+		"docker.io/rancher/mirrored-cilium-cilium", "v1.20.4", "unused", "aa11bb22cc33", "1.2 GiB stored"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("node page lacks %q", want)
+		}
+	}
+	// The image a pod uses comes first.
+	if strings.Index(body, "docker.io/osem/couchdb") > strings.Index(body, "docker.io/rancher/mirrored-cilium-cilium") {
+		t.Error("images in use must be listed first")
+	}
+	if strings.Contains(body, "the node may store more") {
+		t.Error("two images are not capped")
+	}
+	if body := e.do("GET", "/nodes/kube-2", nil).Body.String(); !strings.Contains(body, "reports no images") {
+		t.Error("a node without images must say so")
 	}
 }

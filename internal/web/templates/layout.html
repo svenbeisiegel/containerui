@@ -22,11 +22,11 @@
     <nav>
       <a href="/" {{if eq .Active "dashboard"}}aria-current="page"{{end}}>Dashboard</a>
       {{if .Kube}}
+      <a href="/nodes" {{if eq .Active "nodes"}}aria-current="page"{{end}}>Nodes</a>
       <a href="/workloads" {{if eq .Active "workloads"}}aria-current="page"{{end}}>Workloads</a>
       <a href="/pods" {{if eq .Active "pods"}}aria-current="page"{{end}}>Pods</a>
       <a href="/services" {{if eq .Active "services"}}aria-current="page"{{end}}>Services</a>
       <a href="/storage" {{if eq .Active "storage"}}aria-current="page"{{end}}>Storage</a>
-      <a href="/nodes" {{if eq .Active "nodes"}}aria-current="page"{{end}}>Nodes</a>
       <a href="/cluster-events" {{if eq .Active "cluster_events"}}aria-current="page"{{end}} title="Kubernetes events of the cluster">Cluster events</a>
       {{else}}
       {{if .Caps.Compose}}<a href="/compose" {{if eq .Active "compose"}}aria-current="page"{{end}}>Compose</a>{{end}}

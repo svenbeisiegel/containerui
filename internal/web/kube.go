@@ -662,6 +662,44 @@ type nodeDetail struct {
 	Node      kube.Node
 	Resources []nodeResource
 	Pods      []podRow
+	Images    []nodeImageRow
+	ImageSize int64 // of all images listed
+	// ImagesCapped: the kubelet listed as many images as it reports at
+	// most, so the node may store more.
+	ImagesCapped bool
+}
+
+// nodeImageRow is an image stored on a node, with the pods there using it.
+type nodeImageRow struct {
+	kube.NodeImage
+	UsedBy []podRef
+}
+
+type podRef struct{ Namespace, Name string }
+
+// nodeImages lists the node's images, the ones running pods use first,
+// then by repository.
+func nodeImages(n kube.Node, pods []kube.Pod) []nodeImageRow {
+	rows := make([]nodeImageRow, 0, len(n.Status.Images))
+	for _, img := range n.Status.Images {
+		row := nodeImageRow{NodeImage: img}
+		for _, p := range pods {
+			for _, cs := range append(append([]kube.ContainerStatus{}, p.Status.InitContainerStatuses...), p.Status.ContainerStatuses...) {
+				if img.Has(cs.ImageID) || img.Has(cs.Image) {
+					row.UsedBy = append(row.UsedBy, podRef{p.Metadata.Namespace, p.Metadata.Name})
+					break
+				}
+			}
+		}
+		rows = append(rows, row)
+	}
+	sort.SliceStable(rows, func(i, j int) bool {
+		if a, b := len(rows[i].UsedBy) > 0, len(rows[j].UsedBy) > 0; a != b {
+			return a
+		}
+		return rows[i].Repo() < rows[j].Repo()
+	})
+	return rows
 }
 
 func (s *Server) handleKubeNode(w http.ResponseWriter, r *http.Request) {
@@ -686,6 +724,11 @@ func (s *Server) handleKubeNode(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		v.Pods = s.podRows(pods)
+		v.Images = nodeImages(*n, pods)
+		for _, img := range n.Status.Images {
+			v.ImageSize += img.SizeBytes
+		}
+		v.ImagesCapped = len(n.Status.Images) >= kube.MaxNodeImages
 	}
 	s.renderDetail(w, r, "kube_node", name, "nodes", d, v)
 }

@@ -11,6 +11,7 @@ import (
 	"context"
 	"net/http"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -48,6 +49,7 @@ func TestKubeIntegrationPages(t *testing.T) {
 	e.login()
 
 	pages := []string{"/", "/workloads", "/pods", "/pods?finished=1", "/services", "/storage", "/nodes", "/cluster-events", "/cluster-events?type=warning", "/pods?ns=osem"}
+	imagesCard := regexp.MustCompile(`<span class="label">Images</span><span class="num">(\d+\+?)</span><span class="sub">([^<]+) stored`)
 	link := regexp.MustCompile(`href="(/(?:pods|workloads|services|storage/pvc|nodes)/[^"?]+)"`)
 	seen := map[string]bool{}
 	for i := 0; i < len(pages); i++ {
@@ -59,6 +61,11 @@ func TestKubeIntegrationPages(t *testing.T) {
 			continue
 		}
 		t.Logf("%-70s %6d bytes %s", p, w.Body.Len(), time.Since(start).Round(time.Microsecond))
+		if m := imagesCard.FindStringSubmatch(w.Body.String()); m != nil {
+			images := w.Body.String()[strings.Index(w.Body.String(), "<h2>Images</h2>"):]
+			t.Logf("  images on the node: %s (%s stored), %d unused", m[1], m[2], strings.Count(images, `<span class="muted">unused</span>`))
+		}
+
 		for _, m := range link.FindAllStringSubmatch(w.Body.String(), -1) {
 			if !seen[m[1]] {
 				seen[m[1]] = true
