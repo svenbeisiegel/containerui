@@ -870,3 +870,68 @@
   </div>
 </details>
 {{end}}
+
+{{/* usage_bar expects a percentage, 0–100. */}}
+{{/* An SVG, not a styled span: the CSP forbids style attributes. */}}
+{{define "usage_bar"}}<svg class="usage {{usageClass .}}" viewBox="0 0 100 1" preserveAspectRatio="none" role="meter" aria-label="{{printf "%.0f" .}}% used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{printf "%.0f" .}}"><rect class="track" width="100" height="1"/><rect class="fill" width="{{printf "%.1f" .}}" height="1"/></svg>{{end}}
+
+{{/* system_live expects systemLive: the System page's usage numbers,
+     disks and busiest processes, refreshed every 5 seconds. */}}
+{{define "system_live"}}{{$h := .Host}}{{$sort := .Sort}}
+<div id="system-live" hx-get="/partials/system?sort={{$sort}}" hx-trigger="every 5s" hx-swap="outerHTML">
+<div class="cards stat-cards system-cards">
+  {{if $h.HasCPUUsage}}<div class="card"><span class="label">CPU</span><span class="num">{{percent $h.CPUUsage}}</span>{{template "usage_bar" $h.CPUUsage}}<span class="sub">of {{$h.CPUs}} logical CPU{{if ne $h.CPUs 1}}s{{end}}</span></div>{{end}}
+  {{if $h.MemTotal}}{{$p := pct $h.MemUsed $h.MemTotal}}<div class="card"><span class="label">Memory</span><span class="num">{{percent $p}}</span>{{template "usage_bar" $p}}<span class="sub">{{bytes $h.MemUsed}} of {{bytes $h.MemTotal}}</span></div>{{end}}
+  {{with $h.ContainerDisk}}{{$p := pct .Used .Total}}<div class="card"><span class="label">Container storage</span><span class="num">{{percent $p}}</span>{{template "usage_bar" $p}}<span class="sub">{{bytes .Free}} free of {{bytes .Total}}</span></div>{{end}}
+  {{if $h.Procs}}<div class="card"><span class="label">Processes</span><span class="num">{{$h.Procs}}</span><span class="sub">{{if $h.ProcsRunning}}{{$h.ProcsRunning}} running · {{end}}{{$h.Threads}} threads</span></div>{{end}}
+  {{if $h.HasLoad}}<div class="card"><span class="label">Load average</span><span class="num">{{printf "%.2f" (index $h.Load 0)}}</span><span class="sub">1 min · 5 min: {{printf "%.2f" (index $h.Load 1)}} · 15 min: {{printf "%.2f" (index $h.Load 2)}}</span></div>{{end}}
+</div>
+{{with $h.Disks}}
+<section class="panel">
+  <h2>Disks</h2>
+  <div class="table-wrap"><table class="disks">
+    <thead><tr><th>Mount</th><th class="wide-only">Device</th><th class="wide-only">Type</th><th>Usage</th><th class="num wide-only">Used</th><th class="num">Free</th><th class="num wide-only">Size</th></tr></thead>
+    <tbody>
+    {{range .}}{{$p := pct .Used .Total}}
+      <tr>
+        <td><span class="mono">{{.Mount}}</span>{{with .Label}} <span class="muted small">{{.}}</span>{{end}}{{if .Containers}} <span class="chip">container storage</span>{{end}}</td>
+        <td class="mono small wide-only break">{{.Device}}</td>
+        <td class="small wide-only">{{.FSType}}</td>
+        <td class="usage-cell">{{template "usage_bar" $p}}<span class="small">{{percent $p}}</span></td>
+        <td class="num wide-only">{{bytes .Used}}</td>
+        <td class="num">{{bytes .Free}}</td>
+        <td class="num wide-only">{{bytes .Total}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+{{end}}
+{{if $h.Procs}}
+<section class="panel">
+  <div class="panel-head"><h2>Top Processes</h2>
+    <div class="seg" role="group" aria-label="Order processes by">
+      <a href="/system?sort=cpu" hx-get="/partials/system?sort=cpu" hx-target="#system-live" hx-swap="outerHTML"{{if eq $sort "cpu"}} aria-current="true"{{end}}>CPU</a>
+      <a href="/system?sort=mem" hx-get="/partials/system?sort=mem" hx-target="#system-live" hx-swap="outerHTML"{{if eq $sort "mem"}} aria-current="true"{{end}}>Memory</a>
+    </div>
+  </div>
+  <div class="table-wrap"><table class="procs">
+    <thead><tr><th class="num">PID</th><th>Name</th><th class="wide-only">User</th><th class="num">CPU</th><th class="num">Memory</th><th class="num wide-only">Threads</th></tr></thead>
+    <tbody>
+    {{range .Procs}}
+      <tr>
+        <td class="num mono">{{.PID}}</td>
+        <td class="mono break"{{with .Command}} title="{{.}}"{{end}}>{{.Name}}</td>
+        <td class="small wide-only">{{.User}}</td>
+        <td class="num">{{percent .CPU}}</td>
+        <td class="num">{{bytes .RSS}}{{if $h.MemTotal}} <span class="muted small wide-only">{{percent (pct .RSS $h.MemTotal)}}</span>{{end}}</td>
+        <td class="num wide-only">{{.Threads}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  <p class="muted small">The 10 processes using the most {{if eq $sort "mem"}}memory (resident){{else}}CPU over the last few seconds{{end}}. 100% CPU is one logical CPU fully busy. Hover a name for its command.</p>
+</section>
+{{end}}
+</div>
+{{end}}

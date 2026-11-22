@@ -46,10 +46,8 @@ type Options struct {
 	// ComposeDir is the absolute folder for compose files deployed through
 	// the UI; empty disables compose.
 	ComposeDir string
-	// Version and InstallType are shown on the System page; InstallType
-	// says how ContainerUI was installed: rpm, msi, a service or standalone.
-	Version     string
-	InstallType string
+	// Version is shown on the System page.
+	Version string
 	// WarmInterval limits how often serving the login page starts a
 	// background runtime warm-up. Zero means 10s; negative disables it.
 	WarmInterval time.Duration
@@ -106,13 +104,12 @@ type Server struct {
 	terminalPage *template.Template // standalone terminal page
 	attachPage   *template.Template // standalone attach page
 
-	version     string
-	installType string
-	hostlog     hostlog.Source // nil: no system log on this platform
-	hostinfo    func(context.Context) hostinfo.Info
-	events      *events.Store    // nil: no Events page
-	updates     *updates.Scanner // nil: no image updates
-	uploads     *uploadStore     // nil: no volume restore
+	version  string
+	hostlog  hostlog.Source // nil: no system log on this platform
+	hostinfo func(context.Context) hostinfo.Info
+	events   *events.Store    // nil: no Events page
+	updates  *updates.Scanner // nil: no image updates
+	uploads  *uploadStore     // nil: no volume restore
 
 	terminals  atomic.Int32 // open terminal connections
 	logStreams atomic.Int32 // open live log streams
@@ -124,7 +121,7 @@ func New(o Options) (*Server, error) {
 		mfa: o.MFA, mfaMode: o.MFAMode, mfaIssuer: mfaIssuer(), pending: newPendingLogins(),
 		throttle: auth.NewThrottle(), secure: o.Secure, log: o.Logger, store: compose.Store{Dir: o.ComposeDir},
 		pages:   map[string]*template.Template{},
-		version: o.Version, installType: o.InstallType,
+		version: o.Version,
 		hostlog: o.HostLog, hostinfo: o.HostInfo, events: o.Events, updates: o.Updates,
 	}
 	if o.VolumeUploadDir != "" {
@@ -312,6 +309,7 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("POST /compose/{project}", s.handleComposeUpdate)
 	authed.HandleFunc("POST /compose/{project}/{action}", s.handleComposeAction)
 	authed.HandleFunc("GET /system", s.handleSystem)
+	authed.HandleFunc("GET /partials/system", s.handleSystemPartial)
 	authed.HandleFunc("GET /system/licenses", s.handleLicenses)
 	authed.HandleFunc("GET /system/logs/watch", s.handleSysLogsWatch)
 	authed.HandleFunc("GET /system/logs/stream", s.handleSysLogsStream)

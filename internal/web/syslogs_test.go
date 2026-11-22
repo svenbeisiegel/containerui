@@ -20,10 +20,23 @@ import (
 func fakeHostInfo(context.Context) hostinfo.Info {
 	return hostinfo.Info{
 		Hostname: "testhost", OSName: "Rocky Linux 9.4 (Blue Onyx)", Kernel: "5.14.0-427.el9.x86_64", Arch: "x86_64",
-		CPUModel: "Test CPU", CPUs: 4, MemTotal: 16 << 30, MemAvailable: 8 << 30,
+		CPUModel: "Test CPU", CPUs: 4, Cores: 2, Sockets: 1, MaxMHz: 3600, CPUUsage: 37.5, HasCPUUsage: true,
+		MemTotal: 16 << 30, MemAvailable: 8 << 30, SwapTotal: 2 << 30, SwapFree: 2 << 30,
 		Uptime: 50 * time.Hour, BootTime: time.Date(2026, 10, 14, 8, 0, 0, 0, time.Local),
 		Load: [3]float64{0.5, 0.25, 0.125}, HasLoad: true, SELinux: "enforcing", Cgroup: "v2 (unified)",
-		StorageMount: "/var/lib/containers/storage", StorageTotal: 100 << 30, StorageFree: 40 << 30,
+		StorageMount: "/var/lib/containers/storage",
+		Disks: []hostinfo.Disk{
+			{Device: "/dev/mapper/rl-root", Mount: "/", FSType: "xfs", Total: 100 << 30, Free: 40 << 30, Containers: true},
+			{Device: "/dev/sda1", Mount: "/boot", FSType: "xfs", Total: 1 << 30, Free: 1 << 20},
+		},
+		Procs: 212, ProcsRunning: 2, Threads: 640,
+		TopCPU: []hostinfo.Process{
+			{PID: 4242, Name: "conmon", Command: "/usr/bin/conmon --api-version 1", User: "root", CPU: 12.5, RSS: 4 << 20, Threads: 2},
+			{PID: 1, Name: "systemd", User: "root", CPU: 0.5, RSS: 12 << 20, Threads: 1},
+		},
+		TopMem: []hostinfo.Process{
+			{PID: 777, Name: "couchdb", User: "couch", CPU: 0.1, RSS: 2 << 30, Threads: 40},
+		},
 	}
 }
 
@@ -90,8 +103,8 @@ func TestSystemPageHost(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 	body := e.do("GET", "/system", nil).Body.String()
-	for _, want := range []string{"testhost", "Rocky Linux 9.4", "5.14.0-427.el9.x86_64", "2 days 2 hours", "8.0 GiB available of 16.0 GiB",
-		"0.50 0.25 0.12", "40.0 GiB free of 100.0 GiB", "enforcing", "v2 (unified)",
+	for _, want := range []string{"testhost", "Rocky Linux 9.4", "5.14.0-427.el9.x86_64", "2 days 2 hours", "8.0 GiB of 16.0 GiB",
+		"0.50", "1 min · 5 min: 0.25 · 15 min: 0.12", "40.0 GiB free of 100.0 GiB", "enforcing", "v2 (unified)",
 		"System Logs", `<option value="docker.service">`, `formaction="/system/logs/watch" formtarget="_blank"`, `value="native"`, "Download .evtx"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("the page does not show %q", want)

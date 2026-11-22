@@ -300,8 +300,7 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		Events:          evStore,
 		Updates:         scanner,
 
-		Version:     version,
-		InstallType: installType(stop != nil),
+		Version: version,
 	})
 	if err != nil {
 		return err
@@ -382,20 +381,6 @@ func openEvents(ctx context.Context, cfg *config.Config, log *slog.Logger) *even
 	log.Info("collecting error events from the journal", "dir", dir, "kept", events.Retention)
 	go (&events.Collector{Store: st, Source: src, Log: log}).Run(ctx)
 	return st
-}
-
-// installType describes how this ContainerUI runs, for the System page.
-func installType(service bool) string {
-	switch {
-	case packaging != "":
-		return packaging + " package"
-	case service:
-		return "Windows service"
-	case os.Getenv("INVOCATION_ID") != "":
-		return "systemd service"
-	default:
-		return "standalone"
-	}
 }
 
 // warmUp loads all dashboard data once before the listener starts, so the

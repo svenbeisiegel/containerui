@@ -45,6 +45,21 @@ var funcs = template.FuncMap{
 		return m, nil
 	},
 	"bytes": humanBytes,
+	// pct is used as a percentage of total, 0–100; percent formats one.
+	"pct":     usagePct,
+	"percent": formatPercent,
+	// usageClass colors a usage bar: warn from 80%, bad from 90%.
+	"usageClass": func(p float64) string {
+		switch {
+		case p >= 90:
+			return "bad"
+		case p >= 80:
+			return "warn"
+		}
+		return ""
+	},
+	// ghz formats a clock in MHz: "3.60 GHz".
+	"ghz": func(mhz int) string { return fmt.Sprintf("%.2f GHz", float64(mhz)/1000) },
 	// imageName is the last path part of an image repository ("app" of
 	// "ghcr.io/org/app"), imageRef splits a reference into its parts.
 	"imageName": imageName,
@@ -101,6 +116,14 @@ func plural(n int, unit string) string {
 }
 
 // humanBytes formats n with binary units: "15.5 GiB".
+// usagePct is used as a percentage of total, clamped to 0–100; 0 if total is 0.
+func usagePct(used, total uint64) float64 {
+	if total == 0 {
+		return 0
+	}
+	return min(float64(used)/float64(total)*100, 100)
+}
+
 func humanBytes(n uint64) string {
 	const unit = 1024
 	if n < unit {

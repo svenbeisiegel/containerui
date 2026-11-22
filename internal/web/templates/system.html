@@ -1,20 +1,8 @@
 {{define "content"}}
-{{$d := .Data}}
+{{$d := .Data}}{{$h := $d.Live.Host}}
 <h1 class="sr-only">System</h1>
+{{template "system_live" $d.Live}}
 <div class="grid2">
-<section class="panel">
-  <h2>ContainerUI</h2>
-  <dl class="props">
-    <dt>Version</dt><dd class="mono">{{or $d.Version "unknown"}}</dd>
-    <dt>Platform</dt><dd class="mono">{{$d.OS}}/{{$d.Arch}} · {{$d.GoVersion}}</dd>
-    <dt>Installed as</dt><dd>{{$d.InstallType}}</dd>
-    {{if $d.Executable}}<dt>Executable</dt><dd class="mono wrap">{{$d.Executable}}</dd>{{end}}
-    <dt>Process</dt><dd class="mono">{{$d.PID}}</dd>
-    <dt>Licenses</dt><dd>MIT · <a href="/system/licenses">open-source components</a></dd>
-  </dl>
-  <p class="muted small">{{if eq $d.InstallType "rpm package"}}Update with the rpm of the newer release: <code>dnf upgrade ./containerui-&lt;version&gt;.rpm</code>.{{else if eq $d.InstallType "msi package"}}Update by running the msi of the newer release; the service is restarted and the configuration kept.{{else}}Install the rpm or msi package of a release to update.{{end}}</p>
-</section>
-{{$h := $d.Host}}
 <section class="panel">
   <h2>Host</h2>
   <dl class="props">
@@ -25,10 +13,25 @@
     {{with $h.Arch}}<dt>Architecture</dt><dd class="mono">{{.}}</dd>{{end}}
     {{with $h.Virtualization}}<dt>Virtualization</dt><dd>{{.}}</dd>{{end}}
     {{if $h.Uptime}}<dt>Uptime</dt><dd>{{duration $h.Uptime}} <span class="muted small">since {{datetime $h.BootTime}}</span></dd>{{end}}
-    {{if or $h.CPUModel $h.CPUs}}<dt>CPU</dt><dd>{{$h.CPUModel}}{{if $h.CPUs}}{{if $h.CPUModel}} · {{end}}{{$h.CPUs}} logical CPUs{{end}}</dd>{{end}}
-    {{if $h.MemTotal}}<dt>Memory</dt><dd>{{bytes $h.MemAvailable}} available of {{bytes $h.MemTotal}}</dd>{{end}}
-    {{if $h.HasLoad}}<dt>Load average</dt><dd class="mono">{{printf "%.2f %.2f %.2f" (index $h.Load 0) (index $h.Load 1) (index $h.Load 2)}}</dd>{{end}}
-    {{if $h.StorageTotal}}<dt>Storage</dt><dd>{{bytes $h.StorageFree}} free of {{bytes $h.StorageTotal}} <span class="mono muted small">{{$h.StorageMount}}</span></dd>{{end}}
+    {{with $h.CPUModel}}<dt>CPU</dt><dd>{{.}}</dd>{{end}}
+    {{if $h.CPUs}}<dt>Processors</dt><dd>{{if $h.Sockets}}{{$h.Sockets}} socket{{if ne $h.Sockets 1}}s{{end}} · {{end}}{{if $h.Cores}}{{$h.Cores}} core{{if ne $h.Cores 1}}s{{end}} · {{end}}{{$h.CPUs}} logical CPU{{if ne $h.CPUs 1}}s{{end}}{{if $h.MaxMHz}} · {{ghz $h.MaxMHz}}{{end}}</dd>{{end}}
+    {{if $h.MemTotal}}<dt>Memory</dt><dd>{{bytes $h.MemTotal}}</dd>
+    <dt>Swap</dt><dd>{{if $h.SwapTotal}}{{bytes $h.SwapUsed}} used of {{bytes $h.SwapTotal}}{{else}}none{{end}}</dd>{{end}}
+  </dl>
+</section>
+<div class="grid-col">
+<section class="panel">
+  <h2>ContainerUI</h2>
+  <dl class="props">
+    <dt>Version</dt><dd class="mono">{{or $d.Version "unknown"}}</dd>
+    <dt>Platform</dt><dd class="mono">{{$d.Platform}}</dd>
+  </dl>
+  <p class="muted small">MIT licensed · <a href="/system/licenses">open-source components</a></p>
+</section>
+{{if or $h.SELinux $h.Cgroup $h.Systemd $h.WSL $h.HyperV}}
+<section class="panel">
+  <h2>Container Platform</h2>
+  <dl class="props">
     {{with $h.SELinux}}<dt>SELinux</dt><dd>{{.}}</dd>{{end}}
     {{with $h.Cgroup}}<dt>cgroup</dt><dd>{{.}}</dd>{{end}}
     {{with $h.Systemd}}<dt>systemd</dt><dd class="mono">{{.}}</dd>{{end}}
@@ -36,6 +39,8 @@
     {{with $h.HyperV}}<dt>Hyper-V</dt><dd>{{.}}</dd>{{end}}
   </dl>
 </section>
+{{end}}
+</div>
 </div>
 {{with $d.Logs}}
 <section class="panel syslogs">
