@@ -17,7 +17,7 @@ func TestImportInspect(t *testing.T) {
 	e.login()
 
 	page := e.do("GET", "/containers/new/inspect", nil).Body.String()
-	for _, want := range []string{`action="/containers/new/inspect"`, `name="text"`, `data-file-load`, "From docker inspect", `href="/containers/new">Back`} {
+	for _, want := range []string{`action="/containers/new/inspect"`, `name="text"`, `data-file-load`, "From docker inspect", `href="/containers/new" aria-label="Back"`} {
 		if !strings.Contains(page, want) {
 			t.Errorf("inspect page misses %q", want)
 		}

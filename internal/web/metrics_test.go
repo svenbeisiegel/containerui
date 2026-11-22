@@ -387,7 +387,7 @@ func TestDashboardMetrics(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 	page := e.do("GET", "/", nil).Body.String()
-	for _, want := range []string{"Container Metrics", "<th class=\"num\">CPU</th>"} {
+	for _, want := range []string{"Container Metrics", "<th class=\"num wide-only\">CPU</th>"} {
 		if !strings.Contains(page, want) {
 			t.Errorf("dashboard missing %q", want)
 		}

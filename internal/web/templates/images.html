@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1 class="sr-only">Images</h1>
 <div class="page-head">
-  <div class="actions">
+  {{template "head_actions_open"}}
     <details class="menu">
       <summary class="button danger">Prune images</summary>
       <form method="post" action="/images/prune" hx-post="/images/prune" hx-target="#images" hx-swap="outerHTML" hx-disabled-elt="find button"
@@ -14,7 +14,7 @@
     {{template "images_scan" .Data.Images}}
     {{if .Caps.Pull}}<a class="button primary" href="/images/pull">Pull image</a>{{end}}
     {{template "refresh_button" (dict "Href" "/images" "Get" "/partials/images" "Target" "#images")}}
-  </div>
+  {{template "head_actions_close"}}
 </div>
 {{template "images_table" .Data.Images}}
 {{end}}

@@ -51,7 +51,7 @@ func TestComposePagesRender(t *testing.T) {
 		"/compose/new":            {`name="yaml"`, "Open file…", "data-compose-drop", "/static/compose.js", "Deploy"},
 		"/compose/shop":           {"shop-web-1", "shop-db-1", "shop_dbdata", "shop_default", `name="return" value="/compose/shop"`, "Down"},
 		"/partials/compose/shop":  {`id="compose-project"`, "shop-web-1"},
-		"/containers":             {`class="tag" href="/compose/shop"`},
+		"/containers":             {`class="tag wide-only" href="/compose/shop"`},
 		"/static/compose.js":      {"data-compose-yaml"},
 		"/compose/shop/edit":      {"rebuilt from the running containers", "name: shop", "image: postgres:16", "POSTGRES_PASSWORD", "readonly", "Apply changes"},
 		"/partials/compose/other": {"no longer exists"},

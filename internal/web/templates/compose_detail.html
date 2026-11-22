@@ -2,7 +2,8 @@
 {{$d := .Data.Detail}}
 <div class="page-head">
   <div class="title-row">{{template "back_button" "/compose"}}<h1 class="wrap">{{$d.Project.Name}}</h1></div>
-  {{if not $d.Err}}{{template "compose_actions" (dict "P" $d.Project "View" "detail" "CSRF" $d.CSRF)}}{{end}}
+  {{if not $d.Err}}{{template "compose_actions" (dict "P" $d.Project "View" "detail" "CSRF" $d.CSRF)}}
+  {{template "compose_actions" (dict "P" $d.Project "View" "detail" "CSRF" $d.CSRF "Menu" true "Head" true)}}{{end}}
 </div>
 {{if $d.Err}}<div class="flash error">{{$d.Err}}</div>
 {{else}}

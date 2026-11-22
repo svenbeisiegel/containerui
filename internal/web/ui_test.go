@@ -215,7 +215,7 @@ func TestPageHeaders(t *testing.T) {
 	}
 }
 
-// Sub-pages have a Back button left of their title, in one row.
+// Sub-pages have a Back (arrow icon) button left of their title, in one row.
 func TestBackButtons(t *testing.T) {
 	e := newEnv(t)
 	e.login()
@@ -235,7 +235,7 @@ func TestBackButtons(t *testing.T) {
 		"/compose/shop/edit":      "/compose/shop",
 	} {
 		body := e.do("GET", path, nil).Body.String()
-		want := `<div class="title-row"><a class="button" href="` + back + `">Back</a>`
+		want := `<div class="title-row"><a class="button icon-only" href="` + back + `" aria-label="Back" title="Back"><svg`
 		if i := strings.Index(body, `<div class="title-row">`); i < 0 || !strings.HasPrefix(strings.Join(strings.Fields(body[i:]), ""), strings.Join(strings.Fields(want), "")) {
 			t.Errorf("GET %s: no Back button to %s left of the title", path, back)
 		}
@@ -257,7 +257,7 @@ func TestRowMenus(t *testing.T) {
 		"/partials/networks":     {`data-menu="n-backend"`, ">Delete<"},
 		"/partials/compose":      {`data-menu="p-shop"`, ">Edit<"},
 		"/compose/shop":          {`<details class="row-menu"`, ">Stop<"},
-		"/partials/compose/shop": {`id="compose-actions" hx-swap-oob="true"`},
+		"/partials/compose/shop": {`id="compose-actions" hx-swap-oob="true"`, `id="compose-actions-menu" hx-swap-oob="true"`},
 		"/networks/bridge":       {`<details class="row-menu"`, ">Disconnect<"},
 	} {
 		body := e.do("GET", path, nil, htmx).Body.String()
@@ -275,8 +275,9 @@ func TestRowMenus(t *testing.T) {
 			t.Errorf("GET %s: row menu without ⋮ button or panel", path)
 		}
 	}
-	// Detail pages offer the same actions as buttons in the page head,
-	// not in the panel below it.
+	// Detail pages offer the same actions as buttons in the page head (wide
+	// screens) and as an "Actions" drop-down there (narrow screens), not in
+	// the panel below it.
 	for path, items := range map[string][]string{
 		"/containers/web":    {">Stop<", ">Restart<", ">Edit<", ">Recreate<", ">Connect<", ">Download logs<", ">Delete<", `name="view" value="detail"`},
 		"/volumes/data":      {">Backup<", ">Delete<"},
@@ -286,9 +287,12 @@ func TestRowMenus(t *testing.T) {
 	} {
 		body := e.do("GET", path, nil).Body.String()
 		head := detailHead(body)
-		if head == "" || strings.Contains(head, `class="row-menu"`) || !strings.Contains(head, `<div class="actions"`) {
+		if head == "" || strings.Contains(head, `class="row-menu"`) || !strings.Contains(head, `<div class="actions wide-only"`) {
 			t.Errorf("GET %s: no button bar in the page head", path)
 			continue
+		}
+		if !strings.Contains(head, `<details class="row-menu head-menu narrow-only"`) || !strings.Contains(head, `>Actions</summary>`) {
+			t.Errorf("GET %s: no Actions drop-down in the page head", path)
 		}
 		for _, want := range items {
 			if !strings.Contains(head, want) {

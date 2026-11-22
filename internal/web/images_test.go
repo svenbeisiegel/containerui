@@ -11,7 +11,7 @@ func TestImageDetail(t *testing.T) {
 	e := newEnv(t)
 	e.login()
 
-	if body := e.do("GET", "/partials/images", nil, htmx).Body.String(); !strings.Contains(body, `<a href="/images/nginx:1.27">nginx</a>`) {
+	if body := e.do("GET", "/partials/images", nil, htmx).Body.String(); !strings.Contains(body, `<a href="/images/nginx:1.27" title="nginx"><span class="wide-only">nginx</span><span class="narrow-only">nginx</span></a>`) {
 		t.Error("image row does not link to its detail page")
 	}
 

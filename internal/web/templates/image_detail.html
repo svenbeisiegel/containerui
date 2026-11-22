@@ -1,35 +1,43 @@
 {{define "content"}}
 {{$v := .Data}}{{$i := $v.Info}}{{$u := $v.Update}}
 <div class="page-head">
-  <div class="title-row">{{template "back_button" "/images"}}<h1 class="wrap mono-title">{{$v.Ref}}{{if $u.Available}} <span class="badge warn update-tag" title="A newer image is available. Use the update button.">update</span>{{end}}</h1></div>
-  {{with $v.Image}}{{template "image_actions" (dict "I" . "U" $u "Caps" $v.Caps "CSRF" $v.CSRF "View" "detail" "Menu" false)}}{{end}}
+  <div class="title-row">{{template "back_button" "/images"}}<h1 class="wrap mono-title">{{$v.Ref}}</h1></div>
+  {{with $v.Image}}{{template "image_actions" (dict "I" . "U" $u "Caps" $v.Caps "CSRF" $v.CSRF "View" "detail" "Menu" false)}}
+  {{template "image_actions" (dict "I" . "U" $u "Caps" $v.Caps "CSRF" $v.CSRF "View" "detail" "Menu" true "Head" true)}}{{end}}
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 
 {{if or $v.Image $v.HasInfo}}
 <div class="cards stat-cards">
   <div class="card"><span class="label">Size</span><span class="num">{{if $v.Image}}{{$v.Image.Size}}{{else}}{{bytes $i.Size}}{{end}}</span></div>
-  <div class="card"><span class="label">Created</span><span class="num">{{if $v.Image}}{{ago $v.Image.Created}}{{else}}{{ago $i.Created}}{{end}}</span>
-    <span class="sub">{{if $v.Image}}{{datetime $v.Image.Created}}{{else}}{{datetime $i.Created}}{{end}}</span></div>
+  <div class="card"><span class="label">Created</span><span class="num">{{if $v.Image}}{{ago $v.Image.Created}}{{else}}{{ago $i.Created}}{{end}}</span></div>
   {{with $i.RootFS.Layers}}<div class="card"><span class="label">Layers</span><span class="num">{{len .}}</span></div>{{end}}
   {{with $i.Platform}}<div class="card"><span class="label">Platform</span><span class="num">{{.}}</span></div>{{end}}
   <div class="card"><span class="label">Containers</span><span class="num">{{len $v.Users}}</span><span class="sub">{{if $v.Users}}created from it{{else}}none – unused{{end}}</span></div>
+  <div class="card"><span class="label">Updates</span>
+    <span class="num">{{if $u.Available}}<span class="badge warn update-tag">update available</span>
+      {{else if $u.Status.Err}}<span class="badge muted" title="{{$u.Status.Err}}">not checked</span>
+      {{else if $u.Status.TagGone}}<span class="badge muted">not in registry</span>
+      {{else if $u.Ref}}<span class="badge ok">up to date</span>
+      {{else}}<span class="badge muted">not checked</span>{{end}}</span>
+    {{if $u.Available}}<span class="sub">{{if $u.DigestChanged}}rebuilt in the registry{{if $u.NewerTags}}; {{end}}{{end}}{{with $u.NewerTags}}newer: <span class="mono">{{range $n, $t := .}}{{if $n}}, {{end}}{{$t.Name}}{{end}}</span>{{end}}</span>
+    {{else if $u.Status.TagGone}}<span class="sub">the registry no longer has this tag{{with $u.NewerLocal}}; version {{.}} is already pulled{{end}}</span>
+    {{else if $u.Status.Err}}<span class="sub">the registry could not be asked</span>{{end}}
+  </div>
 </div>
 
 <div class="grid2">
   <section class="panel">
     <h2>Overview</h2>
     <dl class="props">
-      {{with $v.Image}}<dt>Repository</dt><dd class="mono">{{.Repository}}</dd><dt>Tag</dt><dd class="mono">{{.Tag}}</dd>{{end}}
+      {{with $v.Image}}<dt>Repository</dt><dd class="mono break">{{.Repository}}</dd>
+      {{if and .Repository (ne .Repository "<none>")}}{{with imageRef .Ref}}{{if .Registry}}<dt>Registry</dt><dd class="mono">{{.Registry}}</dd>{{end}}{{if .Namespace}}<dt>Namespace</dt><dd class="mono">{{.Namespace}}</dd>{{end}}<dt>Name</dt><dd class="mono">{{.Name}}</dd>{{end}}{{end}}
+      <dt>Tag</dt><dd class="mono">{{.Tag}}</dd>{{end}}
       <dt>ID</dt><dd class="mono break">{{if $i.ID}}{{$i.ID}}{{else if $v.Image}}{{$v.Image.ID}}{{end}}</dd>
       {{with $i.RepoTags}}<dt>Tags</dt><dd class="chips">{{range .}}<a class="chip mono" href="/images/{{.}}">{{.}}</a>{{end}}</dd>{{end}}
       {{with $i.RepoDigests}}<dt>Digests</dt><dd class="mono small break">{{range $n, $d := .}}{{if $n}}<br>{{end}}{{$d}}{{end}}</dd>{{end}}
+      <dt>Created</dt><dd>{{if $v.Image}}{{datetime $v.Image.Created}}{{else}}{{datetime $i.Created}}{{end}}</dd>
       {{with $i.Author}}<dt>Author</dt><dd>{{.}}</dd>{{end}}
-      {{if $u.Ref}}<dt>Updates</dt><dd>
-        {{if $u.DigestChanged}}<span class="badge warn">rebuilt</span> <span class="muted small">the registry has a newer image for this tag</span><br>{{end}}
-        {{with $u.NewerTags}}<span class="badge warn">newer</span> <span class="mono small">{{range $n, $t := .}}{{if $n}}, {{end}}{{$t.Name}}{{end}}</span><br>{{end}}
-        {{if not $u.Available}}{{if $u.Status.Err}}<span class="muted small" title="{{$u.Status.Err}}">not checked</span>{{else if $u.Status.TagGone}}<span class="muted small">the registry no longer has this tag{{with $u.NewerLocal}}; version {{.}} is already pulled{{end}}</span>{{else}}<span class="badge ok">up to date</span>{{end}}{{end}}
-      </dd>{{end}}
     </dl>
   </section>
 

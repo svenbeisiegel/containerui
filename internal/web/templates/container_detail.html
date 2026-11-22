@@ -1,16 +1,17 @@
 {{define "content"}}
 {{$v := .Data}}{{$i := $v.Info}}
 <div class="page-head">
-  <div class="title-row">{{template "back_button" "/containers"}}<h1 class="wrap">{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}{{with $v.Updates}} <span class="badge warn update-tag" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update above.">update</span>{{end}}</h1></div>
-  {{with $v.Container}}{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Updates" $v.Updates "Menu" false)}}{{end}}
+  <div class="title-row">{{template "back_button" "/containers"}}<h1 class="wrap">{{if $v.Container}}{{$v.Container.Name}}{{else}}{{$v.ID}}{{end}}</h1></div>
+  {{with $v.Container}}{{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Updates" $v.Updates "Menu" false)}}
+  {{template "container_actions" (dict "C" . "Caps" $v.Caps "View" "detail" "CSRF" $v.CSRF "Updates" $v.Updates "Menu" true "Head" true)}}{{end}}
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Job}}{{template "recreate_job" .}}{{end}}
 {{with $v.Container}}{{$c := .}}
 <div class="cards stat-cards">
   <div class="card"><span class="label">State</span><span class="num">{{template "state" .State}}</span><span class="sub">{{.Status}}</span></div>
-  <div class="card"><span class="label">Image</span><span class="num mono-num"><a href="/images/{{.Image}}">{{.Image}}</a></span></div>
-  <div class="card"><span class="label">Created</span><span class="num">{{ago .Created}}</span><span class="sub">{{datetime .Created}}</span></div>
+  <div class="card"><span class="label">Image</span><span class="num mono-num"><a href="/images/{{.Image}}">{{.Image}}</a></span>{{with $v.Updates}}<span class="sub"><span class="badge warn update-tag" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update in the actions.">update available</span></span>{{end}}</div>
+  <div class="card"><span class="label">Created</span><span class="num">{{ago .Created}}</span></div>
   {{if $v.HasInfo}}
   <div class="card"><span class="label">Restart policy</span><span class="num">{{with $i.Restart}}{{.}}{{else}}none{{end}}</span><span class="sub">restarted {{$i.RestartCount}} time{{if ne $i.RestartCount 1}}s{{end}}</span></div>
   {{with $i.Health}}<div class="card"><span class="label">Health</span><span class="num"><span class="badge {{if eq . "healthy"}}ok{{else if eq . "unhealthy"}}bad{{else}}warn{{end}}">{{.}}</span></span></div>{{end}}
@@ -24,6 +25,7 @@
       <dt>Name</dt><dd class="mono">{{.Name}}</dd>
       <dt>ID</dt><dd class="mono break">{{.ID}}</dd>
       <dt>Image</dt><dd class="mono break"><a href="/images/{{.Image}}">{{.Image}}</a></dd>
+      <dt>Created</dt><dd>{{datetime .Created}}</dd>
       {{if .Command}}<dt>Command</dt><dd class="mono break">{{.Command}}</dd>{{end}}
       {{with $i.Config.WorkingDir}}<dt>Working dir</dt><dd class="mono">{{.}}</dd>{{end}}
       {{with $i.Config.User}}<dt>User</dt><dd class="mono">{{.}}</dd>{{end}}

@@ -210,6 +210,35 @@ document.addEventListener("submit", function (e) {
     if (menu) setTimeout(function () { menu.open = false; }, 0);
   });
 
+  // A list page's head buttons collapse into an "Actions" drop-down on
+  // narrow screens (partials.html "head_actions_open"): the toggle opens it,
+  // an outside click or Escape closes it.
+  function closeHeads(except) {
+    document.querySelectorAll("[data-head-actions].open").forEach(function (h) {
+      if (h === except) return;
+      h.classList.remove("open");
+      var b = h.querySelector(".head-toggle");
+      if (b) b.setAttribute("aria-expanded", "false");
+    });
+  }
+  document.addEventListener("click", function (e) {
+    var head = e.target.closest && e.target.closest("[data-head-actions]");
+    closeHeads(head);
+    var toggle = e.target.closest && e.target.closest(".head-toggle");
+    if (toggle && head) {
+      var open = head.classList.toggle("open");
+      toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Escape" || document.querySelector(OPEN)) return;
+    var head = document.querySelector("[data-head-actions].open");
+    if (!head) return;
+    closeHeads(null);
+    var b = head.querySelector(".head-toggle");
+    if (b) b.focus();
+  });
+
   window.addEventListener("scroll", placeAll, true);
   window.addEventListener("resize", placeAll);
 

@@ -26,28 +26,41 @@
      table partial), Target (its id). Always the last page-head action. */}}
 {{define "refresh_button"}}<a class="button" href="{{.Href}}" hx-get="{{.Get}}" hx-target="{{.Target}}" hx-swap="outerHTML">Refresh</a>{{end}}
 
+{{/* head_actions_open/close wrap the buttons in a list page's head: a
+     button bar on wide screens, an "Actions" drop-down on narrow ones
+     (app.css .head-actions, app.js toggles .open). */}}
+{{define "head_actions_open"}}<div class="head-actions" data-head-actions>
+  <button type="button" class="button labeled head-toggle" aria-expanded="false" aria-haspopup="true">Actions</button>
+  <div class="actions">{{end}}
+{{define "head_actions_close"}}</div></div>{{end}}
+
 {{/* back_button: the first item of a sub-page's title row; expects the href. */}}
-{{define "back_button"}}<a class="button" href="{{.}}">Back</a>{{end}}
+{{define "back_button"}}<a class="button icon-only" href="{{.}}" aria-label="Back" title="Back"><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M19 12H5M11 18l-6-6 6-6"/></svg></a>{{end}}
 
 {{/* Row action menus: a ⋮ button in a table row opens the row's actions
      (app.js positions the panel, closes it on an outside click and keeps
      it open across table refreshes by data-menu). The action templates
      take Menu to render so instead of a button row. row_menu_open expects
-     dict: Key (unique on the page), Name (for the label). */}}
-{{define "row_menu_open"}}<details class="row-menu" data-menu="{{.Key}}">
-  <summary class="button kebab" aria-label="Actions for {{.Name}}" title="Actions">{{template "kebab_icon"}}</summary>
+     dict: Key (unique on the page), Name (for the label); optional Head
+     (an "Actions" drop-down button instead of the ⋮: the narrow-screen copy
+     of a detail page's actions, see head_menu), ID and OOB. */}}
+{{define "row_menu_open"}}<details class="row-menu{{if .Head}} head-menu narrow-only{{end}}" data-menu="{{.Key}}"{{with .ID}} id="{{.}}"{{end}}{{if .OOB}} hx-swap-oob="true"{{end}}>
+  {{if .Head}}<summary class="button labeled" aria-label="Actions for {{.Name}}">Actions</summary>
+  {{else}}<summary class="button kebab" aria-label="Actions for {{.Name}}" title="Actions">{{template "kebab_icon"}}</summary>{{end}}
   <div class="row-menu-panel">{{end}}
 {{define "row_menu_close"}}</div></details>{{end}}
 
 {{/* The actions of a list row and of its detail page come from one
      template, rendered as the row's ⋮ menu (Menu true) or as the button
-     bar in the detail page's head (Menu false). actions_open expects dict:
-     Menu, Key and Name (for the row menu), optional ID (of the bar);
+     bar in the detail page's head (Menu false). A detail page renders both:
+     the bar (wide screens only) and, with Menu and Head, the same actions as
+     an "Actions" drop-down (narrow screens only). actions_open expects dict:
+     Menu, Key and Name (for the row menu), optional Head, ID (of the bar);
      actions_close, actions_sep and actions_sub_close expect Menu.
      actions_sub_open opens an inline expander (Tag, Update) that is a
      drop-down in the head; it expects dict: Menu, Label, optional Class
      and Title. */}}
-{{define "actions_open"}}{{if .Menu}}{{template "row_menu_open" (dict "Key" .Key "Name" .Name)}}{{else}}<div class="actions"{{with .ID}} id="{{.}}"{{end}}>{{end}}{{end}}
+{{define "actions_open"}}{{if .Menu}}{{template "row_menu_open" (dict "Key" .Key "Name" .Name "Head" .Head)}}{{else}}<div class="actions wide-only"{{with .ID}} id="{{.}}"{{end}}>{{end}}{{end}}
 {{define "actions_close"}}{{if .}}{{template "row_menu_close"}}{{else}}</div>{{end}}{{end}}
 {{define "actions_sep"}}{{if .}}<hr class="row-menu-sep">{{end}}{{end}}
 {{define "actions_sub_open"}}<details class="{{if .Menu}}row-menu-sub{{else}}menu{{end}}">
@@ -60,14 +73,14 @@
 {{if not .C}}<p class="empty">{{.Empty}}</p>
 {{else}}
 <div class="table-wrap"><table>
-  <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Created</th></tr></thead>
+  <thead><tr><th>Name</th><th class="wide-only">Image</th><th>State</th><th class="wide-only">Created</th></tr></thead>
   <tbody>
   {{range .C}}
     <tr>
-      <td><a href="/containers/{{.ID}}">{{.Name}}</a><div class="id">{{shortID .ID}}</div></td>
-      <td class="mono small">{{.Image}}</td>
-      <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
-      <td title="{{datetime .Created}}">{{ago .Created}}</td>
+      <td><a href="/containers/{{.ID}}">{{.Name}}</a><div class="id wide-only">{{shortID .ID}}</div></td>
+      <td class="mono small wide-only">{{.Image}}</td>
+      <td>{{template "state" .State}}<div class="muted small wide-only">{{.Status}}</div></td>
+      <td class="wide-only" title="{{datetime .Created}}">{{ago .Created}}</td>
     </tr>
   {{end}}
   </tbody>
@@ -108,14 +121,14 @@
     <h2>Running Containers</h2>
     {{if .ContErr}}<div class="flash error">{{.ContErr}}</div>{{end}}
     <div class="table-wrap"><table>
-      <thead><tr><th>Name</th><th>Image</th><th>Status</th>{{if .Metrics}}<th class="num">CPU</th><th class="num">RAM</th><th class="num">Disk I/O</th>{{end}}</tr></thead>
+      <thead><tr><th>Name</th><th class="wide-only">Image</th><th>Status</th>{{if .Metrics}}<th class="num wide-only">CPU</th><th class="num wide-only">RAM</th><th class="num wide-only">Disk I/O</th>{{end}}</tr></thead>
       <tbody>
       {{range .Running}}
         <tr>
           <td><a href="/containers/{{.ID}}">{{.Name}}</a></td>
-          <td class="mono">{{.Image}}</td>
-          <td>{{template "state" .State}} <span class="muted">{{.Status}}</span></td>
-          {{if $.Metrics}}{{$c := index $.Current .ID}}<td class="num">{{or $c.CPU "–"}}</td><td class="num">{{or $c.Mem "–"}}</td><td class="num">{{or $c.IO "–"}}</td>{{end}}
+          <td class="mono wide-only">{{.Image}}</td>
+          <td>{{template "state" .State}} <span class="muted wide-only">{{.Status}}</span></td>
+          {{if $.Metrics}}{{$c := index $.Current .ID}}<td class="num wide-only">{{or $c.CPU "–"}}</td><td class="num wide-only">{{or $c.Mem "–"}}</td><td class="num wide-only">{{or $c.IO "–"}}</td>{{end}}
         </tr>
       {{else}}
         <tr><td colspan="{{if .Metrics}}6{{else}}3{{end}}" class="empty">{{if .ContErr}}Could not load containers.{{else}}No containers are running.{{end}}</td></tr>
@@ -203,7 +216,7 @@
 {{$running := $c.State.IsRunning}}
 {{$recreate := and $caps.Inspect (not (index $c.Labels "com.docker.compose.project"))}}
 {{$menu := .Menu}}
-{{template "actions_open" (dict "Menu" $menu "Key" (printf "c-%s" $c.ID) "Name" $c.Name)}}
+{{template "actions_open" (dict "Menu" $menu "Head" .Head "Key" (printf "c-%s" $c.ID) "Name" $c.Name)}}
   {{if $running}}
     {{template "container_action" (dict "P" . "Act" "stop" "Label" "Stop" "Class" "" "Confirm" "" "Force" false)}}
     {{if $caps.Restart}}{{template "container_action" (dict "P" . "Act" "restart" "Label" "Restart" "Class" "" "Confirm" "" "Force" false)}}{{end}}
@@ -264,17 +277,17 @@
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
-    <thead><tr><th>Name</th><th>Image</th><th>State</th><th>Ports</th><th>Created</th><th class="right">Actions</th></tr></thead>
+    <thead><tr><th>Name</th><th class="wide-only">Image</th><th>State</th><th class="wide-only">Ports</th><th class="wide-only">Created</th><th class="right"><span class="wide-only">Actions</span></th></tr></thead>
     <tbody>
     {{$caps := .Caps}}{{$csrf := .CSRF}}{{$upd := .Updates}}
     {{range .Containers}}
       <tr>
-        <td><a href="/containers/{{.ID}}">{{.Name}}</a>{{with index $upd .ID}} <span class="badge warn update-tag" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update in the actions menu.">update</span>{{end}}<div class="id">{{shortID .ID}}</div>
-          {{with index .Labels "com.docker.compose.project"}}{{if $caps.Compose}}<a class="tag" href="/compose/{{.}}" title="Compose project">{{.}}</a>{{else}}<span class="tag" title="Compose project">{{.}}</span>{{end}}{{end}}</td>
-        <td class="mono">{{.Image}}</td>
-        <td>{{template "state" .State}}<div class="muted small">{{.Status}}</div></td>
-        <td class="mono small">{{.Ports}}</td>
-        <td title="{{datetime .Created}}">{{ago .Created}}</td>
+        <td><a href="/containers/{{.ID}}">{{.Name}}</a>{{with index $upd .ID}} <span class="badge warn update-tag wide-only" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update in the actions menu.">update</span>{{end}}<div class="id wide-only">{{shortID .ID}}</div>
+          {{with index .Labels "com.docker.compose.project"}}{{if $caps.Compose}}<a class="tag wide-only" href="/compose/{{.}}" title="Compose project">{{.}}</a>{{else}}<span class="tag wide-only" title="Compose project">{{.}}</span>{{end}}{{end}}</td>
+        <td class="mono wide-only">{{.Image}}</td>
+        <td>{{template "state" .State}}<div class="muted small wide-only">{{.Status}}</div></td>
+        <td class="mono small wide-only">{{.Ports}}</td>
+        <td class="wide-only" title="{{datetime .Created}}">{{ago .Created}}</td>
         <td class="right">{{template "container_actions" (dict "C" . "Caps" $caps "View" "list" "CSRF" $csrf "Updates" (index $upd .ID) "Menu" true)}}</td>
       </tr>
     {{else}}
@@ -292,7 +305,7 @@
      "detail": redirect), Menu. */}}
 {{define "image_actions"}}
 {{$i := .I}}{{$u := .U}}{{$caps := .Caps}}{{$csrf := .CSRF}}{{$menu := .Menu}}{{$list := eq .View "list"}}
-{{template "actions_open" (dict "Menu" $menu "Key" (printf "i-%s" $i.Ref) "Name" $i.Ref)}}
+{{template "actions_open" (dict "Menu" $menu "Head" .Head "Key" (printf "i-%s" $i.Ref) "Name" $i.Ref)}}
   {{if and $u.Available $caps.Pull}}
   {{if $u.DigestChanged}}{{template "image_update" (dict "Ref" $u.Ref "Label" "Update" "Title" (printf "Pull the newer image for %s" $u.Ref) "CSRF" $csrf)}}{{end}}
   {{with $u.NewerTags}}{{$t := index . 0}}{{template "image_update" (dict "Ref" (printf "%s:%s" $u.Repo $t.Name) "Label" (printf "Pull %s" $t.Name) "Title" (printf "Pull %s:%s, the newest %s version" $u.Repo $t.Name $t.Kind) "CSRF" $csrf)}}{{end}}
@@ -325,17 +338,17 @@
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
-    <thead><tr><th>Repository</th><th>Tag</th><th>ID</th><th>Size</th><th>Created</th><th class="right">Actions</th></tr></thead>
+    <thead><tr><th><span class="wide-only">Repository</span><span class="narrow-only">Image</span></th><th>Tag</th><th class="wide-only">ID</th><th class="wide-only">Size</th><th class="wide-only">Created</th><th class="right"><span class="wide-only">Actions</span></th></tr></thead>
     <tbody>
     {{$caps := .Caps}}{{$csrf := .CSRF}}{{$upd := .Updates}}
     {{range .Images}}
       {{$u := index $upd .Ref}}
       <tr>
-        <td class="mono"><a href="/images/{{.Ref}}">{{.Repository}}</a>{{if .InUse}}<span class="in-use" title="In use by {{.InUse}} container(s)">*</span>{{end}}</td>
-        <td class="mono">{{.Tag}}{{if $u.Available}} <span class="badge warn update-tag" title="{{if $u.DigestChanged}}The registry has a newer image for this tag. {{end}}{{with $u.NewerTags}}Newer versions: {{range $i, $t := .}}{{if $i}}, {{end}}{{$t.Name}}{{end}}{{end}}">update</span>{{else if $u.Status.Err}} <span class="muted small" title="{{$u.Status.Err}}">not checked</span>{{else if $u.Status.TagGone}} <span class="muted small" title="The registry no longer has this tag{{with $u.NewerLocal}}; version {{.}} is already pulled{{end}}">not in registry</span>{{end}}</td>
-        <td class="id" title="{{.ID}}">{{shortID .ID}}</td>
-        <td>{{.Size}}</td>
-        <td title="{{datetime .Created}}">{{ago .Created}}</td>
+        <td class="mono"><a href="/images/{{.Ref}}" title="{{.Repository}}"><span class="wide-only">{{.Repository}}</span><span class="narrow-only">{{imageName .Repository}}</span></a>{{if .InUse}}<span class="in-use wide-only" title="In use by {{.InUse}} container(s)">*</span>{{end}}</td>
+        <td class="mono">{{.Tag}}<span class="wide-only">{{if $u.Available}} <span class="badge warn update-tag" title="{{if $u.DigestChanged}}The registry has a newer image for this tag. {{end}}{{with $u.NewerTags}}Newer versions: {{range $i, $t := .}}{{if $i}}, {{end}}{{$t.Name}}{{end}}{{end}}">update</span>{{else if $u.Status.Err}} <span class="muted small" title="{{$u.Status.Err}}">not checked</span>{{else if $u.Status.TagGone}} <span class="muted small" title="The registry no longer has this tag{{with $u.NewerLocal}}; version {{.}} is already pulled{{end}}">not in registry</span>{{end}}</span></td>
+        <td class="id wide-only" title="{{.ID}}">{{shortID .ID}}</td>
+        <td class="wide-only">{{.Size}}</td>
+        <td class="wide-only" title="{{datetime .Created}}">{{ago .Created}}</td>
         <td class="right">
           {{template "image_actions" (dict "I" . "U" $u "Caps" $caps "CSRF" $csrf "View" "list" "Menu" true)}}
         </td>
@@ -473,7 +486,7 @@
      Backup (offer a backup download), optional Menu (render as a row menu).
      A volume in use is never deleted. */}}
 {{define "volume_actions"}}
-{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "v-%s" .V.Name) "Name" .V.Name)}}{{else}}<div class="actions">{{end}}
+{{template "actions_open" (dict "Menu" .Menu "Head" .Head "Key" (printf "v-%s" .V.Name) "Name" .V.Name)}}
   {{if .Files}}<a class="button" href="/volumes/files/{{.V.Name}}" title="Browse and edit the files of the volume">Browse files</a>{{end}}
   {{if .Backup}}
   <form method="post" action="/volumes/backup">
@@ -484,7 +497,7 @@
   </form>
   {{end}}
   {{template "volume_delete" (dict "P" . "Label" "Delete" "Confirm" (printf "Delete volume %s? Its data is lost." .V.Name))}}
-{{if .Menu}}{{template "row_menu_close"}}{{else}}</div>{{end}}
+{{template "actions_close" .Menu}}
 {{end}}
 
 {{define "volume_delete"}}
@@ -503,17 +516,17 @@
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
-    <thead><tr>{{if .Backup}}<th class="check"><input type="checkbox" data-select-all aria-label="Select all volumes" title="Select all"></th>{{end}}<th>Name</th><th>Driver</th><th>Scope</th><th>Used by</th><th>Data location</th><th class="right">Actions</th></tr></thead>
+    <thead><tr>{{if .Backup}}<th class="check"><input type="checkbox" data-select-all aria-label="Select all volumes" title="Select all"></th>{{end}}<th>Name</th><th class="wide-only">Driver</th><th class="wide-only">Scope</th><th>Used by</th><th class="wide-only">Data location</th><th class="right"><span class="wide-only">Actions</span></th></tr></thead>
     <tbody>
     {{$csrf := .CSRF}}{{$backup := .Backup}}{{$files := .Files}}
     {{range .Volumes}}
       <tr>
         {{if $backup}}<td class="check"><input type="checkbox" name="volume" value="{{.Name}}" form="volume-backup-form" aria-label="Select {{.Name}}"{{if .InUse}} data-in-use{{end}}></td>{{end}}
         <td class="mono"><a href="/volumes/{{.Name}}" title="{{.Name}}">{{if gt (len .Name) 40}}{{shortID .Name}}…{{else}}{{.Name}}{{end}}</a></td>
-        <td>{{.Driver}}</td>
-        <td>{{.Scope}}</td>
+        <td class="wide-only">{{.Driver}}</td>
+        <td class="wide-only">{{.Scope}}</td>
         <td>{{template "volume_users" .UsedBy}}</td>
-        <td class="mono small"{{if ne .DataLocation .Mountpoint}} title="Mountpoint: {{.Mountpoint}}"{{end}}>{{.DataLocation}}</td>
+        <td class="mono small wide-only"{{if ne .DataLocation .Mountpoint}} title="Mountpoint: {{.Mountpoint}}"{{end}}>{{.DataLocation}}</td>
         <td class="right">{{template "volume_actions" (dict "V" . "View" "list" "CSRF" $csrf "Backup" $backup "Files" $files "Menu" true)}}</td>
       </tr>
     {{else}}
@@ -587,13 +600,13 @@
 {{end}}
 
 {{/* ---------- compose ---------- */}}
-{{define "compose_status"}}<span class="badge {{if eq .Status "running"}}ok{{else if eq .Status "partial"}}warn{{else if eq .Status "stopped"}}muted{{else}}info{{end}}">{{.Status}}</span>{{if .Deployed}} <span class="muted small">{{.Running}}/{{.Total}} running</span>{{end}}{{end}}
+{{define "compose_status"}}<span class="badge {{if eq .Status "running"}}ok{{else if eq .Status "partial"}}warn{{else if eq .Status "stopped"}}muted{{else}}info{{end}}">{{.Status}}</span>{{if .Deployed}} <span class="muted small compose-count">{{.Running}}/{{.Total}} running</span>{{end}}{{end}}
 
 {{/* compose_actions expects dict: P (compose.Project), View ("list"|"detail"), CSRF,
      optional Menu (render as a row menu, else the detail page's button bar
      #compose-actions) and OOB (swap the bar in out of band). */}}
 {{define "compose_actions"}}
-{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "p-%s" .P.Name) "Name" .P.Name)}}{{else}}<div class="actions" id="compose-actions"{{if .OOB}} hx-swap-oob="true"{{end}}>{{end}}
+{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "p-%s" .P.Name) "Name" .P.Name "Head" .Head "ID" (and .Head "compose-actions-menu") "OOB" .OOB)}}{{else}}<div class="actions wide-only" id="compose-actions"{{if .OOB}} hx-swap-oob="true"{{end}}>{{end}}
   {{if .P.Deployed}}
     {{if lt .P.Running .P.Total}}{{template "compose_action" (dict "A" . "Act" "start" "Label" "Start" "Class" "primary" "Confirm" "")}}{{end}}
     {{if gt .P.Running 0}}
@@ -642,15 +655,15 @@
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
-    <thead><tr><th>Project</th><th>Status</th><th>Services</th><th>Compose file</th><th class="right">Actions</th></tr></thead>
+    <thead><tr><th>Project</th><th>Status</th><th class="wide-only">Services</th><th class="wide-only">Compose file</th><th class="right"><span class="wide-only">Actions</span></th></tr></thead>
     <tbody>
     {{$csrf := .CSRF}}
     {{range .Projects}}
       <tr>
         <td><a href="/compose/{{.Name}}">{{.Name}}</a></td>
         <td>{{template "compose_status" .}}</td>
-        <td>{{with .ServiceNames}}{{join . ", "}}{{else}}<span class="muted">–</span>{{end}}</td>
-        <td class="small">{{if .Stored}}<span class="badge info">stored</span>{{else if .ConfigFiles}}<span class="mono" title="Deployed outside ContainerUI">{{join .ConfigFiles ", "}}</span>{{else}}<span class="muted">unknown</span>{{end}}</td>
+        <td class="wide-only">{{with .ServiceNames}}{{join . ", "}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="small wide-only">{{if .Stored}}<span class="badge info">stored</span>{{else if .ConfigFiles}}<span class="mono" title="Deployed outside ContainerUI">{{join .ConfigFiles ", "}}</span>{{else}}<span class="muted">unknown</span>{{end}}</td>
         <td class="right">{{template "compose_actions" (dict "P" . "View" "list" "CSRF" $csrf "Menu" true)}}</td>
       </tr>
     {{else}}
@@ -705,7 +718,7 @@
     </dl>
   </section>
   {{/* Polling keeps the head's buttons in step with the project's state. */}}
-  {{if .Partial}}{{template "compose_actions" (dict "P" $p "View" "detail" "CSRF" .CSRF "OOB" true)}}{{end}}
+  {{if .Partial}}{{template "compose_actions" (dict "P" $p "View" "detail" "CSRF" .CSRF "OOB" true)}}{{template "compose_actions" (dict "P" $p "View" "detail" "CSRF" .CSRF "OOB" true "Menu" true "Head" true)}}{{end}}
 
   <section class="panel">
     <h2>Services</h2>
@@ -763,7 +776,7 @@
 {{/* network_actions expects dict: N (networkRow), View ("list"|"detail"), CSRF,
      optional Menu (render as a row menu). */}}
 {{define "network_actions"}}
-{{if .Menu}}{{template "row_menu_open" (dict "Key" (printf "n-%s" .N.Name) "Name" .N.Name)}}{{else}}<div class="actions">{{end}}
+{{template "actions_open" (dict "Menu" .Menu "Head" .Head "Key" (printf "n-%s" .N.Name) "Name" .N.Name)}}
   <form method="post" action="/networks/delete" hx-post="/networks/delete"
         {{if eq .View "list"}}hx-target="#networks" hx-swap="outerHTML"{{else}}hx-swap="none"{{end}}
         hx-confirm="Delete network {{.N.Name}}?" hx-disabled-elt="find button">
@@ -772,7 +785,7 @@
     <input type="hidden" name="view" value="{{.View}}">
     <button type="submit" class="danger">Delete</button>
   </form>
-{{if .Menu}}{{template "row_menu_close"}}{{else}}</div>{{end}}
+{{template "actions_close" .Menu}}
 {{end}}
 
 {{define "networks_table"}}
@@ -780,17 +793,17 @@
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
-    <thead><tr><th>Name</th><th>Driver</th><th>Scope</th><th>Internal</th><th>Used by</th><th>ID</th><th class="right">Actions</th></tr></thead>
+    <thead><tr><th>Name</th><th>Driver</th><th class="wide-only">Scope</th><th class="wide-only">Internal</th><th class="wide-only">Used by</th><th class="wide-only">ID</th><th class="right"><span class="wide-only">Actions</span></th></tr></thead>
     <tbody>
     {{$csrf := .CSRF}}
     {{range .Networks}}
       <tr>
-        <td class="mono"><a href="/networks/{{.Name}}">{{.Name}}</a>{{if .Predefined}} <span class="badge info" title="Created by the runtime">built-in</span>{{end}}</td>
+        <td class="mono"><a href="/networks/{{.Name}}">{{.Name}}</a>{{if .Predefined}} <span class="badge info wide-only" title="Created by the runtime">built-in</span>{{end}}</td>
         <td>{{.Driver}}</td>
-        <td>{{.Scope}}</td>
-        <td>{{if .Internal}}yes{{else}}<span class="muted">no</span>{{end}}</td>
-        <td>{{template "volume_users" .UsedBy}}</td>
-        <td class="id" title="{{.ID}}">{{shortID .ID}}</td>
+        <td class="wide-only">{{.Scope}}</td>
+        <td class="wide-only">{{if .Internal}}yes{{else}}<span class="muted">no</span>{{end}}</td>
+        <td class="wide-only">{{template "volume_users" .UsedBy}}</td>
+        <td class="id wide-only" title="{{.ID}}">{{shortID .ID}}</td>
         <td class="right">{{if .Predefined}}<span class="muted small">–</span>{{else}}{{template "network_actions" (dict "N" . "View" "list" "CSRF" $csrf "Menu" true)}}{{end}}</td>
       </tr>
     {{else}}

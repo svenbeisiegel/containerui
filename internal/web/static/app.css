@@ -157,7 +157,7 @@ code { font-family: var(--mono); font-size: .92em; background: var(--code-bg); p
 /* ---------- layout ---------- */
 main { padding: 1.5rem 1.25rem 2rem; }
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-bottom: 1.1rem; flex-wrap: wrap; }
-.page-head > .actions { margin-left: auto; }
+.page-head > :is(.actions, .head-menu, .head-actions) { margin-left: auto; }
 /* Visually hidden, read by screen readers (list pages keep their h1 so). */
 .sr-only {
   position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -167,6 +167,8 @@ main { padding: 1.5rem 1.25rem 2rem; }
 /* Sub-pages: the Back button sits left of the title. */
 .title-row { display: flex; align-items: center; gap: .75rem; min-width: 0; }
 .title-row .button { flex: none; }
+.button.icon-only { padding: .45rem .55rem; }
+.button.icon-only svg { display: block; }
 .wrap { overflow-wrap: anywhere; }
 
 .panel {
@@ -364,6 +366,60 @@ details.row-menu > summary::-webkit-details-marker,
 details.row-menu-sub > summary::-webkit-details-marker { display: none; }
 summary.kebab { padding: .45rem .5rem; }
 details.row-menu[open] > summary.kebab { border-color: var(--accent); color: var(--accent); }
+details.row-menu[open] > summary.labeled { border-color: var(--accent); }
+.button.labeled::after { content: "▾"; font-size: .75em; margin-left: .1rem; }
+
+/* Narrow screens (phones): list tables keep only their key columns and a
+   detail page's actions collapse into one "Actions" drop-down. wide-only
+   is hidden there, narrow-only shown only there. */
+.narrow-only { display: none !important; }
+@media (max-width: 640px) {
+  .wide-only { display: none !important; }
+  .narrow-only { display: revert !important; }
+  details.narrow-only { display: inline-block !important; }
+  #compose .compose-count { display: none; }
+
+  /* A detail page's head stays one row: Back, the name (cut off with …)
+     and the Actions drop-down. */
+  .page-head:has(> .head-menu) { flex-wrap: nowrap; }
+  .page-head:has(> .head-menu) > .title-row { flex: 1 1 auto; }
+  .page-head:has(> .head-menu) > .title-row h1 {
+    min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; overflow-wrap: normal;
+  }
+  .page-head > .head-menu { flex: none; }
+}
+
+/* A list page's head buttons (partials.html "head_actions_open"): a bar on
+   wide screens, an "Actions" drop-down on narrow ones. */
+.head-actions { position: relative; }
+.head-toggle { display: none; }
+.head-actions.open > .head-toggle { border-color: var(--accent); }
+@media (max-width: 640px) {
+  .head-toggle { display: inline-flex; }
+  .head-actions > .actions { display: none; }
+  .head-actions.open > .actions {
+    display: flex; flex-direction: column; align-items: stretch; gap: 1px;
+    position: absolute; right: 0; top: calc(100% + .35rem); z-index: 15;
+    width: min(20rem, calc(100vw - 2rem)); padding: .3rem;
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border-strong); border-radius: var(--radius-sm);
+    box-shadow: 0 8px 24px rgb(0 0 0 / .16);
+  }
+  :is(.head-actions > .actions > .button, .head-actions > .actions > form > button, .head-actions > .actions > details > summary.button) {
+    width: 100%; justify-content: flex-start; white-space: nowrap;
+    padding: .45rem .7rem; border: 0; border-radius: 4px;
+    background: none; color: var(--text); font-weight: 500;
+  }
+  :is(.head-actions > .actions > .button, .head-actions > .actions > form > button, .head-actions > .actions > details > summary.button):hover {
+    background: color-mix(in srgb, var(--soft) 70%, transparent); color: var(--text);
+  }
+  :is(.head-actions > .actions > .button.primary, .head-actions > .actions > details > summary.button.primary) { color: var(--accent); font-weight: 600; }
+  :is(.head-actions > .actions > form > button.danger, .head-actions > .actions > details > summary.button.danger) { color: var(--bad); }
+  .head-actions > .actions > details { width: 100%; }
+  .head-actions > .actions details[open] > summary.button { color: var(--accent); }
+  /* A drop-down inside the menu (Prune, Backup, …) opens in place. */
+  .head-actions .menu-panel { position: static; width: auto; margin: .2rem 0 .3rem; box-shadow: none; }
+}
 .row-menu-panel {
   position: fixed; top: 0; left: 0; z-index: 25;
   display: flex; flex-direction: column; gap: 1px;

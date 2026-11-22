@@ -160,7 +160,7 @@ func TestImageUpdates(t *testing.T) {
 
 	// The container list marks outdated containers.
 	list := e.do("GET", "/partials/containers", nil, htmx).Body.String()
-	if n := strings.Count(list, `class="badge warn update-tag"`); n < 2 {
+	if n := strings.Count(list, `class="badge warn update-tag wide-only"`); n < 2 {
 		t.Errorf("%d containers have an update tag; want web and job", n)
 	}
 	for _, want := range []string{`action="/containers/c0ffee000001/update"`, ">Update…<", `<option value="nginx:1.28">1.28 (minor)</option>`} {

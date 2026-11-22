@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1 class="sr-only">Volumes</h1>
 <div class="page-head">
-  <div class="actions">
+  {{template "head_actions_open"}}
     {{if .Data.PruneAnonymous}}
     <details class="menu">
       <summary class="button danger">Prune volumes</summary>
@@ -51,7 +51,7 @@
     {{end}}
     <a class="button primary" href="/volumes/new">Create volume</a>
     {{template "refresh_button" (dict "Href" "/volumes" "Get" "/partials/volumes" "Target" "#volumes")}}
-  </div>
+  {{template "head_actions_close"}}
 </div>
 {{template "volumes_table" .Data.Volumes}}
 {{end}}

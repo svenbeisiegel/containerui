@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1 class="sr-only">Networks</h1>
 <div class="page-head">
-  <div class="actions">
+  {{template "head_actions_open"}}
     <form method="post" action="/networks/prune" hx-post="/networks/prune" hx-target="#networks" hx-swap="outerHTML" hx-disabled-elt="find button"
           hx-confirm="Remove all custom networks that no container is connected to? The runtime's own networks are kept.">
       <input type="hidden" name="csrf" value="{{.CSRF}}">
@@ -9,7 +9,7 @@
     </form>
     <a class="button primary" href="/networks/new">Create network</a>
     {{template "refresh_button" (dict "Href" "/networks" "Get" "/partials/networks" "Target" "#networks")}}
-  </div>
+  {{template "head_actions_close"}}
 </div>
 {{template "networks_table" .Data.Networks}}
 {{end}}

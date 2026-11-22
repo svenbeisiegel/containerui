@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/svenbeisiegel/containerui/internal/compose"
+	"github.com/svenbeisiegel/containerui/internal/registry"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 )
 
@@ -44,6 +45,10 @@ var funcs = template.FuncMap{
 		return m, nil
 	},
 	"bytes": humanBytes,
+	// imageName is the last path part of an image repository ("app" of
+	// "ghcr.io/org/app"), imageRef splits a reference into its parts.
+	"imageName": imageName,
+	"imageRef":  imageRef,
 	// splitPorts splits a runtime's port summary ("a, b") into entries.
 	"splitPorts": func(s string) []string { return strings.Split(s, ", ") },
 	"size":       volbackup.FormatBytes,
@@ -78,8 +83,10 @@ func ago(t time.Time) string {
 		return plural(int(d.Minutes()), "minute") + " ago"
 	case d < 48*time.Hour:
 		return plural(int(d.Hours()), "hour") + " ago"
-	case d < 60*24*time.Hour:
+	case d < 14*24*time.Hour:
 		return plural(int(d.Hours()/24), "day") + " ago"
+	case d < 60*24*time.Hour:
+		return plural(int(d.Hours()/24/7), "week") + " ago"
 	case d < 730*24*time.Hour:
 		return plural(int(d.Hours()/24/30), "month") + " ago"
 	}
@@ -127,4 +134,27 @@ func humanDuration(d time.Duration) string {
 		return pair(hours, "hour", mins, "minute")
 	}
 	return plural(mins, "minute")
+}
+
+func imageName(repo string) string {
+	return repo[strings.LastIndex(repo, "/")+1:]
+}
+
+// imageRefParts is a reference split for the image detail page.
+type imageRefParts struct {
+	Registry  string // docker.io, ghcr.io, …
+	Namespace string // the folder(s) before the name: library, org/team; may be empty
+	Name      string
+}
+
+func imageRef(ref string) imageRefParts {
+	r, err := registry.ParseRef(ref)
+	if err != nil {
+		return imageRefParts{Name: imageName(ref)}
+	}
+	p := imageRefParts{Registry: r.Registry, Name: imageName(r.Repository)}
+	if i := strings.LastIndex(r.Repository, "/"); i >= 0 {
+		p.Namespace = r.Repository[:i]
+	}
+	return p
 }

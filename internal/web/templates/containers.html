@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1 class="sr-only">Containers</h1>
 <div class="page-head">
-  <div class="actions"><a class="button primary" href="/containers/new">Create container</a>{{template "refresh_button" (dict "Href" "/containers" "Get" "/partials/containers" "Target" "#containers")}}</div>
+  {{template "head_actions_open"}}<a class="button primary" href="/containers/new">Create container</a>{{template "refresh_button" (dict "Href" "/containers" "Get" "/partials/containers" "Target" "#containers")}}{{template "head_actions_close"}}
 </div>
 {{template "containers_table" .Data}}
 {{end}}

@@ -2,14 +2,15 @@
 {{$v := .Data}}
 <div class="page-head">
   <div class="title-row">{{template "back_button" "/volumes"}}<h1 class="wrap">{{$v.Name}}</h1></div>
-  {{with $v.Volume}}{{template "volume_actions" (dict "V" . "View" "detail" "CSRF" $v.CSRF "Backup" $v.Backup "Files" $v.Files)}}{{end}}
+  {{with $v.Volume}}{{template "volume_actions" (dict "V" . "View" "detail" "CSRF" $v.CSRF "Backup" $v.Backup "Files" $v.Files)}}
+  {{template "volume_actions" (dict "V" . "View" "detail" "CSRF" $v.CSRF "Backup" $v.Backup "Files" $v.Files "Menu" true "Head" true)}}{{end}}
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Volume}}
 <div class="cards stat-cards">
   <div class="card"><span class="label">Driver</span><span class="num">{{.Driver}}</span></div>
   {{if .Scope}}<div class="card"><span class="label">Scope</span><span class="num">{{.Scope}}</span></div>{{end}}
-  {{if not $v.Info.CreatedAt.IsZero}}<div class="card"><span class="label">Created</span><span class="num">{{ago $v.Info.CreatedAt}}</span><span class="sub">{{datetime $v.Info.CreatedAt}}</span></div>{{end}}
+  {{if not $v.Info.CreatedAt.IsZero}}<div class="card"><span class="label">Created</span><span class="num">{{ago $v.Info.CreatedAt}}</span></div>{{end}}
   <div class="card"><span class="label">Containers</span><span class="num">{{len .UsedBy}}</span><span class="sub">{{if .InUse}}mounted by a running container{{else if .UsedBy}}none running{{else}}none – unused{{end}}</span></div>
 </div>
 
@@ -18,6 +19,7 @@
     <h2>Overview</h2>
     <dl class="props">
       <dt>Name</dt><dd class="mono break">{{.Name}}</dd>
+      {{if not $v.Info.CreatedAt.IsZero}}<dt>Created</dt><dd>{{datetime $v.Info.CreatedAt}}</dd>{{end}}
       {{if .Mountpoint}}<dt>Mountpoint</dt><dd class="mono break">{{.Mountpoint}}</dd>{{end}}
       {{with index .Options "device"}}<dt>Device</dt><dd class="mono break">{{.}}</dd>{{end}}
       {{with index .Options "type"}}<dt>Type</dt><dd class="mono">{{.}}</dd>{{end}}

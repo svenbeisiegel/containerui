@@ -2,7 +2,8 @@
 {{$v := .Data}}
 <div class="page-head">
   <div class="title-row">{{template "back_button" "/networks"}}<h1 class="wrap">{{$v.Name}}</h1></div>
-  {{with $v.Network}}{{if not .Predefined}}{{template "network_actions" (dict "N" . "View" "detail" "CSRF" $v.CSRF)}}{{end}}{{end}}
+  {{with $v.Network}}{{if not .Predefined}}{{template "network_actions" (dict "N" . "View" "detail" "CSRF" $v.CSRF)}}
+  {{template "network_actions" (dict "N" . "View" "detail" "CSRF" $v.CSRF "Menu" true "Head" true)}}{{end}}{{end}}
 </div>
 {{if $v.Err}}<div class="flash error">{{$v.Err}}</div>{{end}}
 {{with $v.Network}}
@@ -11,7 +12,7 @@
   {{if .Scope}}<div class="card"><span class="label">Scope</span><span class="num">{{.Scope}}</span></div>{{end}}
   {{with $v.Info.Subnets}}{{with index . 0}}<div class="card"><span class="label">Subnet</span><span class="num mono-num">{{.Subnet}}</span>{{with .Gateway}}<span class="sub">gateway {{.}}</span>{{end}}</div>{{end}}{{end}}
   <div class="card"><span class="label">Containers</span><span class="num">{{len $v.Info.Containers}}</span><span class="sub">{{if $v.Info.Containers}}connected{{else}}none connected{{end}}</span></div>
-  {{if not .Created.IsZero}}<div class="card"><span class="label">Created</span><span class="num">{{ago .Created}}</span><span class="sub">{{datetime .Created}}</span></div>{{end}}
+  {{if not .Created.IsZero}}<div class="card"><span class="label">Created</span><span class="num">{{ago .Created}}</span></div>{{end}}
 </div>
 
 <div class="grid2">
@@ -20,6 +21,7 @@
     <dl class="props">
       <dt>Name</dt><dd class="mono break">{{.Name}}</dd>
       <dt>ID</dt><dd class="mono break">{{.ID}}</dd>
+      {{if not .Created.IsZero}}<dt>Created</dt><dd>{{datetime .Created}}</dd>{{end}}
       <dt>Internal</dt><dd>{{if .Internal}}<span class="badge warn">yes</span> <span class="muted small">no access to outside networks</span>{{else}}no{{end}}</dd>
       <dt>IPv6</dt><dd>{{if .IPv6}}<span class="badge ok">enabled</span>{{else}}no{{end}}</dd>
       {{if .Predefined}}<dt>Type</dt><dd><span class="badge info">built-in</span> <span class="muted small">created by the runtime; cannot be deleted</span></dd>{{end}}
