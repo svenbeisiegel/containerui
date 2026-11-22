@@ -39,15 +39,27 @@ type SocketOwner struct {
 // socket with the given owner and mode, as the kernel would decide it for
 // connect(2). root may always.
 func socketAllows(uid string, gids []string, s SocketOwner) bool {
-	const rw = 0o6
+	return modeAllows(uid, gids, s, 0o6)
+}
+
+// fileReadable reports whether a user may read a file with the given owner
+// and mode (its own permission bits; the folders above it are not checked).
+// root may always.
+func fileReadable(uid string, gids []string, s SocketOwner) bool {
+	return modeAllows(uid, gids, s, 0o4)
+}
+
+// modeAllows applies the owner, group and other permission bits like the
+// kernel: the first class the user belongs to decides.
+func modeAllows(uid string, gids []string, s SocketOwner, want fs.FileMode) bool {
 	if uid == "0" {
 		return true
 	}
 	if uid == strconv.FormatUint(uint64(s.UID), 10) {
-		return s.Mode.Perm()>>6&rw == rw
+		return s.Mode.Perm()>>6&want == want
 	}
 	if slices.Contains(gids, strconv.FormatUint(uint64(s.GID), 10)) {
-		return s.Mode.Perm()>>3&rw == rw
+		return s.Mode.Perm()>>3&want == want
 	}
-	return s.Mode.Perm()&rw == rw
+	return s.Mode.Perm()&want == want
 }

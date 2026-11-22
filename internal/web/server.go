@@ -23,6 +23,7 @@ import (
 	"github.com/svenbeisiegel/containerui/internal/hostinfo"
 	"github.com/svenbeisiegel/containerui/internal/hostlog"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
+	"github.com/svenbeisiegel/containerui/internal/kube"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
 	"github.com/svenbeisiegel/containerui/internal/updates"
 )
@@ -33,7 +34,11 @@ var assets embed.FS
 const sessionCookie = "cui_session"
 
 type Options struct {
-	Runtime  runtime.Runtime
+	// Runtime is the container runtime; nil in Kubernetes mode.
+	Runtime runtime.Runtime
+	// Kube switches the UI to Kubernetes mode: the pages show this
+	// cluster instead of a container runtime.
+	Kube     *kube.Cluster
 	Users    auth.Verifier
 	Sessions *auth.Sessions
 	// MFA keeps the accounts' second factor; nil turns two-factor sign-in
@@ -81,6 +86,7 @@ var faviconCandidates = []struct{ name, ctype string }{
 
 type Server struct {
 	rt        runtime.Runtime
+	kube      *kube.Cluster // nil: container runtime mode
 	users     auth.Verifier
 	sessions  *auth.Sessions
 	throttle  *auth.Throttle
@@ -123,6 +129,15 @@ func New(o Options) (*Server, error) {
 		pages:   map[string]*template.Template{},
 		version: o.Version,
 		hostlog: o.HostLog, hostinfo: o.HostInfo, events: o.Events, updates: o.Updates,
+	}
+	if o.Kube != nil {
+		s.kube = o.Kube
+		if s.rt == nil {
+			s.rt = clusterRuntime{}
+		}
+		o.WarmInterval = -1 // nothing to warm up
+		o.VolumeUploadDir = ""
+		s.store = compose.Store{}
 	}
 	if o.VolumeUploadDir != "" {
 		s.uploads = &uploadStore{dir: o.VolumeUploadDir}
@@ -180,15 +195,16 @@ func (s *Server) Close() {
 }
 
 func (s *Server) parseTemplates() error {
-	pages := []string{"login", "login_mfa", "login_mfa_setup", "account", "dashboard", "containers", "container_choose", "container_import", "container_new", "container_detail", "images", "image_detail", "image_pull", "volumes", "volume_new", "volume_detail", "volume_restore", "volume_files", "volume_edit", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events"}
+	pages := []string{"login", "login_mfa", "login_mfa_setup", "account", "dashboard", "containers", "container_choose", "container_import", "container_new", "container_detail", "images", "image_detail", "image_pull", "volumes", "volume_new", "volume_detail", "volume_restore", "volume_files", "volume_edit", "compose", "compose_new", "compose_detail", "networks", "network_new", "network_detail", "system", "events",
+		"kube_dashboard", "kube_workloads", "kube_workload", "kube_pods", "kube_pod", "kube_services", "kube_service", "kube_storage", "kube_pvc", "kube_nodes", "kube_node", "kube_cluster_events"}
 	for _, p := range pages {
-		t, err := template.New(p).Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/partials.html", "templates/"+p+".html")
+		t, err := template.New(p).Funcs(funcs).ParseFS(assets, "templates/layout.html", "templates/partials.html", "templates/kube_partials.html", "templates/"+p+".html")
 		if err != nil {
 			return fmt.Errorf("parse template %s: %w", p, err)
 		}
 		s.pages[p] = t
 	}
-	t, err := template.New("partials").Funcs(funcs).ParseFS(assets, "templates/partials.html")
+	t, err := template.New("partials").Funcs(funcs).ParseFS(assets, "templates/partials.html", "templates/kube_partials.html")
 	if err != nil {
 		return fmt.Errorf("parse partials: %w", err)
 	}
@@ -229,85 +245,13 @@ func (s *Server) Handler() http.Handler {
 	authed.HandleFunc("POST /logout", s.handleLogout)
 	authed.HandleFunc("GET /account", s.handleAccount)
 	authed.HandleFunc("POST /account/mfa/{action}", s.handleAccountMFA)
-	authed.HandleFunc("GET /{$}", s.handleDashboard)
-	authed.HandleFunc("GET /partials/dashboard", s.handleDashboardPartial)
-	authed.HandleFunc("GET /containers", s.handleContainers)
-	authed.HandleFunc("GET /partials/containers", s.handleContainersPartial)
-	authed.HandleFunc("GET /containers/new", s.handleContainerNew)
-	authed.HandleFunc("POST /containers", s.handleContainerCreate)
-	authed.HandleFunc("GET /containers/new/scratch", s.handleContainerScratch)
-	// Literal paths: a {source} wildcard would clash with /containers/{id}/edit.
-	for src := range importSources {
-		authed.HandleFunc("GET /containers/new/"+src, s.handleContainerImportPage)
-		authed.HandleFunc("POST /containers/new/"+src, s.handleContainerImport)
+	if s.kube != nil {
+		s.registerKubeRoutes(authed)
+	} else {
+		s.registerRuntimeRoutes(authed)
 	}
-	authed.HandleFunc("GET /containers/{id}", s.handleContainerDetail)
-	authed.HandleFunc("POST /containers/{id}/{action}", s.handleContainerAction)
-	authed.HandleFunc("GET /containers/{id}/edit", s.handleContainerEdit)
-	authed.HandleFunc("POST /containers/{id}/edit", s.handleContainerEditSave)
-	authed.HandleFunc("POST /containers/{id}/update", s.handleContainerUpdate)
-	authed.HandleFunc("POST /containers/{id}/recreate", s.handleContainerRecreate)
-	authed.HandleFunc("GET /partials/containers/{id}/job", s.handleRecreateJobPartial)
-	authed.HandleFunc("GET /containers/{id}/terminal", s.handleTerminalPage)
-	authed.HandleFunc("GET /containers/{id}/terminal/ws", s.handleTerminalWS)
-	authed.HandleFunc("GET /containers/{id}/attach", s.handleAttachPage)
-	authed.HandleFunc("GET /containers/{id}/attach/ws", s.handleAttachWS)
-	authed.HandleFunc("GET /containers/{id}/logs/download", s.handleLogsDownload)
-	authed.HandleFunc("GET /containers/{id}/logs/watch", s.handleLogsWatch)
-	authed.HandleFunc("GET /containers/{id}/logs/stream", s.handleLogsStream)
-	authed.HandleFunc("GET /images", s.handleImages)
-	authed.HandleFunc("GET /partials/images", s.handleImagesPartial)
-	authed.HandleFunc("GET /images/pull", s.handleImagePullPage)
-	authed.HandleFunc("POST /images/pull", s.handleImagePull)
-	authed.HandleFunc("POST /images/check-updates", s.handleImageCheckUpdates)
-	authed.HandleFunc("POST /images/tag", s.handleImageTag)
-	authed.HandleFunc("POST /images/delete", s.handleImageDelete)
-	authed.HandleFunc("POST /images/prune", s.handleImagePrune)
-	authed.HandleFunc("GET /images/{ref...}", s.handleImageDetail)
-	authed.HandleFunc("GET /volumes", s.handleVolumes)
-	authed.HandleFunc("GET /partials/volumes", s.handleVolumesPartial)
-	authed.HandleFunc("GET /volumes/new", s.handleVolumeNew)
-	authed.HandleFunc("POST /volumes", s.handleVolumeCreate)
-	authed.HandleFunc("GET /volumes/{name}", s.handleVolumeDetail)
-	authed.HandleFunc("POST /volumes/delete", s.handleVolumeDelete)
-	authed.HandleFunc("POST /volumes/prune", s.handleVolumePrune)
-	authed.HandleFunc("POST /volumes/backup", s.handleVolumeBackup)
-	authed.HandleFunc("GET /volumes/restore", s.handleVolumeRestorePage)
-	authed.HandleFunc("POST /volumes/restore/upload", s.handleVolumeRestoreUpload)
-	authed.HandleFunc("GET /volumes/restore/{id}", s.handleVolumeRestoreChoose)
-	authed.HandleFunc("POST /volumes/restore/{id}", s.handleVolumeRestore)
-	authed.HandleFunc("POST /volumes/restore/{id}/discard", s.handleVolumeRestoreDiscard)
-	authed.HandleFunc("GET /volumes/files/{name}", s.handleVolumeFiles)
-	authed.HandleFunc("GET /partials/volume-files/{name}", s.handleVolumeFilesPartial)
-	authed.HandleFunc("GET /volumes/files/{name}/raw", s.handleVolumeFileRaw)
-	authed.HandleFunc("GET /volumes/files/{name}/edit", s.handleVolumeFileEdit)
-	authed.HandleFunc("POST /volumes/files/{name}/save", s.handleVolumeFileSave)
-	authed.HandleFunc("POST /volumes/files/{name}/upload", s.handleVolumeUpload)
-	authed.HandleFunc("POST /volumes/files/{name}/mkdir", s.handleVolumeMkdir)
-	authed.HandleFunc("POST /volumes/files/{name}/newfile", s.handleVolumeNewFile)
-	authed.HandleFunc("POST /volumes/files/{name}/rename", s.handleVolumeRename)
-	authed.HandleFunc("POST /volumes/files/{name}/delete", s.handleVolumeRemovePath)
-	authed.HandleFunc("GET /networks", s.handleNetworks)
-	authed.HandleFunc("GET /partials/networks", s.handleNetworksPartial)
-	authed.HandleFunc("GET /networks/new", s.handleNetworkNew)
-	authed.HandleFunc("POST /networks", s.handleNetworkCreate)
-	authed.HandleFunc("GET /networks/{name}", s.handleNetworkDetail)
-	authed.HandleFunc("POST /networks/delete", s.handleNetworkDelete)
-	authed.HandleFunc("POST /networks/prune", s.handleNetworkPrune)
-	authed.HandleFunc("POST /networks/{name}/connect", s.handleNetworkConnect)
-	authed.HandleFunc("POST /networks/{name}/disconnect", s.handleNetworkDisconnect)
 	authed.HandleFunc("GET /partials/activity", s.handleActivityPartial)
 	authed.HandleFunc("POST /activity/clear", s.handleActivityClear)
-	authed.HandleFunc("GET /compose", s.handleCompose)
-	authed.HandleFunc("GET /partials/compose", s.handleComposePartial)
-	authed.HandleFunc("GET /partials/compose/{project}", s.handleComposeProjectPartial)
-	authed.HandleFunc("GET /compose/new", s.handleComposeNew)
-	authed.HandleFunc("POST /compose", s.handleComposeCreate)
-	authed.HandleFunc("POST /compose/validate", s.handleComposeValidate)
-	authed.HandleFunc("GET /compose/{project}", s.handleComposeDetail)
-	authed.HandleFunc("GET /compose/{project}/edit", s.handleComposeEdit)
-	authed.HandleFunc("POST /compose/{project}", s.handleComposeUpdate)
-	authed.HandleFunc("POST /compose/{project}/{action}", s.handleComposeAction)
 	authed.HandleFunc("GET /system", s.handleSystem)
 	authed.HandleFunc("GET /partials/system", s.handleSystemPartial)
 	authed.HandleFunc("GET /system/licenses", s.handleLicenses)
@@ -322,6 +266,87 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("/", s.requireAuth(s.checkCSRF(authed)))
 
 	return s.recoverer(s.logRequests(securityHeaders(s.checkOrigin(mux))))
+}
+
+// registerRuntimeRoutes adds the pages of a container runtime.
+func (s *Server) registerRuntimeRoutes(m *http.ServeMux) {
+	m.HandleFunc("GET /{$}", s.handleDashboard)
+	m.HandleFunc("GET /partials/dashboard", s.handleDashboardPartial)
+	m.HandleFunc("GET /containers", s.handleContainers)
+	m.HandleFunc("GET /partials/containers", s.handleContainersPartial)
+	m.HandleFunc("GET /containers/new", s.handleContainerNew)
+	m.HandleFunc("POST /containers", s.handleContainerCreate)
+	m.HandleFunc("GET /containers/new/scratch", s.handleContainerScratch)
+	// Literal paths: a {source} wildcard would clash with /containers/{id}/edit.
+	for src := range importSources {
+		m.HandleFunc("GET /containers/new/"+src, s.handleContainerImportPage)
+		m.HandleFunc("POST /containers/new/"+src, s.handleContainerImport)
+	}
+	m.HandleFunc("GET /containers/{id}", s.handleContainerDetail)
+	m.HandleFunc("POST /containers/{id}/{action}", s.handleContainerAction)
+	m.HandleFunc("GET /containers/{id}/edit", s.handleContainerEdit)
+	m.HandleFunc("POST /containers/{id}/edit", s.handleContainerEditSave)
+	m.HandleFunc("POST /containers/{id}/update", s.handleContainerUpdate)
+	m.HandleFunc("POST /containers/{id}/recreate", s.handleContainerRecreate)
+	m.HandleFunc("GET /partials/containers/{id}/job", s.handleRecreateJobPartial)
+	m.HandleFunc("GET /containers/{id}/terminal", s.handleTerminalPage)
+	m.HandleFunc("GET /containers/{id}/terminal/ws", s.handleTerminalWS)
+	m.HandleFunc("GET /containers/{id}/attach", s.handleAttachPage)
+	m.HandleFunc("GET /containers/{id}/attach/ws", s.handleAttachWS)
+	m.HandleFunc("GET /containers/{id}/logs/download", s.handleLogsDownload)
+	m.HandleFunc("GET /containers/{id}/logs/watch", s.handleLogsWatch)
+	m.HandleFunc("GET /containers/{id}/logs/stream", s.handleLogsStream)
+	m.HandleFunc("GET /images", s.handleImages)
+	m.HandleFunc("GET /partials/images", s.handleImagesPartial)
+	m.HandleFunc("GET /images/pull", s.handleImagePullPage)
+	m.HandleFunc("POST /images/pull", s.handleImagePull)
+	m.HandleFunc("POST /images/check-updates", s.handleImageCheckUpdates)
+	m.HandleFunc("POST /images/tag", s.handleImageTag)
+	m.HandleFunc("POST /images/delete", s.handleImageDelete)
+	m.HandleFunc("POST /images/prune", s.handleImagePrune)
+	m.HandleFunc("GET /images/{ref...}", s.handleImageDetail)
+	m.HandleFunc("GET /volumes", s.handleVolumes)
+	m.HandleFunc("GET /partials/volumes", s.handleVolumesPartial)
+	m.HandleFunc("GET /volumes/new", s.handleVolumeNew)
+	m.HandleFunc("POST /volumes", s.handleVolumeCreate)
+	m.HandleFunc("GET /volumes/{name}", s.handleVolumeDetail)
+	m.HandleFunc("POST /volumes/delete", s.handleVolumeDelete)
+	m.HandleFunc("POST /volumes/prune", s.handleVolumePrune)
+	m.HandleFunc("POST /volumes/backup", s.handleVolumeBackup)
+	m.HandleFunc("GET /volumes/restore", s.handleVolumeRestorePage)
+	m.HandleFunc("POST /volumes/restore/upload", s.handleVolumeRestoreUpload)
+	m.HandleFunc("GET /volumes/restore/{id}", s.handleVolumeRestoreChoose)
+	m.HandleFunc("POST /volumes/restore/{id}", s.handleVolumeRestore)
+	m.HandleFunc("POST /volumes/restore/{id}/discard", s.handleVolumeRestoreDiscard)
+	m.HandleFunc("GET /volumes/files/{name}", s.handleVolumeFiles)
+	m.HandleFunc("GET /partials/volume-files/{name}", s.handleVolumeFilesPartial)
+	m.HandleFunc("GET /volumes/files/{name}/raw", s.handleVolumeFileRaw)
+	m.HandleFunc("GET /volumes/files/{name}/edit", s.handleVolumeFileEdit)
+	m.HandleFunc("POST /volumes/files/{name}/save", s.handleVolumeFileSave)
+	m.HandleFunc("POST /volumes/files/{name}/upload", s.handleVolumeUpload)
+	m.HandleFunc("POST /volumes/files/{name}/mkdir", s.handleVolumeMkdir)
+	m.HandleFunc("POST /volumes/files/{name}/newfile", s.handleVolumeNewFile)
+	m.HandleFunc("POST /volumes/files/{name}/rename", s.handleVolumeRename)
+	m.HandleFunc("POST /volumes/files/{name}/delete", s.handleVolumeRemovePath)
+	m.HandleFunc("GET /networks", s.handleNetworks)
+	m.HandleFunc("GET /partials/networks", s.handleNetworksPartial)
+	m.HandleFunc("GET /networks/new", s.handleNetworkNew)
+	m.HandleFunc("POST /networks", s.handleNetworkCreate)
+	m.HandleFunc("GET /networks/{name}", s.handleNetworkDetail)
+	m.HandleFunc("POST /networks/delete", s.handleNetworkDelete)
+	m.HandleFunc("POST /networks/prune", s.handleNetworkPrune)
+	m.HandleFunc("POST /networks/{name}/connect", s.handleNetworkConnect)
+	m.HandleFunc("POST /networks/{name}/disconnect", s.handleNetworkDisconnect)
+	m.HandleFunc("GET /compose", s.handleCompose)
+	m.HandleFunc("GET /partials/compose", s.handleComposePartial)
+	m.HandleFunc("GET /partials/compose/{project}", s.handleComposeProjectPartial)
+	m.HandleFunc("GET /compose/new", s.handleComposeNew)
+	m.HandleFunc("POST /compose", s.handleComposeCreate)
+	m.HandleFunc("POST /compose/validate", s.handleComposeValidate)
+	m.HandleFunc("GET /compose/{project}", s.handleComposeDetail)
+	m.HandleFunc("GET /compose/{project}/edit", s.handleComposeEdit)
+	m.HandleFunc("POST /compose/{project}", s.handleComposeUpdate)
+	m.HandleFunc("POST /compose/{project}/{action}", s.handleComposeAction)
 }
 
 type ctxKey struct{}
@@ -493,6 +518,7 @@ type page struct {
 	User        string
 	CSRF        string
 	Runtime     string
+	Kube        bool // Kubernetes mode: the cluster navigation
 	Caps        runtime.Capabilities
 	Flash       *flash
 	Data        any
@@ -533,7 +559,7 @@ func userError(err error) string {
 }
 
 func (s *Server) newPage(r *http.Request, title, active string, data any) page {
-	p := page{Title: title, Active: active, Runtime: s.rt.Name(), Caps: s.caps(), Data: data}
+	p := page{Title: title, Active: active, Runtime: s.rt.Name(), Kube: s.kube != nil, Caps: s.caps(), Data: data}
 	if s.events != nil {
 		p.HasEvents, p.EventsUnread = true, s.events.Unread()
 	}

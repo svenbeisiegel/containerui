@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -26,13 +27,15 @@ const FileName = "config.yaml"
 
 // Config is the root configuration document.
 type Config struct {
-	Server   Server   `yaml:"server"`
-	Runtime  Runtime  `yaml:"runtime"`
-	Events   Events   `yaml:"events"`
-	Activity Activity `yaml:"activity"`
-	Registry Registry `yaml:"registry"`
-	Metrics  Metrics  `yaml:"metrics"`
-	Users    []User   `yaml:"users"`
+	Server  Server  `yaml:"server"`
+	Runtime Runtime `yaml:"runtime"`
+	// Kubernetes configures runtime.driver kubernetes (Linux).
+	Kubernetes Kubernetes `yaml:"kubernetes"`
+	Events     Events     `yaml:"events"`
+	Activity   Activity   `yaml:"activity"`
+	Registry   Registry   `yaml:"registry"`
+	Metrics    Metrics    `yaml:"metrics"`
+	Users      []User     `yaml:"users"`
 
 	// Dir is the directory the config file was loaded from. Relative paths
 	// (TLS files) are resolved against it.
@@ -160,6 +163,26 @@ type Metrics struct {
 	DiskInterval time.Duration `yaml:"disk_interval"`
 }
 
+// DriverKubernetes is the runtime.driver that shows a Kubernetes cluster
+// (Linux) instead of a container runtime.
+const DriverKubernetes = "kubernetes"
+
+// Kubernetes is how ContainerUI reaches a cluster's API server when
+// runtime.driver is kubernetes.
+type Kubernetes struct {
+	// Kubeconfig is the kubeconfig file; empty = $KUBECONFIG,
+	// ~/.kube/config, /etc/rancher/rke2/rke2.yaml, /etc/rancher/k3s/k3s.yaml,
+	// then the service account when running in a pod.
+	Kubeconfig string `yaml:"kubeconfig"`
+	// Context is the kubeconfig context; empty = its current context.
+	Context string `yaml:"context"`
+	// Namespaces limits the UI to these namespaces; empty = all.
+	Namespaces []string `yaml:"namespaces"`
+	// RequestTimeout bounds one API request (watches and log streams are
+	// not bounded).
+	RequestTimeout time.Duration `yaml:"request_timeout"`
+}
+
 // User is a login account. Either PasswordHash (bcrypt, preferred) or
 // Password (plaintext) must be set.
 type User struct {
@@ -190,9 +213,10 @@ func Default() *Config {
 			// Fully qualified, so podman needs no short-name resolution.
 			VolumeHelperImage: "docker.io/library/busybox:stable",
 		},
-		Events:   Events{Dir: "events"},
-		Registry: Registry{CheckUpdates: &on, CheckInterval: 30 * time.Minute, Timeout: 10 * time.Second, Insecure: []string{}},
-		Metrics:  Metrics{Interval: time.Minute, DashboardInterval: 10 * time.Second, DiskInterval: time.Hour},
+		Kubernetes: Kubernetes{RequestTimeout: 30 * time.Second},
+		Events:     Events{Dir: "events"},
+		Registry:   Registry{CheckUpdates: &on, CheckInterval: 30 * time.Minute, Timeout: 10 * time.Second, Insecure: []string{}},
+		Metrics:    Metrics{Interval: time.Minute, DashboardInterval: 10 * time.Second, DiskInterval: time.Hour},
 	}
 }
 
@@ -373,6 +397,7 @@ func (c *Config) applyDefaults() {
 	c.Runtime.ComposeDir = cmp(c.Runtime.ComposeDir, d.Runtime.ComposeDir)
 	c.Runtime.VolumeHelperImage = cmp(c.Runtime.VolumeHelperImage, d.Runtime.VolumeHelperImage)
 	c.Runtime.Socket = SocketPath(c.Runtime.Socket)
+	c.Kubernetes.RequestTimeout = cmp(c.Kubernetes.RequestTimeout, d.Kubernetes.RequestTimeout)
 	c.Metrics.Interval = cmp(c.Metrics.Interval, d.Metrics.Interval)
 	c.Metrics.DashboardInterval = cmp(c.Metrics.DashboardInterval, d.Metrics.DashboardInterval)
 	c.Metrics.DiskInterval = cmp(c.Metrics.DiskInterval, d.Metrics.DiskInterval)
@@ -429,6 +454,14 @@ func (c *Config) validate() error {
 	if s := c.Runtime.Socket; s != "" && strings.Contains(s, "://") {
 		errs = append(errs, fmt.Errorf("runtime.socket %q: only unix:// sockets and npipe:// pipes are supported", s))
 	}
+	for i, ns := range c.Kubernetes.Namespaces {
+		if !dnsLabel.MatchString(ns) {
+			errs = append(errs, fmt.Errorf("kubernetes.namespaces[%d] %q: not a valid namespace name", i, ns))
+		}
+	}
+	if c.Kubernetes.RequestTimeout < time.Second {
+		errs = append(errs, fmt.Errorf("kubernetes.request_timeout %s: must be at least 1s", c.Kubernetes.RequestTimeout))
+	}
 	m := c.Metrics
 	if m.Interval < 10*time.Second {
 		errs = append(errs, fmt.Errorf("metrics.interval %s: must be at least 10s", m.Interval))
@@ -447,6 +480,9 @@ func (c *Config) validate() error {
 	}
 	return errors.Join(errs...)
 }
+
+// dnsLabel is a Kubernetes namespace name (RFC 1123 label).
+var dnsLabel = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$`)
 
 // SocketPath turns a runtime.socket value into a path: "unix:///x" becomes
 // "/x", a Windows "npipe:////./pipe/x" becomes `\\.\pipe\x`. Other schemes are

@@ -36,9 +36,10 @@ server:
   mfa_file: ""
 
 runtime:
-  # Container runtime: auto, wslc, docker, podman or fake (in-memory demo
-  # data). auto picks the first one that is installed and answers
-  # (Windows: wslc, docker, podman; Linux: docker, podman).
+  # Container runtime: auto, wslc, docker, podman, kubernetes (Linux, see
+  # the kubernetes section) or fake (in-memory demo data). auto picks the
+  # first one that is installed and answers (Windows: wslc, docker, podman;
+  # Linux: docker, podman); it never picks kubernetes.
   driver: auto
   path: ""                # CLI binary; empty = wslc.exe / docker / podman on PATH
   session: ""             # wslc only; empty = the CLI's default session
@@ -63,6 +64,18 @@ runtime:
   # Uploaded backups wait here until they are restored (at most 24 hours).
   # Empty = volume-uploads next to the compose folder.
   volume_upload_dir: ""
+
+# runtime.driver kubernetes (Linux): the cluster's API server. The
+# kubeconfig needs a client certificate or token (exec plugins are not
+# supported). Empty = $KUBECONFIG, ~/.kube/config, then the admin
+# kubeconfig of RKE2 (/etc/rancher/rke2/rke2.yaml) or K3s, then the
+# service account when ContainerUI runs in a pod. Prefer a kubeconfig of a
+# service account with only the rights ContainerUI needs over the admin one.
+kubernetes:
+  kubeconfig: ""
+  context: ""             # empty = the kubeconfig's current context
+  namespaces: []          # limit the UI to these namespaces; empty = all
+  request_timeout: 30s    # one API request (log streams and watches run on)
 
 # Linux: the errors of the systemd journal (priority err and worse) are
 # kept for 7 days and shown on the Events page, one JSON Lines file per

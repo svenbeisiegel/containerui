@@ -46,3 +46,29 @@ func (f verifierFunc) Verify(u, p string) (string, bool) {
 	}
 	return "", false
 }
+
+func TestFileReadable(t *testing.T) {
+	kubeconfig := SocketOwner{UID: 0, GID: 990, Mode: 0o640} // root:containerui -rw-r-----
+	for _, c := range []struct {
+		name string
+		uid  string
+		gids []string
+		want bool
+	}{
+		{"root", "0", nil, true},
+		{"group member", "1000", []string{"100", "990"}, true},
+		{"other", "1000", []string{"100"}, false},
+	} {
+		if got := fileReadable(c.uid, c.gids, kubeconfig); got != c.want {
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		}
+	}
+	// RKE2's default rke2.yaml is 0644: everyone may read it.
+	if !fileReadable("1000", nil, SocketOwner{UID: 0, GID: 0, Mode: 0o644}) {
+		t.Error("a world-readable file must be readable")
+	}
+	// The owner class decides even if others may read.
+	if fileReadable("1000", nil, SocketOwner{UID: 1000, GID: 0, Mode: 0o044}) {
+		t.Error("owner without read permission must not read")
+	}
+}

@@ -295,3 +295,38 @@ func TestMFASetting(t *testing.T) {
 		t.Errorf("MFAPath with mfa_file = %s", got)
 	}
 }
+
+func TestKubernetesSection(t *testing.T) {
+	cfg, err := Parse(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k := cfg.Kubernetes; k.Kubeconfig != "" || k.Context != "" || len(k.Namespaces) != 0 || k.RequestTimeout != 30*time.Second {
+		t.Errorf("defaults = %+v", k)
+	}
+	cfg, err = Parse([]byte(`
+runtime: { driver: kubernetes }
+kubernetes:
+  kubeconfig: /etc/containerui/kubeconfig
+  context: kube-1
+  namespaces: [osem, longhorn-system]
+  request_timeout: 1m
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if k := cfg.Kubernetes; cfg.Runtime.Driver != "kubernetes" || k.Kubeconfig != "/etc/containerui/kubeconfig" ||
+		k.Context != "kube-1" || strings.Join(k.Namespaces, ",") != "osem,longhorn-system" || k.RequestTimeout != time.Minute {
+		t.Errorf("parsed = %+v", k)
+	}
+	for doc, field := range map[string]string{
+		"kubernetes: { namespaces: [Osem] }":       "kubernetes.namespaces[0]",
+		"kubernetes: { namespaces: [a_b] }":        "kubernetes.namespaces[0]",
+		"kubernetes: { request_timeout: 100ms }":   "kubernetes.request_timeout",
+		"kubernetes: { namespaces: [ok, '-bad'] }": "kubernetes.namespaces[1]",
+	} {
+		if _, err := Parse([]byte(doc)); err == nil || !strings.Contains(err.Error(), field) {
+			t.Errorf("%s: err = %v, want %s", doc, err, field)
+		}
+	}
+}

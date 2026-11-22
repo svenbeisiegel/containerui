@@ -34,6 +34,7 @@ import (
 	"github.com/svenbeisiegel/containerui/internal/config"
 	"github.com/svenbeisiegel/containerui/internal/events"
 	"github.com/svenbeisiegel/containerui/internal/jobs"
+	"github.com/svenbeisiegel/containerui/internal/kube"
 	"github.com/svenbeisiegel/containerui/internal/logfile"
 	"github.com/svenbeisiegel/containerui/internal/registry"
 	"github.com/svenbeisiegel/containerui/internal/runtime"
@@ -123,7 +124,7 @@ func serve(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	var o serveOptions
 	fs.StringVar(&o.configPath, "config", "", "path to the YAML config file (default: "+config.FileName+" in the package's data folder, or next to the executable of a development build; created if missing)")
-	fs.StringVar(&o.driver, "driver", "", "override runtime.driver from the config (available: "+strings.Join(runtime.Drivers(), ", ")+")")
+	fs.StringVar(&o.driver, "driver", "", "override runtime.driver from the config (available: "+strings.Join(append(runtime.Drivers(), config.DriverKubernetes+" (Linux)"), ", ")+")")
 	fs.BoolVar(&o.debug, "debug", false, "enable debug logging")
 	fs.StringVar(&o.logFile, "logfile", "", "write the log to this file, rotated by size, instead of standard error")
 	_ = fs.Parse(args)
@@ -185,12 +186,22 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		users = u
 	}
 
-	rt, err := runtime.Open(cfg.Runtime)
-	if err != nil {
-		return err
-	}
-	if d, ok := rt.(*cli.Driver); ok {
-		log.Info("container runtime selected", "driver", d.Name(), "path", d.Path())
+	// Kubernetes mode shows a cluster instead of a container runtime.
+	kubeMode := cfg.Runtime.Driver == config.DriverKubernetes
+	var rt runtime.Runtime
+	var cluster *kube.Cluster
+	kubeconfigFile := ""
+	if kubeMode {
+		if cluster, kubeconfigFile, err = openKube(cfg, log); err != nil {
+			return err
+		}
+	} else {
+		if rt, err = runtime.Open(cfg.Runtime); err != nil {
+			return err
+		}
+		if d, ok := rt.(*cli.Driver); ok {
+			log.Info("container runtime selected", "driver", d.Name(), "path", d.Path())
+		}
 	}
 
 	if linuxAuth || windowsAuth {
@@ -201,6 +212,10 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		sys, err := auth.NewSystem(cfg.Server.PAMService, socket, log)
 		if err != nil {
 			return err
+		}
+		if kubeMode && kubeconfigFile != "" {
+			requireKubeconfig(sys, kubeconfigFile)
+			log.Info("sign-in requires read permission on the kubeconfig", "kubeconfig", kubeconfigFile)
 		}
 		if linuxAuth {
 			if len(cfg.Users) > 0 {
@@ -226,7 +241,17 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		}
 	}()
 
-	if info, err := rt.Info(ctx); err != nil {
+	if kubeMode {
+		cluster.Run(ctx)
+		start := time.Now()
+		syncCtx, cancelSync := context.WithTimeout(ctx, 30*time.Second)
+		if cluster.WaitSynced(syncCtx) {
+			log.Info("kubernetes resources loaded", "took", time.Since(start).Round(time.Millisecond))
+		} else if st := cluster.State(kube.Watched...); st.Err != "" {
+			log.Warn("some kubernetes resources could not be loaded; retrying in the background", "error", st.Err)
+		}
+		cancelSync()
+	} else if info, err := rt.Info(ctx); err != nil {
 		log.Warn("container runtime not reachable; the UI will show errors until it is", "driver", rt.Name(), "error", err)
 	} else {
 		log.Info("container runtime", "driver", info.Driver, "version", info.Version)
@@ -244,7 +269,9 @@ func run(o serveOptions, stop <-chan struct{}) error {
 	} else {
 		log.Info("activity history", "file", activityFile, "kept", jobs.MaxHistory)
 	}
-	if caps := rt.Capabilities(); caps.Compose {
+	if kubeMode {
+		log.Debug("compose not available in kubernetes mode")
+	} else if caps := rt.Capabilities(); caps.Compose {
 		log.Info("compose available", "tool", caps.ComposeVersion, "dir", cfg.Resolve(cfg.Runtime.ComposeDir))
 	} else {
 		log.Debug("compose not available (needs docker or podman with a compose tool)")
@@ -253,7 +280,7 @@ func run(o serveOptions, stop <-chan struct{}) error {
 	evStore := openEvents(ctx, cfg, log)
 
 	var scanner *updates.Scanner
-	if rc := cfg.Registry; rc.CheckUpdatesOn() {
+	if rc := cfg.Registry; rc.CheckUpdatesOn() && !kubeMode {
 		authFile := ""
 		if rc.AuthFile != "" {
 			authFile = cfg.Resolve(rc.AuthFile)
@@ -285,6 +312,7 @@ func run(o serveOptions, stop <-chan struct{}) error {
 
 	s, err := web.New(web.Options{
 		Runtime:  rt,
+		Kube:     cluster,
 		Stater:   stater,
 		Metrics:  cfg.Metrics,
 		Users:    users,

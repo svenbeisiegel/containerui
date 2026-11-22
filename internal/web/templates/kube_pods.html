@@ -1,0 +1,10 @@
+{{define "content"}}
+<h1 class="sr-only">Pods</h1>
+<div class="page-head">
+  {{template "head_actions_open"}}
+    {{template "kube_ns_picker" .Data.NS}}
+    {{template "refresh_button" (dict "Href" (print "/pods?" .Data.NS.Q) "Get" (print "/partials/pods?" .Data.NS.Q) "Target" "#list")}}
+  {{template "head_actions_close"}}
+</div>
+{{template "kube_pods_body" .Data}}
+{{end}}

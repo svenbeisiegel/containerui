@@ -23,8 +23,17 @@ import (
 type System struct {
 	service string
 	socket  string
-	log     *slog.Logger
+	// file, when set, replaces the socket check: the account must be
+	// allowed to read this file (Kubernetes mode: the kubeconfig).
+	file string
+	log  *slog.Logger
 }
+
+// RequireReadable makes sign-in require read permission on path instead of
+// access to the runtime's socket: in Kubernetes mode ContainerUI acts with
+// the kubeconfig's credentials, so whoever may read it may sign in. root
+// may always.
+func (s *System) RequireReadable(path string) { s.file = path }
 
 // NewSystem loads libpam. service is the PAM service (/etc/pam.d/<service>),
 // socket the runtime's Unix socket or "".
@@ -61,6 +70,9 @@ func (s *System) Verify(username, password string) (string, bool) {
 }
 
 func (s *System) mayUseRuntime(u *user.User) error {
+	if s.file != "" {
+		return mayRead(u, s.file)
+	}
 	if s.socket == "" {
 		if u.Uid == "0" || u.Uid == strconv.Itoa(os.Getuid()) {
 			return nil
@@ -81,6 +93,25 @@ func (s *System) mayUseRuntime(u *user.User) error {
 	}
 	if !socketAllows(u.Uid, gids, SocketOwner{UID: st.Uid, GID: st.Gid, Mode: fi.Mode()}) {
 		return fmt.Errorf("no read/write permission on %s", s.socket)
+	}
+	return nil
+}
+
+func mayRead(u *user.User, path string) error {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	if !ok {
+		return fmt.Errorf("stat %s: no owner information", path)
+	}
+	gids, err := u.GroupIds()
+	if err != nil {
+		return err
+	}
+	if !fileReadable(u.Uid, gids, SocketOwner{UID: st.Uid, GID: st.Gid, Mode: fi.Mode()}) {
+		return fmt.Errorf("no read permission on %s", path)
 	}
 	return nil
 }

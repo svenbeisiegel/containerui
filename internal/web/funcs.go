@@ -68,6 +68,11 @@ var funcs = template.FuncMap{
 	"splitPorts": func(s string) []string { return strings.Split(s, ", ") },
 	"size":       volbackup.FormatBytes,
 	"duration":   humanDuration,
+	// Kubernetes mode: the page of an object, a quantity for display and
+	// a compact age (5m, 3h, 11d) like kubectl's.
+	"kubeLink": kubeLink,
+	"quantity": quantity,
+	"age":      kubeAge,
 	"datetime": func(t time.Time) string {
 		if t.IsZero() {
 			return ""
@@ -106,6 +111,25 @@ func ago(t time.Time) string {
 		return plural(int(d.Hours()/24/30), "month") + " ago"
 	}
 	return plural(int(d.Hours()/24/365), "year") + " ago"
+}
+
+// kubeAge is the time since t, compact: "45s", "12m", "5h", "11d", "2y".
+func kubeAge(t time.Time) string {
+	if t.IsZero() {
+		return "–"
+	}
+	d := time.Since(t)
+	switch {
+	case d < time.Minute:
+		return fmt.Sprintf("%ds", max(int(d.Seconds()), 0))
+	case d < time.Hour:
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	case d < 48*time.Hour:
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	case d < 730*24*time.Hour:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
+	}
+	return fmt.Sprintf("%dy", int(d.Hours()/24/365))
 }
 
 func plural(n int, unit string) string {

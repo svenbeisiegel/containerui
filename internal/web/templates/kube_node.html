@@ -1,0 +1,51 @@
+{{define "content"}}
+{{$d := .Data.D}}{{$v := .Data.V}}
+{{template "kube_detail_head" $d}}
+{{template "kube_missing" $d}}
+{{if not $d.Missing}}{{$n := $v.Node}}
+<div class="cards stat-cards">
+  <div class="card"><span class="label">Status</span><span class="num">{{if $n.Ready}}<span class="badge ok">Ready</span>{{else}}<span class="badge bad">NotReady</span>{{end}}</span>{{if $n.Spec.Unschedulable}}<span class="sub"><span class="badge warn">cordoned</span></span>{{end}}</div>
+  <div class="card"><span class="label">Roles</span><span class="num mono-num">{{with $n.Roles}}{{join . ", "}}{{else}}–{{end}}</span></div>
+  <div class="card"><span class="label">Pods</span><span class="num">{{len $v.Pods}}</span><span class="sub">of {{index $n.Status.Allocatable "pods"}}</span></div>
+  <div class="card"><span class="label">CPU</span><span class="num">{{index $n.Status.Capacity "cpu"}}</span><span class="sub">cores</span></div>
+  <div class="card"><span class="label">Memory</span><span class="num">{{quantity "memory" (index $n.Status.Capacity "memory")}}</span></div>
+  <div class="card"><span class="label">Age</span><span class="num">{{age $n.Metadata.CreationTimestamp}}</span></div>
+</div>
+<div class="grid2">
+  <section class="panel">
+    <h2>System</h2>
+    <dl class="props">
+      {{with $n.InternalIP}}<dt>Internal IP</dt><dd class="mono">{{.}}</dd>{{end}}
+      <dt>Kubelet</dt><dd>{{$n.Status.NodeInfo.KubeletVersion}}</dd>
+      <dt>Container runtime</dt><dd>{{$n.Status.NodeInfo.ContainerRuntimeVersion}}</dd>
+      <dt>OS</dt><dd>{{$n.Status.NodeInfo.OSImage}}</dd>
+      <dt>Kernel</dt><dd>{{$n.Status.NodeInfo.KernelVersion}}</dd>
+      <dt>Architecture</dt><dd>{{$n.Status.NodeInfo.Architecture}}</dd>
+      {{with $n.Spec.PodCIDR}}<dt>Pod CIDR</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $n.Spec.Taints}}<dt>Taints</dt><dd>{{range .}}<div class="mono small">{{.Key}}{{with .Value}}={{.}}{{end}}:{{.Effect}}</div>{{end}}</dd>{{end}}
+    </dl>
+  </section>
+  <section class="panel">
+    <h2>Resources</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Resource</th><th>Capacity</th><th>Allocatable</th></tr></thead>
+      <tbody>{{range $v.Resources}}<tr><td class="mono small">{{.Name}}</td><td class="small">{{.Capacity}}</td><td class="small">{{.Allocatable}}</td></tr>{{end}}</tbody>
+    </table></div>
+  </section>
+</div>
+<section class="panel">
+  <h2>Conditions</h2>
+  {{template "kube_conditions" $n.Status.Conditions}}
+</section>
+<section class="panel">
+  <h2>Pods</h2>
+  {{template "kube_pods_table" (dict "Pods" $v.Pods "ShowNS" true "ShowOwner" true "Empty" "No pods run on this node.")}}
+</section>
+{{with $n.Metadata.Labels}}<section class="panel"><h2>Labels</h2>{{template "kv_list" .}}</section>{{end}}
+<section class="panel">
+  <h2>Events</h2>
+  {{template "kube_events_table" (dict "Events" $d.Events)}}
+</section>
+{{template "kube_yaml" $d.YAML}}
+{{end}}
+{{end}}

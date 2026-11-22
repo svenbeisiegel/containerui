@@ -21,16 +21,25 @@
     <span class="brand">ContainerUI</span>
     <nav>
       <a href="/" {{if eq .Active "dashboard"}}aria-current="page"{{end}}>Dashboard</a>
+      {{if .Kube}}
+      <a href="/workloads" {{if eq .Active "workloads"}}aria-current="page"{{end}}>Workloads</a>
+      <a href="/pods" {{if eq .Active "pods"}}aria-current="page"{{end}}>Pods</a>
+      <a href="/services" {{if eq .Active "services"}}aria-current="page"{{end}}>Services</a>
+      <a href="/storage" {{if eq .Active "storage"}}aria-current="page"{{end}}>Storage</a>
+      <a href="/nodes" {{if eq .Active "nodes"}}aria-current="page"{{end}}>Nodes</a>
+      <a href="/cluster-events" {{if eq .Active "cluster_events"}}aria-current="page"{{end}} title="Kubernetes events of the cluster">Cluster events</a>
+      {{else}}
       {{if .Caps.Compose}}<a href="/compose" {{if eq .Active "compose"}}aria-current="page"{{end}}>Compose</a>{{end}}
       <a href="/containers" {{if eq .Active "containers"}}aria-current="page"{{end}}>Containers</a>
       <a href="/images" {{if eq .Active "images"}}aria-current="page"{{end}}>Images</a>
       {{if .Caps.Volumes}}<a href="/volumes" {{if eq .Active "volumes"}}aria-current="page"{{end}}>Volumes</a>{{end}}
       {{if .Caps.Networks}}<a href="/networks" {{if eq .Active "networks"}}aria-current="page"{{end}}>Networks</a>{{end}}
+      {{end}}
       <a href="/system" {{if eq .Active "system"}}aria-current="page"{{end}}>System</a>
-      {{if .HasEvents}}<a href="/events" {{if eq .Active "events"}}aria-current="page"{{end}}>Events{{template "events_unread" .EventsUnread}}</a>{{end}}
+      {{if .HasEvents}}<a href="/events" {{if eq .Active "events"}}aria-current="page"{{end}}{{if .Kube}} title="Error events of this host's journal"{{end}}>{{if .Kube}}Host events{{else}}Events{{end}}{{template "events_unread" .EventsUnread}}</a>{{end}}
     </nav>
     <div class="session">
-      <span class="badge runtime" title="Container runtime driver">{{.Runtime}}</span>
+      <span class="badge runtime" title="{{if .Kube}}Kubernetes cluster{{else}}Container runtime driver{{end}}">{{.Runtime}}</span>
       <a class="user" href="/account" title="Account and two-factor sign-in"{{if eq .Active "account"}} aria-current="page"{{end}}>{{.User}}</a>
       {{template "theme_toggle"}}
       <form method="post" action="/logout">

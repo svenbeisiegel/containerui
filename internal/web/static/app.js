@@ -16,6 +16,13 @@ document.addEventListener("submit", function (e) {
   if (msg && !window.confirm(msg)) e.preventDefault();
 });
 
+// Submit a form when one of its fields marked data-autosubmit changes
+// (the namespace picker of the Kubernetes pages).
+document.addEventListener("change", function (e) {
+  var el = e.target;
+  if (el.matches && el.matches("[data-autosubmit]") && el.form) el.form.requestSubmit();
+});
+
 // Create form: "Create and attach" needs a TTY and STDIN. It submits into a
 // new tab, which ends on the attach page, so this tab moves on to the list.
 (function () {

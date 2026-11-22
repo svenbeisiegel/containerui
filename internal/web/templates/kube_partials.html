@@ -1,0 +1,384 @@
+{{/* ---------- Kubernetes mode: shared pieces ---------- */}}
+
+{{/* kube_ns_picker expects nsFilter. A plain GET form; app.js submits it on change. */}}
+{{define "kube_ns_picker"}}
+<form class="ns-picker" method="get" action="{{.Path}}">
+  {{range $k, $vs := .Query}}{{range $vs}}<input type="hidden" name="{{$k}}" value="{{.}}">{{end}}{{end}}
+  <select name="ns" data-autosubmit aria-label="Namespace" title="Namespace">
+    <option value="all"{{if not .Selected}} selected{{end}}>All namespaces</option>
+    {{$sel := .Selected}}{{range .Namespaces}}<option value="{{.}}"{{if eq . $sel}} selected{{end}}>{{.}}</option>{{end}}
+  </select>
+  <noscript><button type="submit">Show</button></noscript>
+</form>
+{{end}}
+
+{{/* kube_state expects kubeState. */}}
+{{define "kube_state"}}{{if .Err}}<div class="flash error" role="status">Kubernetes API: {{.Err}}</div>{{else if .Loading}}<div class="flash ok" role="status">Loading from the Kubernetes API…</div>{{end}}{{end}}
+
+{{define "kube_yaml"}}{{if .}}
+<section class="panel">
+  <details class="inspect">
+    <summary><h2>YAML</h2><span class="muted small">the object as the API server returns it, without managed fields</span></summary>
+    <pre class="log">{{.}}</pre>
+  </details>
+</section>
+{{end}}{{end}}
+
+{{define "kube_kind_badge"}}<span class="badge info" title="{{.}}">{{.}}</span>{{end}}
+
+{{/* kube_pods_table expects dict: Pods ([]podRow), ShowNS, ShowNode, ShowOwner, Empty. */}}
+{{define "kube_pods_table"}}
+<div class="table-wrap"><table>
+  <thead><tr><th>Name</th>{{if .ShowNS}}<th>Namespace</th>{{end}}<th>Status</th><th>Ready</th><th>Restarts</th>{{if .ShowOwner}}<th class="wide-only">Owner</th>{{end}}{{if .ShowNode}}<th class="wide-only">Node</th>{{end}}<th class="wide-only">IP</th><th class="right">Age</th></tr></thead>
+  <tbody>
+  {{$o := .}}
+  {{range .Pods}}
+    <tr>
+      <td class="mono"><a href="{{kubeLink "Pod" .Metadata.Namespace .Metadata.Name}}">{{.Metadata.Name}}</a></td>
+      {{if $o.ShowNS}}<td class="small">{{.Metadata.Namespace}}</td>{{end}}
+      <td><span class="badge {{.StatusClass}}">{{.StatusText}}</span></td>
+      <td>{{.ReadyCount}}/{{len .Spec.Containers}}</td>
+      <td>{{.Restarts}}{{with .LastRestart}}{{if not .IsZero}} <span class="muted small">({{age .}} ago)</span>{{end}}{{end}}</td>
+      {{if $o.ShowOwner}}<td class="small wide-only">{{if .OwnerKind}}{{if .OwnerLink}}<a href="{{.OwnerLink}}">{{.OwnerName}}</a>{{else}}{{.OwnerName}}{{end}} <span class="muted">{{.OwnerKind}}</span>{{else}}<span class="muted">–</span>{{end}}</td>{{end}}
+      {{if $o.ShowNode}}<td class="small wide-only">{{with .Spec.NodeName}}<a href="{{kubeLink "Node" "" .}}">{{.}}</a>{{else}}<span class="muted">–</span>{{end}}</td>{{end}}
+      <td class="mono small wide-only">{{with .Status.PodIP}}{{.}}{{else}}<span class="muted">–</span>{{end}}</td>
+      <td class="right small" title="{{datetime .Metadata.CreationTimestamp}}">{{age .Metadata.CreationTimestamp}}</td>
+    </tr>
+  {{else}}
+    <tr><td colspan="9" class="empty">{{or .Empty "No pods."}}</td></tr>
+  {{end}}
+  </tbody>
+</table></div>
+{{end}}
+
+{{/* kube_events_table expects dict: Events ([]kubeEvent), ShowNS, ShowObject, Empty. */}}
+{{define "kube_events_table"}}
+<div class="table-wrap"><table>
+  <thead><tr><th>Last seen</th><th>Type</th><th>Reason</th>{{if .ShowObject}}<th>Object</th>{{end}}<th>Message</th><th class="right wide-only">Count</th></tr></thead>
+  <tbody>
+  {{$o := .}}
+  {{range .Events}}
+    <tr>
+      <td class="small" title="{{datetime .LastSeen}}">{{age .LastSeen}} ago</td>
+      <td>{{if .Warning}}<span class="badge warn">Warning</span>{{else}}<span class="badge">{{.Type}}</span>{{end}}</td>
+      <td class="small">{{.Reason}}</td>
+      {{if $o.ShowObject}}<td class="small">{{if .Link}}<a href="{{.Link}}">{{.InvolvedObject.Name}}</a>{{else}}{{.InvolvedObject.Name}}{{end}} <span class="muted">{{.InvolvedObject.Kind}}{{if and $o.ShowNS .InvolvedObject.Namespace}} · {{.InvolvedObject.Namespace}}{{end}}</span></td>{{end}}
+      <td class="small break">{{.Message}}{{with .Component}} <span class="muted">— {{.}}</span>{{end}}</td>
+      <td class="right small wide-only">{{.Times}}</td>
+    </tr>
+  {{else}}
+    <tr><td colspan="6" class="empty">{{or .Empty "No events. The API server keeps events for about an hour."}}</td></tr>
+  {{end}}
+  </tbody>
+</table></div>
+{{end}}
+
+{{/* kube_containers expects dict: Containers ([]kube.Container), Pod (*kube.Pod or nil). */}}
+{{define "kube_containers"}}
+<div class="table-wrap"><table>
+  <thead><tr><th>Container</th><th>Image</th>{{if .Pod}}<th>State</th><th>Ready</th><th>Restarts</th>{{end}}<th class="wide-only">Ports</th><th class="wide-only">Requests / limits</th></tr></thead>
+  <tbody>
+  {{$pod := .Pod}}
+  {{range .Containers}}
+    <tr>
+      <td class="mono">{{.Name}}</td>
+      <td class="mono small break">{{.Image}}</td>
+      {{if $pod}}{{with $pod.ContainerStatus .Name}}
+      <td class="small">{{.State}}{{with .LastState.Terminated}}<div class="muted">last: {{.Reason}} (exit {{.ExitCode}}) {{age .FinishedAt}} ago</div>{{end}}</td>
+      <td>{{if .Ready}}<span class="badge ok">yes</span>{{else}}<span class="badge warn">no</span>{{end}}</td>
+      <td>{{.RestartCount}}</td>
+      {{else}}<td class="muted small">–</td><td></td><td></td>{{end}}{{end}}
+      <td class="small wide-only">{{range $i, $p := .Ports}}{{if $i}}, {{end}}{{$p.ContainerPort}}/{{or $p.Protocol "TCP"}}{{with $p.Name}} <span class="muted">{{.}}</span>{{end}}{{else}}<span class="muted">–</span>{{end}}</td>
+      <td class="small wide-only">{{template "kube_resources" .Resources}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table></div>
+{{end}}
+
+{{define "kube_resources"}}{{if or .Requests .Limits}}{{with .Requests}}{{with index . "cpu"}}cpu {{.}} {{end}}{{with index . "memory"}}mem {{.}}{{end}}{{else}}<span class="muted">–</span>{{end}} / {{with .Limits}}{{with index . "cpu"}}cpu {{.}} {{end}}{{with index . "memory"}}mem {{.}}{{end}}{{else}}<span class="muted">–</span>{{end}}{{else}}<span class="muted">none</span>{{end}}{{end}}
+
+{{define "kube_conditions"}}{{if .}}
+<div class="table-wrap"><table>
+  <thead><tr><th>Condition</th><th>Status</th><th>Reason</th><th class="wide-only">Message</th><th class="right">Since</th></tr></thead>
+  <tbody>
+  {{range .}}
+    <tr>
+      <td class="small">{{.Type}}</td>
+      <td>{{if eq .Status "True"}}<span class="badge ok">True</span>{{else if eq .Status "False"}}<span class="badge">False</span>{{else}}<span class="badge warn">{{.Status}}</span>{{end}}</td>
+      <td class="small">{{with .Reason}}{{.}}{{else}}<span class="muted">–</span>{{end}}</td>
+      <td class="small wide-only break">{{.Message}}</td>
+      <td class="right small">{{if not .LastTransitionTime.IsZero}}{{age .LastTransitionTime}}{{end}}</td>
+    </tr>
+  {{end}}
+  </tbody>
+</table></div>
+{{else}}<p class="empty">No conditions reported.</p>{{end}}{{end}}
+
+{{define "kube_missing"}}{{if .Missing}}{{if .State.Loading}}<div class="flash ok" role="status">Loading from the Kubernetes API…</div>{{else}}<div class="flash error" role="status">{{.Kind}} {{if .Namespace}}{{.Namespace}}/{{end}}{{.Name}} was not found. It may have been deleted{{if .State.Err}}, or the API cannot be read: {{.State.Err}}{{end}}.</div>{{end}}{{end}}{{end}}
+
+{{define "kube_detail_head"}}
+<div class="page-head">
+  <div class="title-row">{{template "back_button" .Back}}<h1 class="wrap">{{.Name}}</h1></div>
+  <div class="muted small">{{.Kind}}{{with .Namespace}} in namespace <a href="{{$.Back}}?ns={{.}}">{{.}}</a>{{end}}</div>
+</div>
+{{end}}
+
+{{/* ---------- dashboard ---------- */}}
+{{define "kube_dashboard_body"}}
+<div id="dashboard" hx-get="/partials/dashboard" hx-trigger="every 10s" hx-swap="outerHTML">
+  {{template "kube_state" .State}}
+  <section class="cards">
+    <a class="card" href="/nodes">
+      <span class="num">{{.NodesReady}}/{{len .Nodes}}</span><span class="label">nodes ready</span>
+      <span class="sub">{{if eq .NodesReady (len .Nodes)}}all ready{{else}}<span class="badge bad">not all ready</span>{{end}}</span>
+    </a>
+    <a class="card" href="/pods">
+      <span class="num">{{.PodsRunning}}/{{.Pods}}</span><span class="label">pods running and ready</span>
+      <span class="sub">{{if .PodsPending}}{{.PodsPending}} pending{{end}}{{if and .PodsPending .PodsFailing}} · {{end}}{{if .PodsFailing}}<span class="badge bad">{{.PodsFailing}} failing</span>{{end}}{{if not (or .PodsPending .PodsFailing)}}finished job pods not counted{{end}}</span>
+    </a>
+    <a class="card" href="/workloads">
+      <span class="num">{{.WorkloadsReady}}/{{.Workloads}}</span><span class="label">workloads healthy</span>
+      <span class="sub">{{.Namespaces}} {{if eq .Namespaces 1}}namespace{{else}}namespaces{{end}}{{if .Limited}} (limited){{end}}</span>
+    </a>
+    <a class="card" href="/cluster-events?type=warning">
+      <span class="num">{{.Warnings}}</span><span class="label">warnings in the last hour</span>
+      <span class="sub">cluster events</span>
+    </a>
+  </section>
+
+  {{if or .Unhealthy .ProblemPods}}
+  <section class="panel">
+    <h2>Needs attention</h2>
+    {{with .Unhealthy}}
+    <div class="table-wrap"><table>
+      <thead><tr><th>Workload</th><th>Kind</th><th>Namespace</th><th>Ready</th></tr></thead>
+      <tbody>{{range .}}<tr>
+        <td class="mono"><a href="{{kubeLink .Kind .Meta.Namespace .Meta.Name}}">{{.Meta.Name}}</a></td>
+        <td>{{template "kube_kind_badge" .Kind}}</td><td class="small">{{.Meta.Namespace}}</td>
+        <td><span class="badge warn">{{.ReadyText}}</span>{{if .Failed}} <span class="badge bad">failed</span>{{end}}</td>
+      </tr>{{end}}</tbody>
+    </table></div>
+    {{end}}
+    {{with .ProblemPods}}
+    <h3 class="subhead">Pods failing or restarted in the last hour</h3>
+    {{template "kube_pods_table" (dict "Pods" . "ShowNS" true "ShowNode" true "ShowOwner" true)}}
+    {{end}}
+  </section>
+  {{end}}
+
+  <div class="grid2">
+    <section class="panel">
+      <h2>Nodes</h2>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Node</th><th>Status</th><th class="wide-only">Roles</th><th>Pods</th><th class="wide-only">Version</th></tr></thead>
+        <tbody>
+        {{$counts := .NodePods}}
+        {{range .Nodes}}<tr>
+          <td class="mono"><a href="{{kubeLink "Node" "" .Metadata.Name}}">{{.Metadata.Name}}</a></td>
+          <td>{{if .Ready}}<span class="badge ok">Ready</span>{{else}}<span class="badge bad">NotReady</span>{{end}}{{range .Problems}}{{if ne . "NotReady"}} <span class="badge warn">{{.}}</span>{{end}}{{end}}{{if .Spec.Unschedulable}} <span class="badge warn">cordoned</span>{{end}}</td>
+          <td class="small wide-only">{{join .Roles ", "}}</td>
+          <td>{{index $counts .Metadata.Name}}</td>
+          <td class="small wide-only">{{.Status.NodeInfo.KubeletVersion}}</td>
+        </tr>{{else}}<tr><td colspan="5" class="empty">No nodes visible.</td></tr>{{end}}
+        </tbody>
+      </table></div>
+    </section>
+    <section class="panel">
+      <h2>Recent warnings</h2>
+      {{template "kube_events_table" (dict "Events" .RecentWarnings "ShowObject" true "ShowNS" true "Empty" "No warnings in the last hour.")}}
+    </section>
+  </div>
+</div>
+{{end}}
+
+{{/* ---------- list bodies (kubeListPage) ---------- */}}
+{{define "kube_workloads_body"}}
+<section id="list" class="panel" hx-get="/partials/workloads?{{.NS.Q}}" hx-trigger="every 10s" hx-swap="outerHTML">
+  {{template "kube_state" .State}}
+  {{$runs := .Data.Runs}}{{$all := not .NS.Selected}}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>Kind</th>{{if $all}}<th>Namespace</th>{{end}}<th>Ready</th><th class="wide-only">Images</th><th class="right">Age</th></tr></thead>
+    <tbody>
+    {{range .Data.Workloads}}
+      <tr>
+        <td class="mono"><a href="{{kubeLink .Kind .Meta.Namespace .Meta.Name}}">{{.Meta.Name}}</a></td>
+        <td>{{template "kube_kind_badge" .Kind}}</td>
+        {{if $all}}<td class="small">{{.Meta.Namespace}}</td>{{end}}
+        <td>{{if eq .Kind "CronJob"}}{{with index .Extra 0}}<span class="mono small">{{.Value}}</span>{{end}}{{if .Suspended}} <span class="badge warn">suspended</span>{{end}}{{with index $runs (printf "%s/%s" .Meta.Namespace .Meta.Name)}} <span class="muted small">{{.}} jobs kept</span>{{end}}
+            {{else if .Healthy}}<span class="badge ok">{{.ReadyText}}</span>{{if .Complete}} <span class="muted small">complete</span>{{end}}
+            {{else}}<span class="badge {{if .Failed}}bad{{else}}warn{{end}}">{{.ReadyText}}</span>{{end}}</td>
+        <td class="mono small wide-only break">{{join .Images ", "}}</td>
+        <td class="right small" title="{{datetime .Meta.CreationTimestamp}}">{{age .Meta.CreationTimestamp}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="6" class="empty">{{if .State.Loading}}Loading…{{else}}No workloads{{with .NS.Selected}} in namespace {{.}}{{end}}.{{end}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  <p class="footnote">Jobs started by a CronJob are listed on the CronJob's page.</p>
+</section>
+{{end}}
+
+{{define "kube_pods_body"}}
+<section id="list" class="panel" hx-get="/partials/pods?{{.NS.Q}}" hx-trigger="every 10s" hx-swap="outerHTML">
+  {{template "kube_state" .State}}
+  {{template "kube_pods_table" (dict "Pods" .Data.Pods "ShowNS" (not .NS.Selected) "ShowNode" true "ShowOwner" true "Empty" (print "No pods" (or (and .NS.Selected (print " in namespace " .NS.Selected)) "") "."))}}
+  {{if .Data.ShowAll}}<p class="footnote"><a href="/pods?ns={{or .NS.Selected "all"}}">Hide finished pods</a></p>
+  {{else if .Data.Finished}}<p class="footnote">{{.Data.Finished}} finished {{if eq .Data.Finished 1}}pod{{else}}pods{{end}} (completed jobs) hidden. <a href="/pods?ns={{or .NS.Selected "all"}}&amp;finished=1">Show them</a></p>{{end}}
+</section>
+{{end}}
+
+{{define "kube_services_body"}}
+<section id="list" hx-get="/partials/services?{{.NS.Q}}" hx-trigger="every 10s" hx-swap="outerHTML">
+  {{template "kube_state" .State}}
+  {{$all := not .NS.Selected}}
+  <section class="panel">
+    <h2>Services</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th>{{if $all}}<th>Namespace</th>{{end}}<th>Type</th><th class="wide-only">Cluster IP</th><th>External</th><th>Ports</th><th class="wide-only">Pods</th><th class="right">Age</th></tr></thead>
+      <tbody>
+      {{range .Data.Services}}
+        <tr>
+          <td class="mono"><a href="{{kubeLink "Service" .Metadata.Namespace .Metadata.Name}}">{{.Metadata.Name}}</a></td>
+          {{if $all}}<td class="small">{{.Metadata.Namespace}}</td>{{end}}
+          <td class="small">{{.Spec.Type}}</td>
+          <td class="mono small wide-only">{{.Spec.ClusterIP}}</td>
+          <td class="mono small">{{with .External}}{{join . ", "}}{{else}}{{if eq .Spec.Type "LoadBalancer"}}<span class="badge warn">pending</span>{{else}}<span class="muted">–</span>{{end}}{{end}}</td>
+          <td class="mono small">{{range $i, $p := .Spec.Ports}}{{if $i}}<br>{{end}}{{$p.String}}{{end}}</td>
+          <td class="small wide-only">{{if .Spec.Selector}}{{if eq .ReadyPods .Pods}}{{if .Pods}}<span class="badge ok">{{.ReadyPods}}/{{.Pods}}</span>{{else}}<span class="badge warn">none</span>{{end}}{{else}}<span class="badge warn">{{.ReadyPods}}/{{.Pods}}</span>{{end}}{{else}}<span class="muted">no selector</span>{{end}}</td>
+          <td class="right small" title="{{datetime .Metadata.CreationTimestamp}}">{{age .Metadata.CreationTimestamp}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="8" class="empty">No services.</td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+  </section>
+  {{with .Data.Ingresses}}
+  <section class="panel">
+    <h2>Ingresses</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th>{{if $all}}<th>Namespace</th>{{end}}<th class="wide-only">Class</th><th>Routes</th><th>Address</th><th class="right">Age</th></tr></thead>
+      <tbody>
+      {{range .}}
+        <tr>
+          <td class="mono">{{.Metadata.Name}}</td>
+          {{if $all}}<td class="small">{{.Metadata.Namespace}}</td>{{end}}
+          <td class="small wide-only">{{with .Class}}{{.}}{{else}}<span class="muted">default</span>{{end}}</td>
+          <td class="mono small">{{$ns := .Metadata.Namespace}}{{range $i, $r := .Routes}}{{if $i}}<br>{{end}}{{$r.Host}}{{$r.Path}}{{with $r.Service}} → <a href="{{kubeLink "Service" $ns .}}">{{.}}</a>:{{$r.Port}}{{end}}{{end}}</td>
+          <td class="mono small">{{with .Status.LoadBalancer.Addresses}}{{join . ", "}}{{else}}<span class="muted">–</span>{{end}}</td>
+          <td class="right small">{{age .Metadata.CreationTimestamp}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+  </section>
+  {{end}}
+</section>
+{{end}}
+
+{{define "kube_storage_body"}}
+<section id="list" hx-get="/partials/storage?{{.NS.Q}}" hx-trigger="every 10s" hx-swap="outerHTML">
+  {{template "kube_state" .State}}
+  {{$all := not .NS.Selected}}
+  <section class="panel">
+    <h2>Persistent volume claims</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th>{{if $all}}<th>Namespace</th>{{end}}<th>Status</th><th>Size</th><th class="wide-only">Access</th><th class="wide-only">Storage class</th><th>Used by</th><th class="right">Age</th></tr></thead>
+      <tbody>
+      {{range .Data.PVCs}}
+        <tr>
+          <td class="mono"><a href="{{kubeLink "PersistentVolumeClaim" .Metadata.Namespace .Metadata.Name}}">{{.Metadata.Name}}</a></td>
+          {{if $all}}<td class="small">{{.Metadata.Namespace}}</td>{{end}}
+          <td>{{if eq .Status.Phase "Bound"}}<span class="badge ok">Bound</span>{{else if eq .Status.Phase "Lost"}}<span class="badge bad">Lost</span>{{else}}<span class="badge warn">{{.Status.Phase}}</span>{{end}}</td>
+          <td class="small">{{quantity "storage" .Size}}</td>
+          <td class="small wide-only">{{join .Spec.AccessModes ", "}}</td>
+          <td class="small wide-only">{{with .StorageClass}}{{.}}{{else}}<span class="muted">–</span>{{end}}</td>
+          <td class="small">{{$ns := .Metadata.Namespace}}{{range $i, $p := .UsedBy}}{{if $i}}, {{end}}<a href="{{kubeLink "Pod" $ns $p}}">{{$p}}</a>{{else}}<span class="muted">unused</span>{{end}}</td>
+          <td class="right small">{{age .Metadata.CreationTimestamp}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="8" class="empty">No persistent volume claims.</td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+  </section>
+  <section class="panel">
+    <h2>Persistent volumes</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Capacity</th><th>Status</th><th>Claim</th><th class="wide-only">Reclaim</th><th class="wide-only">Class</th><th class="wide-only">Backend</th><th class="right">Age</th></tr></thead>
+      <tbody>
+      {{range .Data.PVs}}
+        <tr>
+          <td class="mono small">{{.Metadata.Name}}</td>
+          <td class="small">{{quantity "storage" (index .Spec.Capacity "storage")}}</td>
+          <td>{{if eq .Status.Phase "Bound"}}<span class="badge ok">Bound</span>{{else if eq .Status.Phase "Available"}}<span class="badge info">Available</span>{{else if eq .Status.Phase "Released"}}<span class="badge warn">Released</span>{{else}}<span class="badge bad">{{.Status.Phase}}</span>{{end}}</td>
+          <td class="small">{{with .Spec.ClaimRef}}<a href="{{kubeLink "PersistentVolumeClaim" .Namespace .Name}}">{{.Name}}</a> <span class="muted">{{.Namespace}}</span>{{else}}<span class="muted">–</span>{{end}}</td>
+          <td class="small wide-only">{{.Spec.PersistentVolumeReclaimPolicy}}</td>
+          <td class="small wide-only">{{.Spec.StorageClassName}}</td>
+          <td class="small wide-only">{{.Backend}}</td>
+          <td class="right small">{{age .Metadata.CreationTimestamp}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="8" class="empty">No persistent volumes{{if not $all}} bound in this namespace{{end}}.</td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+  </section>
+  <section class="panel">
+    <h2>Storage classes</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Provisioner</th><th class="wide-only">Reclaim</th><th class="wide-only">Binding</th><th>Expansion</th></tr></thead>
+      <tbody>
+      {{range .Data.Classes}}
+        <tr>
+          <td class="mono">{{.Metadata.Name}}{{if .Default}} <span class="badge info">default</span>{{end}}</td>
+          <td class="small">{{.Provisioner}}</td>
+          <td class="small wide-only">{{.ReclaimPolicy}}</td>
+          <td class="small wide-only">{{.VolumeBindingMode}}</td>
+          <td>{{if .Expandable}}<span class="badge ok">yes</span>{{else}}<span class="muted">no</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="5" class="empty">No storage classes.</td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+  </section>
+</section>
+{{end}}
+
+{{define "kube_nodes_body"}}
+<section id="list" class="panel" hx-get="/partials/nodes" hx-trigger="every 10s" hx-swap="outerHTML">
+  {{template "kube_state" .State}}
+  <div class="table-wrap"><table>
+    <thead><tr><th>Name</th><th>Status</th><th class="wide-only">Roles</th><th class="wide-only">Internal IP</th><th>Pods</th><th class="wide-only">CPU</th><th class="wide-only">Memory</th><th class="wide-only">Version</th><th class="wide-only">OS</th><th class="right">Age</th></tr></thead>
+    <tbody>
+    {{range .Data}}
+      <tr>
+        <td class="mono"><a href="{{kubeLink "Node" "" .Metadata.Name}}">{{.Metadata.Name}}</a></td>
+        <td>{{if .Ready}}<span class="badge ok">Ready</span>{{else}}<span class="badge bad">NotReady</span>{{end}}{{range .Problems}}{{if ne . "NotReady"}} <span class="badge warn">{{.}}</span>{{end}}{{end}}{{if .Spec.Unschedulable}} <span class="badge warn">cordoned</span>{{end}}</td>
+        <td class="small wide-only">{{join .Roles ", "}}</td>
+        <td class="mono small wide-only">{{.InternalIP}}</td>
+        <td>{{.Pods}}<span class="muted small"> / {{index .Status.Allocatable "pods"}}</span></td>
+        <td class="small wide-only">{{index .Status.Capacity "cpu"}} cores</td>
+        <td class="small wide-only">{{quantity "memory" (index .Status.Capacity "memory")}}</td>
+        <td class="small wide-only">{{.Status.NodeInfo.KubeletVersion}}</td>
+        <td class="small wide-only">{{.Status.NodeInfo.OSImage}}</td>
+        <td class="right small">{{age .Metadata.CreationTimestamp}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="10" class="empty">{{if .State.Loading}}Loading…{{else}}No nodes visible.{{end}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+{{end}}
+
+{{define "kube_cluster_events_body"}}
+<section id="list" class="panel" hx-get="/partials/cluster-events?{{.NS.Q}}" hx-trigger="every 10s" hx-swap="outerHTML">
+  {{template "kube_state" .State}}
+  {{template "kube_events_table" (dict "Events" .Data.Events "ShowObject" true "ShowNS" (not .NS.Selected) "Empty" (print "No " (or (and .Data.Warnings "warning ") "") "events. The API server keeps events for about an hour."))}}
+  {{if gt .Data.Total (len .Data.Events)}}<p class="footnote">Showing the newest {{len .Data.Events}} of {{.Data.Total}}.</p>{{end}}
+</section>
+{{end}}

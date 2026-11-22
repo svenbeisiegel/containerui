@@ -1,0 +1,7 @@
+{{define "content"}}
+<h1 class="sr-only">Dashboard</h1>
+<div class="page-head">
+  <div class="actions">{{template "refresh_button" (dict "Href" "/" "Get" "/partials/dashboard" "Target" "#dashboard")}}</div>
+</div>
+{{template "kube_dashboard_body" .Data}}
+{{end}}

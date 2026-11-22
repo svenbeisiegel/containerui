@@ -1,0 +1,48 @@
+{{define "content"}}
+{{$d := .Data.D}}{{$v := .Data.V}}
+{{template "kube_detail_head" $d}}
+{{template "kube_missing" $d}}
+{{if not $d.Missing}}{{$c := $v.PVC}}
+<div class="cards stat-cards">
+  <div class="card"><span class="label">Status</span><span class="num">{{if eq $c.Status.Phase "Bound"}}<span class="badge ok">Bound</span>{{else}}<span class="badge warn">{{$c.Status.Phase}}</span>{{end}}</span></div>
+  <div class="card"><span class="label">Size</span><span class="num">{{quantity "storage" $c.Size}}</span></div>
+  <div class="card"><span class="label">Storage class</span><span class="num mono-num">{{or $c.StorageClass "–"}}</span></div>
+  <div class="card"><span class="label">Used by</span><span class="num">{{len $v.Pods}}</span><span class="sub">pods</span></div>
+  <div class="card"><span class="label">Age</span><span class="num">{{age $c.Metadata.CreationTimestamp}}</span></div>
+</div>
+<div class="grid2">
+  <section class="panel">
+    <h2>Claim</h2>
+    <dl class="props">
+      <dt>Namespace</dt><dd>{{$c.Metadata.Namespace}}</dd>
+      <dt>Access modes</dt><dd>{{join $c.Spec.AccessModes ", "}}</dd>
+      <dt>Requested</dt><dd>{{quantity "storage" (index $c.Spec.Resources.Requests "storage")}}</dd>
+      {{with $c.Spec.VolumeMode}}<dt>Volume mode</dt><dd>{{.}}</dd>{{end}}
+      {{with $c.Spec.VolumeName}}<dt>Volume</dt><dd class="mono small break">{{.}}</dd>{{end}}
+    </dl>
+  </section>
+  {{with $v.PV}}
+  <section class="panel">
+    <h2>Persistent volume</h2>
+    <dl class="props">
+      <dt>Name</dt><dd class="mono small break">{{.Metadata.Name}}</dd>
+      <dt>Capacity</dt><dd>{{quantity "storage" (index .Spec.Capacity "storage")}}</dd>
+      <dt>Status</dt><dd>{{.Status.Phase}}</dd>
+      <dt>Reclaim policy</dt><dd>{{.Spec.PersistentVolumeReclaimPolicy}}</dd>
+      {{with .Backend}}<dt>Backend</dt><dd>{{.}}</dd>{{end}}
+      {{with .Spec.CSI}}<dt>Volume handle</dt><dd class="mono small break">{{.VolumeHandle}}</dd>{{end}}
+    </dl>
+  </section>
+  {{end}}
+</div>
+<section class="panel">
+  <h2>Pods</h2>
+  {{template "kube_pods_table" (dict "Pods" $v.Pods "ShowNode" true "ShowOwner" true "Empty" "No running pod mounts this claim.")}}
+</section>
+<section class="panel">
+  <h2>Events</h2>
+  {{template "kube_events_table" (dict "Events" $d.Events)}}
+</section>
+{{template "kube_yaml" $d.YAML}}
+{{end}}
+{{end}}

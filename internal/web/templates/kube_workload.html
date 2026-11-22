@@ -1,0 +1,76 @@
+{{define "content"}}
+{{$d := .Data.D}}{{$v := .Data.V}}
+{{template "kube_detail_head" $d}}
+{{template "kube_missing" $d}}
+{{if not $d.Missing}}{{$w := $v.W}}
+<div class="cards stat-cards">
+  <div class="card"><span class="label">Kind</span><span class="num">{{$w.Kind}}</span></div>
+  {{if eq $w.Kind "CronJob"}}
+  <div class="card"><span class="label">Schedule</span><span class="num mono-num">{{with index $w.Extra 0}}{{.Value}}{{end}}</span>{{if $w.Suspended}}<span class="sub"><span class="badge warn">suspended</span></span>{{end}}</div>
+  <div class="card"><span class="label">Active jobs</span><span class="num">{{$w.Ready}}</span></div>
+  <div class="card"><span class="label">Jobs kept</span><span class="num">{{len $v.Jobs}}</span></div>
+  {{else if eq $w.Kind "Job"}}
+  <div class="card"><span class="label">Succeeded</span><span class="num">{{$w.ReadyText}}</span>{{if $w.Complete}}<span class="sub"><span class="badge ok">complete</span></span>{{else if $w.Failed}}<span class="sub"><span class="badge bad">failed</span></span>{{end}}</div>
+  {{else}}
+  <div class="card"><span class="label">Ready</span><span class="num">{{if $w.Healthy}}{{$w.ReadyText}}{{else}}<span class="badge warn">{{$w.ReadyText}}</span>{{end}}</span></div>
+  <div class="card"><span class="label">Up to date</span><span class="num">{{$w.Updated}}</span></div>
+  <div class="card"><span class="label">Available</span><span class="num">{{$w.Available}}</span></div>
+  {{end}}
+  <div class="card"><span class="label">Age</span><span class="num">{{age $w.Meta.CreationTimestamp}}</span></div>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Overview</h2>
+    <dl class="props">
+      <dt>Namespace</dt><dd>{{$w.Meta.Namespace}}</dd>
+      <dt>Created</dt><dd>{{datetime $w.Meta.CreationTimestamp}}</dd>
+      {{range $w.Extra}}<dt>{{.Key}}</dt><dd>{{.Value}}</dd>{{end}}
+      {{with $w.Meta.Controller}}<dt>Controlled by</dt><dd>{{with kubeLink .Kind $w.Meta.Namespace .Name}}<a href="{{.}}">{{end}}{{.Name}}{{with kubeLink .Kind $w.Meta.Namespace .Name}}</a>{{end}} <span class="muted">{{.Kind}}</span></dd>{{end}}
+      {{with $w.Selector}}<dt>Selector</dt><dd>{{template "kv_list" .}}</dd>{{end}}
+    </dl>
+  </section>
+  <section class="panel">
+    <h2>Conditions</h2>
+    {{template "kube_conditions" $w.Conditions}}
+  </section>
+</div>
+
+<section class="panel">
+  <h2>Containers</h2>
+  {{template "kube_containers" (dict "Containers" $w.Containers "Pod" nil)}}
+</section>
+
+{{if eq $w.Kind "CronJob"}}
+<section class="panel">
+  <h2>Jobs</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Job</th><th>Result</th><th>Started</th><th class="wide-only">Details</th></tr></thead>
+    <tbody>
+    {{range $v.Jobs}}
+      <tr>
+        <td class="mono"><a href="{{kubeLink "Job" .Meta.Namespace .Meta.Name}}">{{.Meta.Name}}</a></td>
+        <td>{{if .Complete}}<span class="badge ok">complete</span>{{else if .Failed}}<span class="badge bad">failed</span>{{else}}<span class="badge warn">running</span>{{end}}</td>
+        <td class="small" title="{{datetime .Meta.CreationTimestamp}}">{{ago .Meta.CreationTimestamp}}</td>
+        <td class="small wide-only">{{range $i, $e := .Extra}}{{if $i}} · {{end}}{{$e.Key}}: {{$e.Value}}{{end}}</td>
+      </tr>
+    {{else}}<tr><td colspan="4" class="empty">No jobs kept.</td></tr>{{end}}
+    </tbody>
+  </table></div>
+</section>
+{{end}}
+
+<section class="panel">
+  <h2>Pods</h2>
+  {{template "kube_pods_table" (dict "Pods" $v.Pods "ShowNode" true "Empty" "No pods.")}}
+</section>
+
+{{with $w.Meta.Labels}}<section class="panel"><h2>Labels</h2>{{template "kv_list" .}}</section>{{end}}
+
+<section class="panel">
+  <h2>Events</h2>
+  {{template "kube_events_table" (dict "Events" $d.Events)}}
+</section>
+{{template "kube_yaml" $d.YAML}}
+{{end}}
+{{end}}

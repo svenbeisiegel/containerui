@@ -1,0 +1,14 @@
+{{define "content"}}
+<h1 class="sr-only">Cluster events</h1>
+<div class="page-head">
+  {{template "head_actions_open"}}
+    {{template "kube_ns_picker" .Data.NS}}
+    <form method="get" action="/cluster-events" class="inline-form">
+      {{with .Data.NS.Selected}}<input type="hidden" name="ns" value="{{.}}">{{end}}
+      <label class="switch"><input type="checkbox" name="type" value="warning" data-autosubmit {{if .Data.Data.Warnings}}checked{{end}}><span class="track"></span> Warnings only</label>
+    </form>
+    {{template "refresh_button" (dict "Href" (print "/cluster-events?" .Data.NS.Q) "Get" (print "/partials/cluster-events?" .Data.NS.Q) "Target" "#list")}}
+  {{template "head_actions_close"}}
+</div>
+{{template "kube_cluster_events_body" .Data}}
+{{end}}

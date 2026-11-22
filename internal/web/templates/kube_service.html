@@ -1,0 +1,47 @@
+{{define "content"}}
+{{$d := .Data.D}}{{$v := .Data.V}}
+{{template "kube_detail_head" $d}}
+{{template "kube_missing" $d}}
+{{if not $d.Missing}}{{$s := $v.Svc}}
+<div class="cards stat-cards">
+  <div class="card"><span class="label">Type</span><span class="num">{{$s.Spec.Type}}</span></div>
+  <div class="card"><span class="label">Cluster IP</span><span class="num mono-num">{{$s.Spec.ClusterIP}}</span></div>
+  <div class="card"><span class="label">External</span><span class="num mono-num">{{with $s.External}}{{join . ", "}}{{else}}–{{end}}</span></div>
+  <div class="card"><span class="label">Pods</span><span class="num">{{len $v.Pods}}</span><span class="sub">{{if $s.Spec.Selector}}matching the selector{{else}}no selector{{end}}</span></div>
+  <div class="card"><span class="label">Age</span><span class="num">{{age $s.Metadata.CreationTimestamp}}</span></div>
+</div>
+<div class="grid2">
+  <section class="panel">
+    <h2>Ports</h2>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Name</th><th>Port</th><th>Target</th><th>Node port</th><th>Protocol</th></tr></thead>
+      <tbody>{{range $s.Spec.Ports}}<tr>
+        <td class="small">{{with .Name}}{{.}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="mono small">{{.Port}}</td>
+        <td class="mono small">{{printf "%s" .TargetPort}}</td>
+        <td class="mono small">{{if .NodePort}}{{.NodePort}}{{else}}<span class="muted">–</span>{{end}}</td>
+        <td class="small">{{or .Protocol "TCP"}}</td>
+      </tr>{{else}}<tr><td colspan="5" class="empty">No ports.</td></tr>{{end}}</tbody>
+    </table></div>
+  </section>
+  <section class="panel">
+    <h2>Overview</h2>
+    <dl class="props">
+      <dt>Namespace</dt><dd>{{$s.Metadata.Namespace}}</dd>
+      {{with $s.Spec.ExternalTrafficPolicy}}<dt>External traffic</dt><dd>{{.}}</dd>{{end}}
+      {{with $s.Spec.Selector}}<dt>Selector</dt><dd>{{template "kv_list" .}}</dd>{{end}}
+      {{with $s.Metadata.Annotations}}<dt>Annotations</dt><dd>{{template "kv_list" .}}</dd>{{end}}
+    </dl>
+  </section>
+</div>
+<section class="panel">
+  <h2>Pods</h2>
+  {{template "kube_pods_table" (dict "Pods" $v.Pods "ShowNode" true "ShowOwner" true "Empty" "No running pods match the selector.")}}
+</section>
+<section class="panel">
+  <h2>Events</h2>
+  {{template "kube_events_table" (dict "Events" $d.Events)}}
+</section>
+{{template "kube_yaml" $d.YAML}}
+{{end}}
+{{end}}

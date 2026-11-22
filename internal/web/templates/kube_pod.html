@@ -1,0 +1,77 @@
+{{define "content"}}
+{{$d := .Data.D}}{{$v := .Data.V}}
+{{template "kube_detail_head" $d}}
+{{template "kube_missing" $d}}
+{{if not $d.Missing}}{{$p := $v.Pod}}
+<div class="cards stat-cards">
+  <div class="card"><span class="label">Status</span><span class="num"><span class="badge {{$p.StatusClass}}">{{$p.StatusText}}</span></span>{{with $p.Status.Message}}<span class="sub">{{.}}</span>{{end}}</div>
+  <div class="card"><span class="label">Ready</span><span class="num">{{$p.ReadyCount}}/{{len $p.Spec.Containers}}</span><span class="sub">containers</span></div>
+  <div class="card"><span class="label">Restarts</span><span class="num">{{$p.Restarts}}</span>{{with $p.LastRestart}}{{if not .IsZero}}<span class="sub">last {{ago .}}</span>{{end}}{{end}}</div>
+  <div class="card"><span class="label">Node</span><span class="num mono-num">{{with $p.Spec.NodeName}}<a href="{{kubeLink "Node" "" .}}">{{.}}</a>{{else}}–{{end}}</span></div>
+  <div class="card"><span class="label">Pod IP</span><span class="num mono-num">{{or $p.Status.PodIP "–"}}</span></div>
+  <div class="card"><span class="label">Age</span><span class="num">{{age $p.Metadata.CreationTimestamp}}</span></div>
+</div>
+
+<div class="grid2">
+  <section class="panel">
+    <h2>Overview</h2>
+    <dl class="props">
+      <dt>Namespace</dt><dd>{{$p.Metadata.Namespace}}</dd>
+      <dt>Controlled by</dt><dd>{{if $p.OwnerKind}}{{if $p.OwnerLink}}<a href="{{$p.OwnerLink}}">{{$p.OwnerName}}</a>{{else}}{{$p.OwnerName}}{{end}} <span class="muted">{{$p.OwnerKind}}</span>{{else}}<span class="muted">nothing (a bare pod)</span>{{end}}</dd>
+      <dt>Created</dt><dd>{{datetime $p.Metadata.CreationTimestamp}}</dd>
+      {{with $p.Status.StartTime}}<dt>Started</dt><dd>{{datetime .}}</dd>{{end}}
+      {{with $p.Status.HostIP}}<dt>Host IP</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $p.Status.QOSClass}}<dt>QoS class</dt><dd>{{.}}</dd>{{end}}
+      {{with $p.Spec.ServiceAccountName}}<dt>Service account</dt><dd class="mono">{{.}}</dd>{{end}}
+      {{with $p.Spec.RestartPolicy}}<dt>Restart policy</dt><dd>{{.}}</dd>{{end}}
+      {{if $p.Spec.HostNetwork}}<dt>Network</dt><dd><span class="badge warn">host network</span></dd>{{end}}
+      <dt>UID</dt><dd class="mono small break">{{$p.Metadata.UID}}</dd>
+    </dl>
+  </section>
+  <section class="panel">
+    <h2>Conditions</h2>
+    {{template "kube_conditions" $p.Status.Conditions}}
+  </section>
+</div>
+
+<section class="panel">
+  <h2>Containers</h2>
+  {{template "kube_containers" (dict "Containers" $p.Spec.Containers "Pod" $p.Pod)}}
+  {{with $p.Spec.InitContainers}}
+  <h3 class="subhead">Init containers</h3>
+  {{template "kube_containers" (dict "Containers" . "Pod" $p.Pod)}}
+  {{end}}
+</section>
+
+{{with $p.Spec.Volumes}}
+<section class="panel">
+  <h2>Volumes</h2>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Volume</th><th>Source</th><th>Mounted at</th></tr></thead>
+    <tbody>
+    {{range .}}{{$vol := .}}
+      <tr>
+        <td class="mono small">{{.Name}}</td>
+        <td class="small">{{with .PersistentVolumeClaim}}PVC <a href="{{kubeLink "PersistentVolumeClaim" $p.Metadata.Namespace .ClaimName}}">{{.ClaimName}}</a>{{else}}{{.Source}}{{end}}</td>
+        <td class="mono small">{{range $p.Spec.Containers}}{{$c := .}}{{range .VolumeMounts}}{{if eq .Name $vol.Name}}{{.MountPath}}{{if .ReadOnly}} <span class="muted">ro</span>{{end}} <span class="muted">({{$c.Name}})</span><br>{{end}}{{end}}{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+</section>
+{{end}}
+
+{{if or $p.Metadata.Labels $p.Metadata.Annotations}}
+<div class="grid2">
+  {{with $p.Metadata.Labels}}<section class="panel"><h2>Labels</h2>{{template "kv_list" .}}</section>{{end}}
+  {{with $p.Metadata.Annotations}}<section class="panel"><h2>Annotations</h2>{{template "kv_list" .}}</section>{{end}}
+</div>
+{{end}}
+
+<section class="panel">
+  <h2>Events</h2>
+  {{template "kube_events_table" (dict "Events" $d.Events)}}
+</section>
+{{template "kube_yaml" $d.YAML}}
+{{end}}
+{{end}}

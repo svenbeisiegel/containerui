@@ -1,0 +1,7 @@
+{{define "content"}}
+<h1 class="sr-only">Nodes</h1>
+<div class="page-head">
+  <div class="actions">{{template "refresh_button" (dict "Href" "/nodes" "Get" "/partials/nodes" "Target" "#list")}}</div>
+</div>
+{{template "kube_nodes_body" .Data}}
+{{end}}
