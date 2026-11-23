@@ -181,9 +181,11 @@ func (s *Server) handleContainerDetail(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
+	var inspectErr error
 	if v.Caps.Inspect {
 		raw, err := s.rt.InspectContainer(r.Context(), id)
 		if err != nil {
+			inspectErr = err
 			v.Err = userError(err)
 		} else {
 			v.Inspect = prettyJSON(raw)
@@ -196,6 +198,11 @@ func (s *Server) handleContainerDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	if j := s.recreateJob(name); j != nil {
 		v.Job = &recreateJobView{Name: name, Job: j}
+	}
+	if v.Job != nil && !v.Job.Job.Done() && errors.Is(inspectErr, runtime.ErrNotFound) {
+		// A running recreate renamed the old container away after it was
+		// listed; the job panel reloads the page once it is done.
+		v.Err = ""
 	}
 	if v.Container == nil && v.Inspect == "" {
 		if v.Job != nil {

@@ -60,6 +60,9 @@ type Runtime struct {
 	NoVolumeBackup bool
 	// NoVolumeFiles hides the volume file browser (Capabilities.VolumeFiles).
 	NoVolumeFiles bool
+	// InspectErr, if set and returning an error, makes InspectContainer
+	// fail with it, e.g. a container renamed between a list and an inspect.
+	InspectErr func(id string) error
 
 	content map[string]map[string]volumeFile // volume content by volume name
 }
@@ -176,6 +179,11 @@ func (f *Runtime) InspectContainer(_ context.Context, id string) (json.RawMessag
 	defer f.mu.Unlock()
 	if err := f.record("inspect %s", id); err != nil {
 		return nil, err
+	}
+	if f.InspectErr != nil {
+		if err := f.InspectErr(id); err != nil {
+			return nil, err
+		}
 	}
 	c, err := f.find(id)
 	if err != nil {

@@ -418,3 +418,37 @@ func TestContainerMenuByState(t *testing.T) {
 		t.Errorf("compose container menu:\n%s", m)
 	}
 }
+
+// A container page loaded while a recreate renames the old container away
+// (listed, but gone by inspect) shows the job, not "not found".
+func TestContainerDetailDuringRecreate(t *testing.T) {
+	e := newEnv(t)
+	e.login()
+	e.rt.InspectErr = func(id string) error {
+		if id == "web" {
+			return &runtime.CommandError{Op: "container inspect", Output: "container web not found", Kind: runtime.ErrNotFound}
+		}
+		return nil
+	}
+	notFound := func() bool {
+		body := e.do("GET", "/containers/web", nil).Body.String()
+		return strings.Contains(body, "container web not found")
+	}
+	if !notFound() {
+		t.Error("inspect error without a recreate job is not shown")
+	}
+
+	release := make(chan struct{})
+	e.jobs.Start(jobRecreate, "web", "admin", func(ctx context.Context, log func(string)) error {
+		<-release
+		return nil
+	})
+	if notFound() {
+		t.Error("not found shown while the recreate job runs")
+	}
+	close(release)
+	e.jobs.Wait()
+	if !notFound() {
+		t.Error("inspect error after the recreate job finished is not shown")
+	}
+}
