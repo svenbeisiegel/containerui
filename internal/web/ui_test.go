@@ -376,7 +376,7 @@ func TestEmptyTables(t *testing.T) {
 	}
 	for path, want := range map[string]string{
 		"/partials/dashboard":  `class="empty">No containers are running.<`,
-		"/partials/containers": `<td colspan="6" class="empty">No containers yet. Use <em>Create container</em> to add one.`,
+		"/partials/containers": `<td colspan="7" class="empty">No containers yet. Use <em>Create container</em> to add one.`,
 		"/partials/images":     `<td colspan="6" class="empty">No images yet. Use <em>Pull image</em> to get one.`,
 		"/partials/volumes":    `<td colspan="7" class="empty">No volumes yet. Use <em>Create volume</em> to add one.`,
 	} {

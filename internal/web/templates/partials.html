@@ -277,21 +277,22 @@
   {{template "flash" .Flash}}
   {{if .Err}}<div class="flash error">{{.Err}}</div>{{end}}
   <div class="table-wrap"><table>
-    <thead><tr><th>Name</th><th class="wide-only">Image</th><th>State</th><th class="wide-only">Ports</th><th class="wide-only">Created</th><th class="right"><span class="wide-only">Actions</span></th></tr></thead>
+    <thead><tr><th>Name</th><th class="wide-only">Image</th><th>State</th><th class="wide-only">Ports</th><th class="wide-only">Created</th><th class="wide-only">Up</th><th class="right"><span class="wide-only">Actions</span></th></tr></thead>
     <tbody>
     {{$caps := .Caps}}{{$csrf := .CSRF}}{{$upd := .Updates}}
     {{range .Containers}}
       <tr>
-        <td><a href="/containers/{{.ID}}">{{.Name}}</a>{{with index $upd .ID}} <span class="badge warn update-tag wide-only" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update in the actions menu.">update</span>{{end}}<div class="id wide-only">{{shortID .ID}}</div>
+        <td><a href="/containers/{{.ID}}">{{.Name}}</a> <span class="badge {{runClass .State}}">{{.State}}</span>{{with index $upd .ID}} <span class="badge warn update-tag wide-only" title="A newer image is available: {{range $i, $u := .}}{{if $i}}, {{end}}{{$u.Ref}}{{end}}. Use Update in the actions menu.">update</span>{{end}}
           {{with index .Labels "com.docker.compose.project"}}{{if $caps.Compose}}<a class="tag wide-only" href="/compose/{{.}}" title="Compose project">{{.}}</a>{{else}}<span class="tag wide-only" title="Compose project">{{.}}</span>{{end}}{{end}}</td>
         <td class="mono wide-only">{{.Image}}</td>
-        <td>{{template "state" .State}}<div class="muted small wide-only">{{.Status}}</div></td>
+        <td>{{$h := health .Status}}<span class="badge {{healthClass $h}}">{{$h}}</span></td>
         <td class="mono small wide-only">{{.Ports}}</td>
         <td class="wide-only" title="{{datetime .Created}}">{{ago .Created}}</td>
+        <td class="wide-only">{{upStatus .Status}}</td>
         <td class="right">{{template "container_actions" (dict "C" . "Caps" $caps "View" "list" "CSRF" $csrf "Updates" (index $upd .ID) "Menu" true)}}</td>
       </tr>
     {{else}}
-      <tr><td colspan="6" class="empty">{{if .Err}}Could not load containers.{{else}}No containers yet. Use <em>Create container</em> to add one.{{end}}</td></tr>
+      <tr><td colspan="7" class="empty">{{if .Err}}Could not load containers.{{else}}No containers yet. Use <em>Create container</em> to add one.{{end}}</td></tr>
     {{end}}
     </tbody>
   </table></div>
@@ -344,7 +345,7 @@
     {{range .Images}}
       {{$u := index $upd .Ref}}
       <tr>
-        <td class="mono"><a href="/images/{{.Ref}}" title="{{.Repository}}"><span class="wide-only">{{.Repository}}</span><span class="narrow-only">{{imageName .Repository}}</span></a>{{if .InUse}}<span class="in-use wide-only" title="In use by {{.InUse}} container(s)">*</span>{{end}}</td>
+        <td class="mono"><a href="/images/{{.Ref}}" title="{{.Repository}}"><span class="wide-only">{{.Repository}}</span><span class="narrow-only">{{imageName .Repository}}</span></a>{{if .InUse}} <span class="badge ok wide-only" title="In use by {{.InUse}} container(s)">used</span>{{else}} <span class="badge wide-only" title="No container was created from this image">unused</span>{{end}}</td>
         <td class="mono">{{.Tag}}<span class="wide-only">{{if $u.Available}} <span class="badge warn update-tag" title="{{if $u.DigestChanged}}The registry has a newer image for this tag. {{end}}{{with $u.NewerTags}}Newer versions: {{range $i, $t := .}}{{if $i}}, {{end}}{{$t.Name}}{{end}}{{end}}">update</span>{{else if $u.Status.Err}} <span class="muted small" title="{{$u.Status.Err}}">not checked</span>{{else if $u.Status.TagGone}} <span class="muted small" title="The registry no longer has this tag{{with $u.NewerLocal}}; version {{.}} is already pulled{{end}}">not in registry</span>{{end}}</span></td>
         <td class="id wide-only" title="{{.ID}}">{{shortID .ID}}</td>
         <td class="wide-only">{{.Size}}</td>
@@ -522,7 +523,7 @@
     {{range .Volumes}}
       <tr>
         {{if $backup}}<td class="check"><input type="checkbox" name="volume" value="{{.Name}}" form="volume-backup-form" aria-label="Select {{.Name}}"{{if .InUse}} data-in-use{{end}}></td>{{end}}
-        <td class="mono"><a href="/volumes/{{.Name}}" title="{{.Name}}">{{if gt (len .Name) 40}}{{shortID .Name}}…{{else}}{{.Name}}{{end}}</a></td>
+        <td class="mono"><a href="/volumes/{{.Name}}" title="{{.Name}}">{{if gt (len .Name) 40}}{{shortID .Name}}…{{else}}{{.Name}}{{end}}</a>{{if .UsedBy}} <span class="badge ok wide-only" title="Used by {{len .UsedBy}} container(s)">used</span>{{else}} <span class="badge wide-only" title="No container mounts this volume">unused</span>{{end}}</td>
         <td class="wide-only">{{.Driver}}</td>
         <td class="wide-only">{{.Scope}}</td>
         <td>{{template "volume_users" .UsedBy}}</td>

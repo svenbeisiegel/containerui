@@ -247,7 +247,7 @@ func TestPagesRender(t *testing.T) {
 		"/containers/new/scratch":  {`name="image"`, "alpine:latest", "bridge"},
 		"/containers/new?image=x":  {`value="x"`},
 		"/containers/c0ffee000001": {"Inspect", "nginx:1.27", "Restart"},
-		"/images":                  {`href="/images/pull"`, "alpine", "nginx", "Tag…", `class="in-use wide-only"`, "Warning: this image is in use", activityTitle, "/static/drawer.js"},
+		"/images":                  {`href="/images/pull"`, "alpine", "nginx", "Tag…", `class="badge ok wide-only" title="In use by`, "Warning: this image is in use", activityTitle, "/static/drawer.js"},
 		"/images/pull":             {"Pull Image", `action="/images/pull"`, `name="ref"`, activityTitle},
 		"/partials/images":         {`id="images"`},
 		"/partials/activity":       {`id="activity-jobs"`},

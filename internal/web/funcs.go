@@ -13,10 +13,14 @@ import (
 )
 
 var funcs = template.FuncMap{
-	"shortID":   shortID,
-	"hasErrors": compose.HasErrors,
-	"ago":       ago,
-	"join":      strings.Join,
+	"shortID":     shortID,
+	"hasErrors":   compose.HasErrors,
+	"ago":         ago,
+	"join":        strings.Join,
+	"runClass":    runClass,
+	"health":      health,
+	"healthClass": healthClass,
+	"upStatus":    upStatus,
 	"stateClass": func(s runtime.State) string {
 		switch s {
 		case runtime.StateRunning:
@@ -204,4 +208,55 @@ func imageRef(ref string) imageRefParts {
 		p.Namespace = r.Repository[:i]
 	}
 	return p
+}
+
+// runClass colors a container's run-state tag in the containers table:
+// running green, stopped red, restarting yellow, everything else grey.
+func runClass(s runtime.State) string {
+	switch s {
+	case runtime.StateRunning:
+		return "ok"
+	case runtime.StateExited:
+		return "bad"
+	case runtime.StateRestarting:
+		return "warn"
+	}
+	return ""
+}
+
+// health reads the health state from a runtime's status text, which Docker
+// and Podman suffix with "(healthy)", "(unhealthy)" or "(health: starting)":
+// healthy, unhealthy, starting or none.
+func health(status string) string {
+	switch {
+	case strings.Contains(status, "(unhealthy)"):
+		return "unhealthy"
+	case strings.Contains(status, "(healthy)"):
+		return "healthy"
+	case strings.Contains(status, "(health: starting)"), strings.Contains(status, "(starting)"):
+		return "starting"
+	}
+	return "none"
+}
+
+// healthClass colors a health tag: healthy green, unhealthy red, else grey.
+func healthClass(h string) string {
+	switch h {
+	case "healthy":
+		return "ok"
+	case "unhealthy":
+		return "bad"
+	}
+	return ""
+}
+
+// upStatus is the runtime's status text without its health suffix, e.g.
+// "Up 4 hours" or "Exited (0) 40 hours ago".
+func upStatus(status string) string {
+	for _, suffix := range []string{"(healthy)", "(unhealthy)", "(health: starting)", "(starting)"} {
+		if i := strings.LastIndex(status, suffix); i >= 0 {
+			return strings.TrimSpace(status[:i] + status[i+len(suffix):])
+		}
+	}
+	return status
 }

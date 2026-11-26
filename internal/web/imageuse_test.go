@@ -65,10 +65,10 @@ func TestImagesInUseOnlyUsedTag(t *testing.T) {
 		t.Fatalf("no row for %s:\n%s", ref, page)
 		return ""
 	}
-	if r := row("nginx:1.27"); !strings.Contains(r, `class="in-use wide-only"`) || !strings.Contains(r, "Warning: this image is in use") {
+	if r := row("nginx:1.27"); !strings.Contains(r, `class="badge ok wide-only" title="In use by`) || !strings.Contains(r, "Warning: this image is in use") {
 		t.Errorf("nginx:1.27 not marked in use:\n%s", r)
 	}
-	if r := row("nginx:latest"); strings.Contains(r, `class="in-use wide-only"`) || strings.Contains(r, "Warning: this image is in use") {
+	if r := row("nginx:latest"); strings.Contains(r, `class="badge ok wide-only" title="In use by`) || strings.Contains(r, "Warning: this image is in use") {
 		t.Errorf("nginx:latest marked in use:\n%s", r)
 	}
 }
