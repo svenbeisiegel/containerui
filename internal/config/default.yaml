@@ -45,10 +45,14 @@ runtime:
   session: ""             # wslc only; empty = the CLI's default session
   # docker/podman: the daemon's Unix socket (/path or unix:///path). Empty =
   # $DOCKER_HOST, then /var/run/docker.sock (rootful podman:
-  # /run/podman/podman.sock). The CLI, the resource monitoring (which reads
-  # the API through it, falling back to the CLI) and the Linux sign-in check
-  # use it.
+  # /run/podman/podman.sock). The CLI, the Engine API access (see api) and
+  # the Linux sign-in check use it.
   socket: ""
+  # docker/podman: auto reads lists, inspect, logs, pulls, terminals and
+  # resource usage through the daemon's Engine API on that socket and uses
+  # the CLI where the socket cannot be used (and for compose, create,
+  # volume backups, ...); off always uses the CLI.
+  api: auto
   command_timeout: 30s    # list/start/stop/... calls
   pull_timeout: 30m       # image pulls and container create
   # Compose (docker/podman only; wslc has no compose). Empty = use the

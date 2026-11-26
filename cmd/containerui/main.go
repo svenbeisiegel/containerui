@@ -201,6 +201,7 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		}
 		if d, ok := rt.(*cli.Driver); ok {
 			log.Info("container runtime selected", "driver", d.Name(), "path", d.Path())
+			rt = wrapAPI(cfg, d, log)
 		}
 	}
 
@@ -291,17 +292,6 @@ func run(o serveOptions, stop <-chan struct{}) error {
 		go scanner.Run(ctx)
 	}
 
-	// Resource usage comes from the runtime API where its socket can be
-	// used, else from the CLI.
-	var stater runtime.Stater
-	if d, ok := rt.(*cli.Driver); ok && d.Capabilities().Stats {
-		if sock := d.APISocket(ctx); sock != "" {
-			stater = dockerapi.NewStater(sock, d, log)
-		} else {
-			log.Info("resource usage via the CLI: no runtime API socket found")
-		}
-	}
-
 	var mfa *auth.MFA
 	if cfg.Server.MFA != config.MFAOff {
 		if mfa, err = auth.OpenMFA(cfg.MFAPath()); err != nil {
@@ -313,7 +303,6 @@ func run(o serveOptions, stop <-chan struct{}) error {
 	s, err := web.New(web.Options{
 		Runtime:  rt,
 		Kube:     cluster,
-		Stater:   stater,
 		Metrics:  cfg.Metrics,
 		Users:    users,
 		Sessions: auth.NewSessions(cfg.Server.SessionIdleTimeout, cfg.Server.SessionAbsoluteTimeout),
@@ -414,6 +403,42 @@ func openEvents(ctx context.Context, cfg *config.Config, log *slog.Logger) *even
 // warmUp loads all dashboard data once before the listener starts, so the
 // first login doesn't pay for the runtime's cold start (wslc starts its
 // session on first use, which takes seconds).
+// wrapAPI returns the docker or podman driver d reading through the
+// Engine API on its socket where it can (runtime.api auto): lists,
+// inspect, logs, pulls, terminals and resource usage; the rest, and
+// everything while the socket cannot be used, goes through the CLI.
+// Otherwise, and for wslc, it returns d.
+func wrapAPI(cfg *config.Config, d *cli.Driver, log *slog.Logger) runtime.Runtime {
+	if d.Name() != cli.Docker.Name && d.Name() != cli.Podman.Name {
+		return d
+	}
+	if cfg.Runtime.API == config.APIOff {
+		log.Info("runtime API off (runtime.api): everything goes through the CLI", "driver", d.Name())
+		return d
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	sock := d.APISocket(ctx)
+	if sock == "" {
+		log.Info("no runtime API socket found: everything goes through the CLI", "driver", d.Name())
+		return d
+	}
+	authFile := ""
+	if cfg.Registry.AuthFile != "" {
+		authFile = cfg.Resolve(cfg.Registry.AuthFile)
+	}
+	w := dockerapi.Wrap(d, sock, dockerapi.Options{
+		Credentials: registry.FileCredentials(registry.DefaultAuthFiles(authFile)),
+		Logger:      log,
+	})
+	if w == nil {
+		return d
+	}
+	log.Info("runtime API: lists, inspect, logs, pulls, terminals and resource usage through the socket, the rest through the CLI",
+		"driver", d.Name(), "socket", sock)
+	return w
+}
+
 func warmUp(ctx context.Context, rt runtime.Runtime, log *slog.Logger) {
 	log.Info("warming up container runtime")
 	start := time.Now()

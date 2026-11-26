@@ -110,6 +110,9 @@ func NewWithRunner(r Runner, f *Flavor, cfg config.Runtime) *Driver {
 
 func (d *Driver) Name() string { return d.flavor.Name }
 
+// Timeouts returns runtime.command_timeout and runtime.pull_timeout.
+func (d *Driver) Timeouts() (command, pull time.Duration) { return d.commandTimeout, d.pullTimeout }
+
 // Path is the executable the driver runs ("" for a custom Runner).
 func (d *Driver) Path() string { return d.path }
 
@@ -363,6 +366,10 @@ func (d *Driver) containerOp(ctx context.Context, verb, id string, flags ...stri
 // shellProbe prints the path of the best available shell. It runs under
 // /bin/sh, so a container without /bin/sh has no usable shell either.
 const shellProbe = "command -v bash || command -v sh"
+
+// ShellProbe prints the path of bash or sh in a container (run with
+// /bin/sh -c); CheckTerminal of the Engine API driver uses it too.
+const ShellProbe = shellProbe
 
 func (d *Driver) CheckTerminal(ctx context.Context, id string) (string, error) {
 	if err := runtime.ValidateContainerID(id); err != nil {

@@ -25,10 +25,9 @@ Features:
   like `du` (allocated space, hard links once, one file system); system
   folders (`/`, `/etc`, `/home`, `/proc`, `/run`, `/var/lib/docker`, …) are
   not measured, and the page lists such mounts. The usage is read from the
-  runtime's API socket (`runtime.socket`, else `$DOCKER_HOST`, the default
-  socket or the CLI's current context), which costs the daemon about half
-  of `container stats` and starts no process; when the socket cannot be
-  used, the CLI is used (`container stats --no-stream`, `system df`).
+  runtime's API socket (see [Engine API](#engine-api)), which costs the
+  daemon about half of `container stats` and starts no process; when the
+  socket cannot be used or `runtime.api` is `off`, the CLI is used (`container stats --no-stream`, `system df`).
   Without the API, podman's per-container pie shows the writable layers
   only, as the podman CLI reports no volume sizes there.
   wslc shows no metrics yet.
@@ -416,7 +415,8 @@ The default file is [internal/config/default.yaml](internal/config/default.yaml)
 | `runtime.driver` | `auto` | `auto`, `wslc`, `docker`, `podman` or `fake` |
 | `runtime.path` | — | Path to the CLI (empty = `wslc.exe` / `docker` / `podman` on `PATH`) |
 | `runtime.session` | — | wslc session to use (empty = default; wslc only) |
-| `runtime.socket` | — | docker/podman: the daemon's socket (`/path` or `unix:///path`; Windows: `npipe:////./pipe/name`). Used by the CLI (`DOCKER_HOST` / `CONTAINER_HOST`), the resource monitoring (API; Unix sockets only) and the Linux sign-in check. Empty = `$DOCKER_HOST`, then the runtime's default |
+| `runtime.socket` | — | docker/podman: the daemon's socket (`/path` or `unix:///path`; Windows: `npipe:////./pipe/name`). Used by the CLI (`DOCKER_HOST` / `CONTAINER_HOST`), the Engine API access (Unix sockets only, see [Engine API](#engine-api)) and the Linux sign-in check. Empty = `$DOCKER_HOST`, then the runtime's default |
+| `runtime.api` | `auto` | docker/podman: `auto` reads lists, inspect, logs, pulls, terminals and resource usage through the Engine API on the socket where it can be used, the rest through the CLI; `off` uses the CLI for everything. See [Engine API](#engine-api) |
 | `runtime.command_timeout` | `30s` | Timeout for regular commands |
 | `runtime.pull_timeout` | `30m` | Timeout for pulls and container create |
 | `runtime.compose_path` | — | A standalone compose binary (`docker-compose`, `podman-compose`); empty = detect, see [Compose](#compose) |
@@ -718,6 +718,36 @@ official alternative.
 into `internal/web/static/` as `favicon.svg`, `favicon.png` or `favicon.ico`
 (first match wins) and rebuild; it is embedded and linked automatically.
 
+### Engine API
+
+For docker and podman, ContainerUI talks to the daemon's Engine API on its
+Unix socket for the calls that are made often or run long, and runs the CLI
+for the rest. The socket is `runtime.socket`, else `$DOCKER_HOST` /
+`$CONTAINER_HOST`, the default socket (`/var/run/docker.sock`, rootful
+podman `/run/podman/podman.sock`) or the one the CLI itself uses (docker's
+current context, podman's remote socket). Rootless podman serves it only
+with `systemctl --user enable --now podman.socket`.
+
+| Through the API | Through the CLI |
+|---|---|
+| version, container/image/volume/network lists | create, edit, recreate, update |
+| inspect (docker; podman's CLI prints its own format, which the UI reads) | start, stop, restart, remove, rename |
+| logs (download and live view) | volume and network create, remove, prune, connect |
+| image pulls (logins from the auth files, see `registry.auth_file`) | image remove, tag, prune |
+| terminals (`exec`), attaching to containers with a TTY | compose, volume backup/restore and the file browser (helper container) |
+| resource usage (stats, disk usage) | attaching to containers without a TTY (the CLI's pseudo terminal supplies line editing and echo) |
+
+A pull from a registry whose login is kept by a credential helper
+(`credsStore`, `credHelpers`) uses the CLI, which asks the helper.
+
+While the socket cannot be reached, everything uses the CLI and the API is
+tried again after 5 minutes; the log says which one is in use. A read is
+repeated on the CLI whenever the daemon did not answer; a change only when
+the request never reached the daemon, so nothing is applied twice. Errors
+the daemon answers with (a missing container, ...) are reported as they
+are. `runtime.api: off` uses the CLI for everything. wslc has no socket and
+always uses its CLI, as does docker on Windows (named pipe).
+
 ## Architecture
 
 ```
@@ -726,6 +756,7 @@ internal/config        defaults, embedded default.yaml, loading, validation, Add
 internal/runtime       Runtime interface, domain types, validation, driver registry, Composer,
                        inspect → create options and recreating a container
   cli/                 driver for wslc, docker and podman (--format json), auto-detection
+  dockerapi/           Engine API client; wraps the docker/podman CLI driver (see Engine API)
   fake/                in-memory driver for tests and demos
 internal/auth          bcrypt users, Linux PAM sign-in, sessions, CSRF, login throttling
 internal/compose       compose file checks, stored files, grouping by labels, rebuilding a file
@@ -760,18 +791,24 @@ The browser runs [xterm.js](https://xtermjs.org/) 5.5 (MIT, vendored in
 terminal bytes, text messages carry JSON control messages (`resize` from the
 browser, `exit` / `error` from the server).
 
-The CLIs only allocate a TTY when their own stdio is a terminal, so the
-server starts `<cli> container exec --interactive --tty` on a pseudo terminal
+With the [Engine API](#engine-api) the server creates an exec with a TTY
+and starts it on a hijacked connection of the socket, which carries the
+raw terminal bytes; resizing is an API call. Through the CLI, which only
+allocates a TTY when its own stdio is a terminal, the server starts `<cli> container exec --interactive --tty` on a pseudo terminal
 (ConPTY on Windows, a Unix PTY on Linux, via `github.com/aymanbagabas/go-pty`)
 and pipes it to the socket. The CLI does not stop the process it started
 when it exits, so every terminal
 gets a random `CONTAINERUI_TERMINAL` environment tag, and closing a terminal
-sends SIGHUP (then SIGKILL) to all container processes carrying that tag.
+sends SIGHUP (then SIGKILL) to all container processes carrying that tag
+(the daemon does not end an exec when its connection closes either).
 This needs `tr` and `grep` in the container, which every image with a shell
 has in practice.
 
 Attaching (`/containers/{id}/attach/ws`) uses the same page script and
-protocol, plus a `detached` control message. The server runs
+protocol, plus a `detached` control message. With the Engine API and a
+container with a TTY, the server attaches on a hijacked connection with
+the detach keys `ctrl-p,ctrl-q` (starting the container after attaching
+for *Start and attach*) and types them to detach. Otherwise it runs
 `<cli> container attach` (or `container start --attach [--interactive]` for
 a stopped container) with `--sig-proxy=false --detach-keys ctrl-p,ctrl-q` on
 a pseudo terminal. To detach it types the detach keys (with a TTY and STDIN)
@@ -781,8 +818,9 @@ whether the container still runs to tell a detach from a stopped container.
 
 ### Logs
 
-Both log features run `<cli> container logs` with stdout and stderr merged in
-arrival order. The download (`/containers/{id}/logs/download`) streams the
+Both log features read the container's output with stdout and stderr
+merged in arrival order: through the Engine API (`/containers/{id}/logs`)
+where it can be used, else with `<cli> container logs`. The download (`/containers/{id}/logs/download`) streams the
 output straight into the response. The live view
 (`/containers/{id}/logs/watch`) is a small standalone page whose script reads
 `/containers/{id}/logs/stream`, a Server-Sent Events stream of
@@ -937,6 +975,7 @@ classification, volume drivers) and an entry in `Flavors`.
 ```powershell
 go test ./...                                              # unit + web tests
 go test -tags integration ./internal/runtime/cli/...       # against real wslc (pulls alpine)
+go test -tags integration ./internal/runtime/dockerapi/... # API vs. CLI on real docker/podman (reads only)
 go run ./cmd/containerui -config config.yaml -driver fake -debug
 ```
 

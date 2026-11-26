@@ -88,9 +88,14 @@ type Runtime struct {
 	Session string `yaml:"session"` // wslc only
 	// Socket is the Unix socket of the docker or podman daemon ("/path" or
 	// "unix:///path"; Windows: a named pipe); empty = $DOCKER_HOST, then the runtime's default.
-	// The CLI, the API access of the resource monitoring and the Linux
-	// sign-in check all use it.
-	Socket         string        `yaml:"socket"`
+	// The CLI, the Engine API access (see API) and the Linux sign-in check
+	// all use it.
+	Socket string `yaml:"socket"`
+	// API says whether docker and podman are read through their Engine API
+	// on that socket (lists, inspect, logs, pulls, terminals) where it can
+	// be used, with the CLI as the fallback: auto (default) or off (CLI
+	// only).
+	API            string        `yaml:"api"`
 	CommandTimeout time.Duration `yaml:"command_timeout"`
 	PullTimeout    time.Duration `yaml:"pull_timeout"`
 
@@ -163,6 +168,12 @@ type Metrics struct {
 	DiskInterval time.Duration `yaml:"disk_interval"`
 }
 
+// runtime.api values.
+const (
+	APIAuto = "auto" // the Engine API where its socket can be used, else the CLI
+	APIOff  = "off"  // the CLI only
+)
+
 // DriverKubernetes is the runtime.driver that shows a Kubernetes cluster
 // (Linux) instead of a container runtime.
 const DriverKubernetes = "kubernetes"
@@ -206,6 +217,7 @@ func Default() *Config {
 		},
 		Runtime: Runtime{
 			Driver:         "auto",
+			API:            APIAuto,
 			CommandTimeout: 30 * time.Second,
 			PullTimeout:    30 * time.Minute,
 			ComposeTimeout: 30 * time.Minute,
@@ -397,6 +409,7 @@ func (c *Config) applyDefaults() {
 	c.Runtime.ComposeDir = cmp(c.Runtime.ComposeDir, d.Runtime.ComposeDir)
 	c.Runtime.VolumeHelperImage = cmp(c.Runtime.VolumeHelperImage, d.Runtime.VolumeHelperImage)
 	c.Runtime.Socket = SocketPath(c.Runtime.Socket)
+	c.Runtime.API = cmp(c.Runtime.API, d.Runtime.API)
 	c.Kubernetes.RequestTimeout = cmp(c.Kubernetes.RequestTimeout, d.Kubernetes.RequestTimeout)
 	c.Metrics.Interval = cmp(c.Metrics.Interval, d.Metrics.Interval)
 	c.Metrics.DashboardInterval = cmp(c.Metrics.DashboardInterval, d.Metrics.DashboardInterval)
@@ -453,6 +466,11 @@ func (c *Config) validate() error {
 	}
 	if s := c.Runtime.Socket; s != "" && strings.Contains(s, "://") {
 		errs = append(errs, fmt.Errorf("runtime.socket %q: only unix:// sockets and npipe:// pipes are supported", s))
+	}
+	switch c.Runtime.API {
+	case APIAuto, APIOff:
+	default:
+		errs = append(errs, fmt.Errorf("runtime.api %q: must be auto or off", c.Runtime.API))
 	}
 	for i, ns := range c.Kubernetes.Namespaces {
 		if !dnsLabel.MatchString(ns) {

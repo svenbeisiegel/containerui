@@ -29,6 +29,13 @@ sleep 1
 kill -KILL $found 2>/dev/null
 exit 0`
 
+// TerminalTagVar and TerminalKill are shared with the Engine API driver,
+// which tags and cleans up its terminals the same way.
+const (
+	TerminalTagVar = terminalTagVar
+	TerminalKill   = terminalKill
+)
+
 func (d *Driver) OpenTerminal(_ context.Context, id string, opts runtime.TerminalOpts) (runtime.Terminal, error) {
 	if err := errors.Join(runtime.ValidateContainerID(id), runtime.ValidateShellPath(opts.Shell)); err != nil {
 		return nil, err

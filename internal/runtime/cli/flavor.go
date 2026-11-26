@@ -127,6 +127,10 @@ func (f *Flavor) verb(v string) string {
 	return v
 }
 
+// ErrorKind classifies a docker or podman error message; the Engine API
+// reports the same messages as the CLI.
+func ErrorKind(text string) error { return englishKind(text) }
+
 // englishKind classifies docker and podman error messages.
 func englishKind(text string) error {
 	t := strings.ToLower(text)
@@ -204,8 +208,8 @@ func socketPath(f *Flavor, goos, dockerHost string, euid int) string {
 	return ""
 }
 
-// APISocket returns the Unix socket through which the runtime's API can be
-// read (the resource monitoring prefers it to the CLI), or "" if none is
+// APISocket returns the Unix socket through which the runtime's Engine API
+// can be read (package dockerapi prefers it to the CLI), or "" if none is
 // known: runtime.socket, $DOCKER_HOST, the default socket, or the one the
 // CLI itself uses (docker's current context, podman's remote socket).
 func (d *Driver) APISocket(ctx context.Context) string {
